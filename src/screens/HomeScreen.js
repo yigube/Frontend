@@ -1,0 +1,1005 @@
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../store/useAuth';
+import ScreenBackground from '../components/ScreenBackground';
+import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
+import { getCursos, createCurso, updateCurso, deleteCurso } from '../services/cursos';
+import { getEstudiantes } from '../services/estudiantes';
+import { getDocentes } from '../services/docentes';
+import { getColegios } from '../services/colegios';
+
+export default function HomeScreen() {
+  const logout = useAuth(s => s.logout);
+  const user = useAuth(s => s.user);
+  const navigation = useNavigation();
+  const teacherInitial = (user?.email?.[0] || 'D').toUpperCase();
+  const [periodos, setPeriodos] = useState([]);
+  const [periodModalVisible, setPeriodModalVisible] = useState(false);
+  const [editingPeriodo, setEditingPeriodo] = useState(null);
+  const [savingPeriodo, setSavingPeriodo] = useState(false);
+  const [quickModal, setQuickModal] = useState(null);
+  const [cursoDocModalVisible, setCursoDocModalVisible] = useState(false);
+  const [cursosAsignados, setCursosAsignados] = useState([]);
+  const [cursosDocente, setCursosDocente] = useState([]);
+  const [cursosModalVisible, setCursosModalVisible] = useState(false);
+  const [loadingCursos, setLoadingCursos] = useState(false);
+  const [cursoFormVisible, setCursoFormVisible] = useState(false);
+  const [cursoNombre, setCursoNombre] = useState('');
+  const [cursoEditing, setCursoEditing] = useState(null);
+  const [savingCurso, setSavingCurso] = useState(false);
+  const [estudiantesModalVisible, setEstudiantesModalVisible] = useState(false);
+  const [estudiantes, setEstudiantes] = useState([]);
+  const [estudiantesLoading, setEstudiantesLoading] = useState(false);
+  const [estudiantesError, setEstudiantesError] = useState('');
+  const [cursoSeleccionado, setCursoSeleccionado] = useState(null);
+  const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
+  const [docentesModalVisible, setDocentesModalVisible] = useState(false);
+  const [docentes, setDocentes] = useState([]);
+  const [docentesLoading, setDocentesLoading] = useState(false);
+  const [docentesError, setDocentesError] = useState('');
+  const [colegioSeleccionado, setColegioSeleccionado] = useState(null);
+  const [colegiosOptions, setColegiosOptions] = useState([]);
+  const [colegioPickerOpen, setColegioPickerOpen] = useState(false);
+  const [colegiosLoading, setColegiosLoading] = useState(false);
+  const [periodForm, setPeriodForm] = useState({
+    nombre: 'Periodo 1',
+    startDay: 1, startMonth: 1, startYear: 2025, startHour: 0, startMinute: 0,
+    endDay: 30, endMonth: 1, endYear: 2025, endHour: 23, endMinute: 59
+  });
+
+  const days = Array.from({ length: 31 }, (_, i) => i + 1);
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const years = Array.from({ length: 6 }, (_, i) => 2025 + i);
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const minutes = Array.from({ length: 60 }, (_, i) => i);
+  const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+  const parseDateParts = (iso) => {
+    if (!iso) return { day: 1, month: 1, year: 2025 };
+    const [datePart] = iso.split('T');
+    const [year, month, day] = datePart.split('-').map(n => parseInt(n, 10));
+    return {
+      day: Number.isFinite(day) ? day : 1,
+      month: Number.isFinite(month) ? month : 1,
+      year: Number.isFinite(year) ? year : 2025
+    };
+  };
+
+  const buildDate = ({ day, month, year, hour = 0, minute = 0 }) => {
+    const d = String(day).padStart(2, '0');
+    const m = String(month).padStart(2, '0');
+    const h = String(hour).padStart(2, '0');
+    const min = String(minute).padStart(2, '0');
+    return `${year}-${m}-${d}T${h}:${min}:00`;
+  };
+
+  const loadPeriodos = async () => {
+    try {
+      const data = await getPeriodos();
+      setPeriodos(data);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los periodos');
+    }
+  };
+
+  useEffect(() => { loadPeriodos(); }, []);
+
+  const openPeriodModal = (periodo = null) => {
+    if (periodo) {
+      const ini = parseDateParts(periodo.fechaInicio);
+      const fin = parseDateParts(periodo.fechaFin);
+      setPeriodForm({
+        nombre: periodo.nombre || '',
+        startDay: ini.day, startMonth: ini.month, startYear: ini.year, startHour: 0, startMinute: 0,
+        endDay: fin.day, endMonth: fin.month, endYear: fin.year, endHour: 23, endMinute: 59
+      });
+      setEditingPeriodo(periodo);
+    } else {
+      setPeriodForm({
+        nombre: `Periodo ${periodos.length + 1 || 1}`,
+        startDay: 1, startMonth: 1, startYear: 2025, startHour: 0, startMinute: 0,
+        endDay: 30, endMonth: 1, endYear: 2025, endHour: 23, endMinute: 59
+      });
+      setEditingPeriodo(null);
+    }
+    setPeriodModalVisible(true);
+  };
+
+  const handleSavePeriod = async () => {
+    const nombre = periodForm.nombre.trim() || `Periodo ${periodos.length + 1 || 1}`;
+    const payload = {
+      nombre,
+      fechaInicio: buildDate({
+        day: periodForm.startDay, month: periodForm.startMonth, year: periodForm.startYear, hour: periodForm.startHour, minute: periodForm.startMinute
+      }),
+      fechaFin: buildDate({
+        day: periodForm.endDay, month: periodForm.endMonth, year: periodForm.endYear, hour: periodForm.endHour, minute: periodForm.endMinute
+      }),
+      activo: true
+    };
+    setSavingPeriodo(true);
+    try {
+      if (editingPeriodo) {
+        await updatePeriodo(editingPeriodo.id, payload);
+      } else {
+        await createPeriodo(payload);
+      }
+      await loadPeriodos();
+      setPeriodModalVisible(false);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el periodo');
+    } finally {
+      setSavingPeriodo(false);
+    }
+  };
+
+  const handleDeletePeriod = async (id) => {
+    Alert.alert('Eliminar periodo', 'Quieres eliminar este periodo?', [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deletePeriodo(id);
+            await loadPeriodos();
+          } catch (e) {
+            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar');
+          }
+        }
+      }
+    ]);
+  };
+
+  const startSelect = (key, value) => setPeriodForm(prev => ({ ...prev, [key]: value }));
+  const cycleValue = (key, list) => {
+    setPeriodForm(prev => {
+      const current = prev[key];
+      const idx = list.indexOf(current);
+      const next = list[(idx + 1) % list.length];
+      return { ...prev, [key]: next };
+    });
+  };
+  const adjustValue = (key, list, delta) => {
+    setPeriodForm(prev => {
+      const current = prev[key];
+      const idx = list.indexOf(current);
+      const next = list[(idx + delta + list.length) % list.length];
+      return { ...prev, [key]: next };
+    });
+  };
+
+  const openQuickModal = (key) => {
+    const map = {
+      estudiantes: { title: 'Estudiantes', desc: 'Consulta o administra tu lista de estudiantes.', action: () => navigation.navigate('Estudiantes') },
+      reportes: { title: 'Reportes', desc: 'Genera reportes de asistencia y descargas.', action: () => navigation.navigate('Reportes') }
+    };
+    setQuickModal(map[key] || null);
+  };
+
+  const loadCursosAsignados = async () => {
+    const cursos = await getCursos();
+    setCursosAsignados(cursos);
+    return cursos;
+  };
+
+  const openCursosModal = async () => {
+    setCursoFormVisible(false);
+    setCursoEditing(null);
+    setCursoNombre('');
+    setLoadingCursos(true);
+    try {
+      await loadCursosAsignados();
+      setCursosModalVisible(true);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const closeCursosModal = () => {
+    setCursosModalVisible(false);
+    setCursoFormVisible(false);
+    setCursoEditing(null);
+    setCursoNombre('');
+  };
+
+  const loadCursosDocente = async () => {
+    setLoadingCursos(true);
+    try {
+      const cursos = await getCursos();
+      setCursosDocente(cursos);
+      return cursos;
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const loadEstudiantesPorCurso = async (cursoId) => {
+    if (!cursoId) {
+      setEstudiantes([]);
+      setEstudiantesError('');
+      return;
+    }
+    setEstudiantesLoading(true);
+    setEstudiantesError('');
+    try {
+      const data = await getEstudiantes({ cursoId });
+      setEstudiantes(data);
+    } catch (e) {
+      setEstudiantesError(e?.response?.data?.error || e?.message || 'No se pudieron cargar los estudiantes');
+    } finally {
+      setEstudiantesLoading(false);
+    }
+  };
+
+  const openEstudiantesModal = async () => {
+    setEstudiantesModalVisible(true);
+    setCursoPickerOpen(false);
+    setEstudiantesError('');
+    try {
+      setLoadingCursos(true);
+      const cursos = await loadCursosAsignados();
+      const firstId = (cursos && cursos[0]?.id) || null;
+      setCursoSeleccionado(firstId);
+      await loadEstudiantesPorCurso(firstId);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos/estudiantes');
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const closeEstudiantesModal = () => {
+    setEstudiantesModalVisible(false);
+    setCursoPickerOpen(false);
+    setCursoSeleccionado(null);
+    setEstudiantes([]);
+    setEstudiantesError('');
+  };
+
+  const closeCursosModalDocente = () => {
+    setCursoDocModalVisible(false);
+    setCursoFormVisible(false);
+    setCursoEditing(null);
+    setCursoNombre('');
+  };
+
+  const loadColegios = async ({ preferId = null, preferName } = {}) => {
+    setColegiosLoading(true);
+    try {
+      const data = await getColegios();
+      const mapped = data.map(c => ({ id: c.id, nombre: c.nombre || `Colegio ${c.id}` }));
+      let merged = [];
+      setColegiosOptions(prev => {
+        merged = [...prev];
+        const addIfMissing = (item) => {
+          if (!item?.id) return;
+          if (!merged.some(o => String(o.id) === String(item.id))) merged.push(item);
+        };
+        mapped.forEach(addIfMissing);
+        if (preferId) addIfMissing({ id: preferId, nombre: preferName || `Colegio ${preferId}` });
+        return merged;
+      });
+      const firstId = preferId || merged[0]?.id || null;
+      if (!colegioSeleccionado && firstId) {
+        setColegioSeleccionado(firstId);
+      }
+      return merged;
+    } catch (e) {
+      setDocentesError(e?.response?.data?.error || e?.message || 'No se pudieron cargar los colegios');
+      return colegiosOptions;
+    } finally {
+      setColegiosLoading(false);
+    }
+  };
+
+  const loadDocentesColegio = async (schoolIdValue = null) => {
+    const schoolId = schoolIdValue || colegioSeleccionado || user?.schoolId || undefined;
+    if (!schoolId) {
+      setDocentes([]);
+      setDocentesError('Selecciona un colegio primero');
+      return;
+    }
+    setDocentesLoading(true);
+    setDocentesError('');
+    try {
+      const data = await getDocentes({ schoolId });
+      setDocentes(data);
+      setColegioSeleccionado(schoolId);
+      setCursosDocente(data.flatMap(d => d.cursos || []));
+      setColegiosOptions(prev => {
+        const exists = prev.some(opt => String(opt.id) === String(schoolId));
+        if (exists) return prev;
+        const nombre = data[0]?.schoolName || data[0]?.colegio?.nombre || resolveColegioNombre(schoolId);
+        return [...prev, { id: schoolId, nombre }];
+      });
+    } catch (e) {
+      setDocentesError(e?.response?.data?.error || e?.message || 'No se pudieron cargar los docentes');
+    } finally {
+      setDocentesLoading(false);
+    }
+  };
+
+  const openDocentesModal = async () => {
+    const userSchoolOption = user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : [];
+    setColegiosOptions(userSchoolOption);
+    setDocentesModalVisible(true);
+    setColegioPickerOpen(false);
+    setDocentesError('');
+    const defaultSchool = user?.schoolId || colegioSeleccionado || '';
+    const options = await loadColegios({ preferId: defaultSchool, preferName: user?.schoolName });
+    const selectedId = defaultSchool || (options && options[0]?.id) || null;
+    setColegioSeleccionado(selectedId || null);
+    await loadDocentesColegio(selectedId);
+  };
+
+  const closeDocentesModal = () => {
+    setDocentesModalVisible(false);
+    setColegioPickerOpen(false);
+    setDocentesError('');
+    setColegioSeleccionado(null);
+    setColegiosOptions([]);
+  };
+
+  const openCursoForm = (curso = null) => {
+    if (curso) {
+      setCursoEditing(curso);
+      setCursoNombre(curso.nombre || '');
+    } else {
+      setCursoEditing(null);
+      setCursoNombre('');
+    }
+    setCursoFormVisible(true);
+  };
+
+  const handleSaveCurso = async () => {
+    const nombre = cursoNombre.trim();
+    if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el curso');
+    setSavingCurso(true);
+    setLoadingCursos(true);
+    try {
+      if (cursoEditing) {
+        await updateCurso(cursoEditing.id, { nombre });
+      } else {
+        await createCurso({ nombre });
+      }
+      await loadCursosAsignados();
+      setCursoFormVisible(false);
+      setCursoEditing(null);
+      setCursoNombre('');
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el curso');
+    } finally {
+      setSavingCurso(false);
+      setLoadingCursos(false);
+    }
+  };
+
+  const handleDeleteCurso = (curso) => {
+    Alert.alert('Eliminar curso', `Vas a eliminar "${curso.nombre}"`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setLoadingCursos(true);
+            await deleteCurso(curso.id);
+            await loadCursosAsignados();
+          } catch (e) {
+            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el curso');
+          } finally {
+            setLoadingCursos(false);
+          }
+        }
+      }
+    ]);
+  };
+
+  const cursoSeleccionadoNombre = cursoSeleccionado
+    ? (cursosAsignados.find(c => c.id === cursoSeleccionado)?.nombre || 'Curso sin nombre')
+    : 'Selecciona curso';
+
+  const resolveColegioNombre = (id) => {
+    if (!id) return 'Selecciona colegio';
+    return colegiosOptions.find(c => String(c.id) === String(id))?.nombre || `Colegio ${id}`;
+  };
+
+  const colegioSeleccionadoNombre = resolveColegioNombre(colegioSeleccionado);
+
+  return (
+    <ScreenBackground contentStyle={styles.content}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.hero}>
+          <Image source={require('../assets/edusac-header.png')} style={styles.logo} resizeMode="contain" />
+        </View>
+
+      <View style={styles.infoCard}>
+        <View style={styles.infoAvatar}>
+          <Text style={styles.infoAvatarText}>{teacherInitial}</Text>
+        </View>
+        <View style={styles.infoBody}>
+            <View style={styles.infoHeader}>
+              <Text style={styles.infoLabelStrong}>Perfil docente</Text>
+              <View style={styles.statusPill}>
+                <Text style={styles.statusPillText}>Activo</Text>
+              </View>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Docente</Text>
+              <Text style={styles.infoValue}>{user?.email || 'Sin correo'}</Text>
+            </View>
+            <View style={styles.infoDivider} />
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Colegio</Text>
+              <Text style={styles.infoValue}>{user?.schoolName || user?.schoolId || 'No asignado'}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.actionGrid}>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
+            <Text style={styles.actionBtnText}>Escanear QR</Text>
+          </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
+          <Text style={styles.actionBtnText}>Crear cursos</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+          <Text style={styles.actionBtnText}>Estudiantes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={openDocentesModal}>
+          <Text style={styles.actionBtnText}>Docentes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
+          <Text style={styles.actionBtnText}>Reportes</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+          <Text style={styles.actionBtnText}>Activar periodos</Text>
+        </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.periodBtn, { backgroundColor: '#0ea5e9' }]}
+          onPress={async () => {
+            try {
+              setLoadingCursos(true);
+              await loadCursosDocente();
+              setCursoDocModalVisible(true);
+            } catch (e) {
+              Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar tus cursos');
+            } finally {
+              setLoadingCursos(false);
+            }
+          }}
+        >
+          <Text style={styles.periodBtnText}>Curso docentes</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
+          <Text style={styles.logoutText}>Cerrar sesion</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <Modal transparent animationType="slide" visible={periodModalVisible} onRequestClose={() => setPeriodModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.periodTitle}>{editingPeriodo ? 'Editar periodo' : 'Crear periodo'}</Text>
+                <Pressable onPress={() => setPeriodModalVisible(false)} style={styles.closeBtn}>
+                  <Text style={styles.closeBtnText}>Cerrar</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.fieldLabel}>Nombre</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ej. Periodo 1"
+                placeholderTextColor="#9ca3af"
+                value={periodForm.nombre}
+                onChangeText={(txt) => setPeriodForm(prev => ({ ...prev, nombre: txt }))}
+              />
+
+              <View style={{ gap: 10 }}>
+                <Text style={styles.fieldLabel}>Inicio</Text>
+                <View style={styles.inlineRow}>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startDay', days, -1)}>
+                      <Text style={styles.stepperText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startDay', days)}>
+                      <Text style={styles.selectText}>{String(periodForm.startDay).padStart(2, '0')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startDay', days, 1)}>
+                      <Text style={styles.stepperText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startMonth', months, -1)}>
+                      <Text style={styles.stepperText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startMonth', months)}>
+                      <Text style={styles.selectText}>{monthNames[periodForm.startMonth - 1]}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startMonth', months, 1)}>
+                      <Text style={styles.stepperText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startYear', years, -1)}>
+                      <Text style={styles.stepperText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startYear', years)}>
+                      <Text style={styles.selectText}>{periodForm.startYear}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startYear', years, 1)}>
+                      <Text style={styles.stepperText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startHour', hours)}>
+                    <Text style={styles.selectText}>{String(periodForm.startHour).padStart(2, '0')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startMinute', minutes)}>
+                    <Text style={styles.selectText}>{String(periodForm.startMinute).padStart(2, '0')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={{ gap: 10 }}>
+                <Text style={styles.fieldLabel}>Fin</Text>
+                <View style={styles.inlineRow}>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endDay', days, -1)}>
+                      <Text style={styles.stepperText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endDay', days)}>
+                      <Text style={styles.selectText}>{String(periodForm.endDay).padStart(2, '0')}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endDay', days, 1)}>
+                      <Text style={styles.stepperText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endMonth', months, -1)}>
+                      <Text style={styles.stepperText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endMonth', months)}>
+                      <Text style={styles.selectText}>{monthNames[periodForm.endMonth - 1]}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endMonth', months, 1)}>
+                      <Text style={styles.stepperText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.stepper}>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endYear', years, -1)}>
+                      <Text style={styles.stepperText}>-</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endYear', years)}>
+                      <Text style={styles.selectText}>{periodForm.endYear}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endYear', years, 1)}>
+                      <Text style={styles.stepperText}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endHour', hours)}>
+                    <Text style={styles.selectText}>{String(periodForm.endHour).padStart(2, '0')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endMinute', minutes)}>
+                    <Text style={styles.selectText}>{String(periodForm.endMinute).padStart(2, '0')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity style={[styles.periodBtn, savingPeriodo && { opacity: 0.6 }]} onPress={handleSavePeriod} disabled={savingPeriodo}>
+                <Text style={styles.periodBtnText}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
+              </TouchableOpacity>
+
+              <View style={[styles.periodItemRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.periodTitle}>Lista</Text>
+              </View>
+              {periodos.map(p => (
+                <View key={p.id} style={styles.periodItemRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.periodName}>{p.nombre}</Text>
+                    <Text style={styles.periodRange}>{p.fechaInicio} - {p.fechaFin}</Text>
+                    {p.actualizado ? <Text style={styles.periodMeta}>Actualizado: {p.actualizado}</Text> : null}
+                  </View>
+                  <View style={styles.periodActions}>
+                    <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openPeriodModal(p)}>
+                      <Text style={styles.smallBtnText}>✎</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeletePeriod(p.id)}>
+                      <Text style={styles.smallBtnText}>🗑</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+              {periodos.length === 0 ? <Text style={styles.emptyText}>Sin periodos activos</Text> : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={cursosModalVisible}
+        onRequestClose={closeCursosModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Cursos</Text>
+              <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.courseActionsRow}>
+              <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openCursoForm()}>
+                <Text style={styles.smallBtnText}>+</Text>
+              </TouchableOpacity>
+              {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+            </View>
+
+            {cursoFormVisible ? (
+              <View style={styles.courseForm}>
+                <Text style={styles.fieldLabel}>{cursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
+                <TextInput
+                  style={styles.courseInput}
+                  placeholder="Nombre del curso"
+                  placeholderTextColor="#9ca3af"
+                  value={cursoNombre}
+                  editable={!savingCurso}
+                  onChangeText={setCursoNombre}
+                />
+                <View style={styles.courseFormActions}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.outlineBtn, savingCurso && { opacity: 0.6 }]}
+                    onPress={() => { if (!savingCurso) { setCursoFormVisible(false); setCursoEditing(null); setCursoNombre(''); } }}
+                    disabled={savingCurso}
+                  >
+                    <Text style={styles.smallBtnText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
+                    onPress={async () => {
+                      await handleSaveCurso();
+                      await loadCursosAsignados();
+                    }}
+                    disabled={savingCurso}
+                  >
+                    <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            <View style={styles.dataBox}>
+              <Text style={styles.dataTitle}>Lista</Text>
+              {loadingCursos ? (
+                <Text style={styles.dataBullet}>Cargando cursos...</Text>
+              ) : cursosAsignados.length === 0 ? (
+                <Text style={styles.dataBullet}>- No hay cursos</Text>
+              ) : (
+                cursosAsignados.map((c) => (
+                  <View key={c.id} style={styles.courseRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dataItem}>- {c.nombre}</Text>
+                      {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
+                    </View>
+                    <View style={styles.courseRowActions}>
+                      <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openCursoForm(c)}>
+                        <Text style={styles.smallBtnText}>✎</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteCurso(c)}>
+                        <Text style={styles.smallBtnText}>🗑</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={cursoDocModalVisible}
+        onRequestClose={closeCursosModalDocente}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Cursos asignados</Text>
+              <Pressable onPress={closeCursosModalDocente} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.fieldLabel}>Docente: <Text style={styles.dataValue}>{user?.email || 'N/D'}</Text></Text>
+            <View style={styles.dataBox}>
+              {loadingCursos ? (
+                <Text style={styles.dataBullet}>Cargando cursos...</Text>
+              ) : cursosDocente.length === 0 ? (
+                <Text style={styles.dataBullet}>- No tienes cursos asignados</Text>
+              ) : (
+                cursosDocente.map((c) => (
+                  <View key={c.id} style={styles.courseRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dataItem}>- {c.nombre}</Text>
+                      {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={estudiantesModalVisible}
+        onRequestClose={closeEstudiantesModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Estudiantes por curso</Text>
+              <Pressable onPress={closeEstudiantesModal} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+
+            <Text style={styles.fieldLabel}>Selecciona un curso</Text>
+            <Pressable style={styles.selectBoxFull} onPress={() => setCursoPickerOpen(prev => !prev)}>
+              <Text style={styles.selectText}>{cursoSeleccionadoNombre}</Text>
+            </Pressable>
+            {cursoPickerOpen ? (
+              <View style={styles.dropdownList}>
+                {loadingCursos ? <Text style={styles.dataBullet}>Cargando cursos...</Text> : null}
+                {cursosAsignados.length === 0 ? (
+                  <Text style={styles.dataBullet}>No tienes cursos asignados</Text>
+                ) : (
+                  cursosAsignados.map(c => (
+                    <Pressable
+                      key={c.id}
+                      style={[styles.dropdownItem, cursoSeleccionado === c.id && styles.dropdownItemSelected]}
+                      onPress={async () => {
+                        setCursoSeleccionado(c.id);
+                        setCursoPickerOpen(false);
+                        await loadEstudiantesPorCurso(c.id);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>{c.nombre}</Text>
+                    </Pressable>
+                  ))
+                )}
+              </View>
+            ) : null}
+
+            <View style={styles.dataBox}>
+              <Text style={styles.dataTitle}>Estudiantes</Text>
+              {estudiantesLoading ? (
+                <Text style={styles.dataBullet}>Cargando estudiantes...</Text>
+              ) : estudiantesError ? (
+                <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudiantesError}</Text>
+              ) : estudiantes.length === 0 ? (
+                <Text style={styles.dataBullet}>No hay estudiantes asignados</Text>
+              ) : (
+                estudiantes.map((e) => (
+                  <View key={e.id} style={styles.courseRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dataItem}>- {e.nombre || `${e.nombres || ''} ${e.apellidos || ''}`.trim()}</Text>
+                      {e.documento ? <Text style={styles.dataBullet}>ID: {e.documento}</Text> : null}
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={docentesModalVisible}
+        onRequestClose={closeDocentesModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Docentes del colegio</Text>
+              <Pressable onPress={closeDocentesModal} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+
+            <Text style={styles.fieldLabel}>Colegio: <Text style={styles.dataValue}>{colegioSeleccionadoNombre}</Text></Text>
+            <View style={styles.dataBox}>
+              <Text style={styles.fieldLabel}>Selecciona colegio</Text>
+              {colegiosOptions.length > 0 ? (
+                <TouchableOpacity
+                  style={[styles.selectBox, { marginBottom: 8 }]}
+                  onPress={() => setColegioPickerOpen(prev => !prev)}
+                  disabled={docentesLoading || colegiosLoading}
+                >
+                  <Text style={styles.selectText}>
+                    {colegiosLoading
+                      ? 'Cargando colegios...'
+                      : colegioSeleccionadoNombre}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {colegioPickerOpen && colegiosOptions.length > 0 ? (
+                <View style={styles.pickerList}>
+                  {colegiosOptions.map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.pickerItem, String(colegioSeleccionado) === String(c.id) && styles.pickerItemActive]}
+                      onPress={async () => {
+                        setColegioPickerOpen(false);
+                        setColegioSeleccionado(c.id);
+                        await loadDocentesColegio(c.id);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+
+              {docentesError ? <Text style={styles.errorText}>{docentesError}</Text> : null}
+
+              <View style={{ marginTop: 6 }}>
+                <Text style={styles.dataTitle}>Docentes y cursos</Text>
+                {docentesLoading ? (
+                  <Text style={styles.dataBullet}>Cargando docentes...</Text>
+                ) : docentes.length === 0 ? (
+                  <Text style={styles.dataBullet}>- Sin docentes para este colegio</Text>
+                ) : (
+                  docentes.map((d) => (
+                    <View key={d.id} style={styles.courseRow}>
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Text style={styles.dataItem}>- {d.nombre || d.email || `Docente ${d.id}`}</Text>
+                        {d.email ? <Text style={styles.dataBullet}>Email: {d.email}</Text> : null}
+                        {d.cursos && d.cursos.length > 0 ? (
+                          <View style={{ marginTop: 4, gap: 2 }}>
+                            {d.cursos.map((c) => (
+                              <Text key={c.id} style={styles.dataBullet}>- {c.nombre}{c.grado ? ` (Grado: ${c.grado})` : ''}</Text>
+                            ))}
+                          </View>
+                        ) : (
+                          <Text style={styles.dataBullet}>Sin cursos asignados</Text>
+                        )}
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!quickModal}
+        onRequestClose={() => setQuickModal(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>{quickModal?.title || ''}</Text>
+              <Pressable onPress={() => setQuickModal(null)} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.fieldLabel}>{quickModal?.desc || ''}</Text>
+
+            <View style={styles.dataBox}>
+              <Text style={styles.dataTitle}>Datos</Text>
+              <Text style={styles.dataItem}>Docente: <Text style={styles.dataValue}>{user?.email || 'N/D'}</Text></Text>
+              <Text style={styles.dataItem}>Colegio: <Text style={styles.dataValue}>{user?.schoolName || user?.schoolId || 'No asignado'}</Text></Text>
+              <Text style={styles.dataItem}>Periodos activos: <Text style={styles.dataValue}>{periodos.length}</Text></Text>
+              {periodos.slice(0, 3).map(p => (
+                <Text key={p.id} style={styles.dataBullet}>- {p.nombre}: {p.fechaInicio} -> {p.fechaFin}</Text>
+              ))}
+              {periodos.length === 0 ? <Text style={styles.dataBullet}>- Sin periodos cargados</Text> : null}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.periodBtn, { marginTop: 12 }]}
+              onPress={() => { quickModal?.action?.(); setQuickModal(null); }}
+            >
+              <Text style={styles.periodBtnText}>Ir</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </ScreenBackground>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { flex: 1 },
+  scroll: { padding: 20, paddingBottom: 28, alignItems: 'stretch', gap: 16 },
+  hero: { width: '100%', aspectRatio: 1, maxHeight: 260, borderRadius: 18, overflow: 'hidden', backgroundColor: '#111827', marginTop: 0, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.28, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12, elevation: 5, alignItems: 'center', justifyContent: 'center' },
+  logo: { width: '100%', height: '100%' },
+  infoCard: { flexDirection: 'row', alignItems: 'center', width: '100%', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 16, gap: 14, borderWidth: 1, borderColor: 'rgba(56,189,248,0.4)', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 6 }, shadowRadius: 10, elevation: 6, marginTop: -16 },
+  infoAvatar: { width: 54, height: 54, borderRadius: 16, backgroundColor: 'rgba(56,189,248,0.18)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.6)', alignItems: 'center', justifyContent: 'center' },
+  infoAvatarText: { color: '#e0f2fe', fontWeight: '900', fontSize: 22 },
+  infoBody: { flex: 1, gap: 12 },
+  infoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  infoLabelStrong: { color: '#e0f2fe', fontWeight: '800', fontSize: 13, letterSpacing: 0.4 },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: 'rgba(34,197,94,0.18)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)' },
+  statusPillText: { color: '#bbf7d0', fontWeight: '700', fontSize: 12 },
+  infoItem: { gap: 6 },
+  infoDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
+  infoLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
+  infoValue: { color: '#fff', fontWeight: '800', fontSize: 17, letterSpacing: 0.2 },
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 0 },
+  actionBtn: { flexBasis: '48%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
+  actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
+  periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
+  modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%' },
+  modalContent: { padding: 16, gap: 12 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10 },
+  closeBtnText: { color: '#e5e7eb', fontWeight: '700' },
+  fieldLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
+  input: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.04)' },
+  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  selectBox: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 64, alignItems: 'center' },
+  selectBoxFull: { paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 64 },
+  selectText: { color: '#e5e7eb', fontWeight: '800' },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepperBtn: { width: 32, height: 36, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.04)' },
+  stepperText: { color: '#e5e7eb', fontWeight: '800', fontSize: 16 },
+  periodTitle: { color: '#e5e7eb', fontWeight: '800', fontSize: 14, marginBottom: 4 },
+  periodItemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  periodName: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  periodRange: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  periodMeta: { color: '#a5f3fc', fontSize: 12, marginTop: 2 },
+  periodActions: { flexDirection: 'row', gap: 8 },
+  smallBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
+  updateBtn: { backgroundColor: 'rgba(56,189,248,0.2)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.5)' },
+  deleteBtn: { backgroundColor: 'rgba(239,68,68,0.18)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.5)' },
+  smallBtnText: { color: '#e5e7eb', fontWeight: '700', fontSize: 12 },
+  emptyText: { color: '#cbd5e1', textAlign: 'center', marginTop: 8 },
+  dataBox: { marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 4 },
+  dataTitle: { color: '#e5e7eb', fontWeight: '800', marginBottom: 2 },
+  dataItem: { color: '#cbd5e1' },
+  dataValue: { color: '#fff', fontWeight: '800' },
+  dataBullet: { color: '#cbd5e1', fontSize: 12 },
+  courseActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  courseForm: { marginBottom: 10, gap: 8 },
+  courseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+  courseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
+  createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
+  courseRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  courseRowActions: { flexDirection: 'row', gap: 8 },
+  pickerList: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 8 },
+  pickerItem: { paddingHorizontal: 12, paddingVertical: 10 },
+  pickerItemActive: { backgroundColor: 'rgba(16,185,129,0.18)' },
+  errorText: { color: '#fca5a5' },
+  dropdownList: { marginTop: 6, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.04)' },
+  dropdownItem: { paddingHorizontal: 12, paddingVertical: 10 },
+  dropdownItemSelected: { backgroundColor: 'rgba(56,189,248,0.12)' },
+  linkBtn: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.4)' },
+  linkBtnText: { color: '#bfdbfe', fontWeight: '700', fontSize: 12 },
+  logoutBtn: { marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
+  logoutText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 }
+});
