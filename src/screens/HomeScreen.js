@@ -6,8 +6,8 @@ import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
 import { getCursos, createCurso, updateCurso, deleteCurso } from '../services/cursos';
 import { getEstudiantes } from '../services/estudiantes';
-import { getDocentes } from '../services/docentes';
-import { getColegios } from '../services/colegios';
+import { getDocentes, createDocente, updateDocente, deleteDocente } from '../services/docentes';
+import { getColegios, createColegio, updateColegio, deleteColegio } from '../services/colegios';
 
 export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
@@ -42,6 +42,19 @@ export default function HomeScreen() {
   const [colegiosOptions, setColegiosOptions] = useState([]);
   const [colegioPickerOpen, setColegioPickerOpen] = useState(false);
   const [colegiosLoading, setColegiosLoading] = useState(false);
+  const [colegiosModalVisible, setColegiosModalVisible] = useState(false);
+  const [colegiosList, setColegiosList] = useState([]);
+  const [colegioNombre, setColegioNombre] = useState('');
+  const [colegioEditing, setColegioEditing] = useState(null);
+  const [savingColegio, setSavingColegio] = useState(false);
+  const [colegiosError, setColegiosError] = useState('');
+  const [docenteCrudModalVisible, setDocenteCrudModalVisible] = useState(false);
+  const [docenteForm, setDocenteForm] = useState({ nombre: '', email: '', password: '' });
+  const [docenteCursos, setDocenteCursos] = useState([]);
+  const [docenteColegioId, setDocenteColegioId] = useState(null);
+  const [docenteEditing, setDocenteEditing] = useState(null);
+  const [savingDocente, setSavingDocente] = useState(false);
+  const [docenteError, setDocenteError] = useState('');
   const [periodForm, setPeriodForm] = useState({
     nombre: 'Periodo 1',
     startDay: 1, startMonth: 1, startYear: 2025, startHour: 0, startMinute: 0,
@@ -178,8 +191,9 @@ export default function HomeScreen() {
     setQuickModal(map[key] || null);
   };
 
-  const loadCursosAsignados = async () => {
-    const cursos = await getCursos();
+  const loadCursosAsignados = async (schoolIdParam = null) => {
+    const params = schoolIdParam ? { schoolId: schoolIdParam } : {};
+    const cursos = await getCursos(params);
     setCursosAsignados(cursos);
     return cursos;
   };
@@ -267,10 +281,201 @@ export default function HomeScreen() {
     setCursoNombre('');
   };
 
+  const openColegiosModal = async () => {
+    setColegioEditing(null);
+    setColegioNombre('');
+    setColegiosError('');
+    setColegiosModalVisible(true);
+    await loadColegios();
+  };
+
+  const closeColegiosModal = () => {
+    setColegiosModalVisible(false);
+    setColegioEditing(null);
+    setColegioNombre('');
+    setColegiosError('');
+  };
+
+  const startEditColegio = (colegio) => {
+    setColegioEditing(colegio);
+    setColegioNombre(colegio?.nombre || '');
+  };
+
+  const handleSaveColegio = async () => {
+    const nombre = colegioNombre.trim();
+    if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el colegio');
+    setSavingColegio(true);
+    try {
+      if (colegioEditing) {
+        await updateColegio(colegioEditing.id, { nombre });
+      } else {
+        await createColegio({ nombre });
+      }
+      await loadColegios();
+      setColegioEditing(null);
+      setColegioNombre('');
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el colegio');
+    } finally {
+      setSavingColegio(false);
+    }
+  };
+
+  const handleDeleteColegio = (colegio) => {
+    Alert.alert('Eliminar colegio', `Vas a eliminar "${colegio.nombre || 'este colegio'}"`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          setColegiosLoading(true);
+          try {
+            await deleteColegio(colegio.id);
+            await loadColegios();
+          } catch (e) {
+            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el colegio');
+          } finally {
+            setColegiosLoading(false);
+          }
+        }
+      }
+    ]);
+  };
+
+  const loadDocentesActual = async (schoolIdParam = null) => {
+    setDocentesLoading(true);
+    setDocenteError('');
+    try {
+      const params = schoolIdParam ? { schoolId: schoolIdParam } : {};
+      const data = await getDocentes(params);
+      setDocentes(data);
+      return data;
+    } catch (e) {
+      const message = e?.response?.data?.error || e?.message || 'No se pudieron cargar los docentes';
+      setDocenteError(message);
+      setDocentesError(message);
+      return [];
+    } finally {
+      setDocentesLoading(false);
+    }
+  };
+
+  const openDocenteCrudModal = async () => {
+    setDocenteEditing(null);
+    setDocenteForm({ nombre: '', email: '', password: '' });
+    setDocenteCursos([]);
+    setDocenteColegioId(user?.schoolId || null);
+    setDocenteError('');
+    setDocenteCrudModalVisible(true);
+    setLoadingCursos(true);
+    try {
+      const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
+      const defaultSchool = user?.schoolId || colegios?.[0]?.id || null;
+      setDocenteColegioId(defaultSchool);
+      await Promise.all([loadCursosAsignados(defaultSchool), loadDocentesActual(defaultSchool)]);
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const closeDocenteCrudModal = () => {
+    setDocenteCrudModalVisible(false);
+    setDocenteEditing(null);
+    setDocenteForm({ nombre: '', email: '', password: '' });
+    setDocenteCursos([]);
+    setDocenteColegioId(null);
+    setDocenteError('');
+  };
+
+  const toggleDocenteCurso = (cursoId) => {
+    setDocenteCursos(prev => prev.includes(cursoId) ? prev.filter(id => id !== cursoId) : [...prev, cursoId]);
+  };
+
+  const changeDocenteColegio = async (newId) => {
+    setDocenteColegioId(newId);
+    setDocenteCursos([]);
+    setLoadingCursos(true);
+    try {
+      await Promise.all([loadCursosAsignados(newId), loadDocentesActual(newId)]);
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const startEditDocente = async (docente) => {
+    setDocenteEditing(docente);
+    setDocenteForm({ nombre: docente.nombre || '', email: docente.email || '', password: '' });
+    setDocenteColegioId(docente.schoolId || user?.schoolId || null);
+    setDocenteCrudModalVisible(true);
+    setLoadingCursos(true);
+    try {
+      await loadCursosAsignados(docente.schoolId || user?.schoolId || null);
+      await loadDocentesActual(docente.schoolId || user?.schoolId || null);
+      setDocenteCursos((docente.cursos || []).map(c => c.id));
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const handleSaveDocente = async () => {
+    const nombre = docenteForm.nombre.trim();
+    const email = docenteForm.email.trim();
+    const password = docenteForm.password;
+    if (!nombre || !email || (!docenteEditing && !password)) {
+      return Alert.alert('Faltan datos', 'Nombre, correo y contraseña son requeridos para crear un docente');
+    }
+    const payload = { nombre, email, cursoIds: docenteCursos, schoolId: docenteColegioId || user?.schoolId };
+    if (docenteEditing) {
+      if (password) payload.password = password;
+    } else {
+      payload.password = password;
+    }
+
+    setSavingDocente(true);
+    try {
+      if (docenteEditing) {
+        await updateDocente(docenteEditing.id, payload);
+      } else {
+        await createDocente(payload);
+      }
+      await loadDocentesActual();
+      setDocenteForm({ nombre: '', email: '', password: '' });
+      setDocenteCursos([]);
+      setDocenteEditing(null);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el docente');
+    } finally {
+      setSavingDocente(false);
+    }
+  };
+
+  const handleDeleteDocente = (docente) => {
+    Alert.alert('Eliminar docente', `Vas a eliminar "${docente.nombre || docente.email || 'este docente'}"`, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Eliminar',
+        style: 'destructive',
+        onPress: async () => {
+          setDocentesLoading(true);
+          try {
+            await deleteDocente(docente.id);
+            await loadDocentesActual();
+          } catch (e) {
+            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el docente');
+          } finally {
+            setDocentesLoading(false);
+          }
+        }
+      }
+    ]);
+  };
+
   const loadColegios = async ({ preferId = null, preferName } = {}) => {
     setColegiosLoading(true);
+    setColegiosError('');
     try {
       const data = await getColegios();
+      setColegiosList(data || []);
       const mapped = data.map(c => ({ id: c.id, nombre: c.nombre || `Colegio ${c.id}` }));
       let merged = [];
       setColegiosOptions(prev => {
@@ -289,7 +494,9 @@ export default function HomeScreen() {
       }
       return merged;
     } catch (e) {
-      setDocentesError(e?.response?.data?.error || e?.message || 'No se pudieron cargar los colegios');
+      const message = e?.response?.data?.error || e?.message || 'No se pudieron cargar los colegios';
+      setDocentesError(message);
+      setColegiosError(message);
       return colegiosOptions;
     } finally {
       setColegiosLoading(false);
@@ -441,28 +648,32 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.actionGrid}>
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
-            <Text style={styles.actionBtnText}>Escanear QR</Text>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
+            <Text style={styles.actionBtnText}>📷 Escanear QR</Text>
           </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
-          <Text style={styles.actionBtnText}>Crear cursos</Text>
+          <Text style={styles.actionBtnText}>📚 Crear cursos</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-          <Text style={styles.actionBtnText}>Estudiantes</Text>
+          <Text style={styles.actionBtnText}>👥 Estudiantes</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={openDocentesModal}>
-          <Text style={styles.actionBtnText}>Docentes</Text>
+          <Text style={styles.actionBtnText}>🧑‍🏫 Docentes</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
+          <Text style={styles.actionBtnText}>🛠️ Crear docentes</Text>
+        </TouchableOpacity>
+      <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
+        <Text style={styles.actionBtnText}>🏫 Crear colegios</Text>
+      </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
-          <Text style={styles.actionBtnText}>Reportes</Text>
+          <Text style={styles.actionBtnText}>📊 Reportes</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
-          <Text style={styles.actionBtnText}>Activar periodos</Text>
+          <Text style={styles.actionBtnText}>⏱️ Activar periodos</Text>
         </TouchableOpacity>
-        </View>
-
         <TouchableOpacity
-          style={[styles.periodBtn, { backgroundColor: '#0ea5e9' }]}
+          style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]}
           onPress={async () => {
             try {
               setLoadingCursos(true);
@@ -475,8 +686,9 @@ export default function HomeScreen() {
             }
           }}
         >
-          <Text style={styles.periodBtnText}>Curso docentes</Text>
+          <Text style={styles.actionBtnText}>🗂️ Cursos docentes</Text>
         </TouchableOpacity>
+        </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
           <Text style={styles.logoutText}>Cerrar sesion</Text>
@@ -697,6 +909,251 @@ export default function HomeScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteCurso(c)}>
                         <Text style={styles.smallBtnText}>🗑</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={colegiosModalVisible}
+        onRequestClose={closeColegiosModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Colegios</Text>
+              <Pressable onPress={closeColegiosModal} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.courseForm}>
+              <Text style={styles.fieldLabel}>{colegioEditing ? 'Editar colegio' : 'Nuevo colegio'}</Text>
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Nombre del colegio"
+                placeholderTextColor="#9ca3af"
+                value={colegioNombre}
+                editable={!savingColegio}
+                onChangeText={setColegioNombre}
+              />
+              {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
+              <View style={styles.courseFormActions}>
+                {colegioEditing ? (
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.outlineBtn, savingColegio && { opacity: 0.6 }]}
+                    onPress={() => {
+                      if (savingColegio) return;
+                      setColegioEditing(null);
+                      setColegioNombre('');
+                    }}
+                    disabled={savingColegio}
+                  >
+                    <Text style={styles.smallBtnText}>Cancelar edición</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.createBtn, savingColegio && { opacity: 0.6 }]}
+                  onPress={handleSaveColegio}
+                  disabled={savingColegio}
+                >
+                  <Text style={styles.smallBtnText}>{savingColegio ? 'Guardando...' : colegioEditing ? 'Actualizar' : 'Crear'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.dataBox}>
+              <View style={styles.courseActionsRow}>
+                <Text style={styles.dataTitle}>Colegios en el sistema</Text>
+                {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+              </View>
+              {colegiosList.length === 0 && !colegiosLoading ? (
+                <Text style={styles.dataBullet}>- Aún no hay colegios registrados</Text>
+              ) : (
+                colegiosList.map((c) => (
+                  <View key={c.id} style={styles.courseRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
+                      {c.direccion ? <Text style={styles.dataBullet}>Dirección: {c.direccion}</Text> : null}
+                    </View>
+                    <View style={styles.courseRowActions}>
+                      <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditColegio(c)}>
+                        <Text style={styles.smallBtnText}>✏️</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteColegio(c)}>
+                        <Text style={styles.smallBtnText}>🗑️</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={docenteCrudModalVisible}
+        onRequestClose={closeDocenteCrudModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Gestionar docentes</Text>
+              <Pressable onPress={closeDocenteCrudModal} style={styles.closeBtn}>
+                <Text style={styles.closeBtnText}>Cerrar</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.courseForm}>
+              <Text style={styles.fieldLabel}>{docenteEditing ? 'Editar docente' : 'Nuevo docente'}</Text>
+              <Text style={styles.fieldLabel}>Colegio</Text>
+              {colegiosOptions.length > 0 ? (
+                <TouchableOpacity
+                  style={[styles.selectBox, { marginBottom: 8 }]}
+                  onPress={() => setColegioPickerOpen(prev => !prev)}
+                  disabled={savingDocente || loadingCursos}
+                >
+                  <Text style={styles.selectText}>
+                    {colegiosLoading
+                      ? 'Cargando colegios...'
+                      : resolveColegioNombre(docenteColegioId || user?.schoolId)}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.selectBox, { marginBottom: 8 }]}
+                  disabled
+                >
+                  <Text style={styles.selectText}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text>
+                </TouchableOpacity>
+              )}
+
+              {colegioPickerOpen && colegiosOptions.length > 0 ? (
+                <View style={styles.pickerList}>
+                  {colegiosOptions.map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.pickerItem, String(docenteColegioId) === String(c.id) && styles.pickerItemActive]}
+                      onPress={async () => {
+                        setColegioPickerOpen(false);
+                        await changeDocenteColegio(c.id);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Nombre completo"
+                placeholderTextColor="#9ca3af"
+                value={docenteForm.nombre}
+                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, nombre: txt }))}
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Correo"
+                placeholderTextColor="#9ca3af"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                value={docenteForm.email}
+                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, email: txt }))}
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder={docenteEditing ? 'Nueva contraseña (opcional)' : 'Contraseña'}
+                placeholderTextColor="#9ca3af"
+                secureTextEntry
+                value={docenteForm.password}
+                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, password: txt }))}
+              />
+
+              <Text style={styles.fieldLabel}>Asignar cursos</Text>
+              <View style={styles.dataBox}>
+                {loadingCursos ? (
+                  <Text style={styles.dataBullet}>Cargando cursos...</Text>
+                ) : cursosAsignados.length === 0 ? (
+                  <Text style={styles.dataBullet}>No hay cursos para asignar</Text>
+                ) : (
+                  cursosAsignados.map(c => {
+                    const checked = docenteCursos.includes(c.id);
+                    return (
+                      <Pressable
+                        key={c.id}
+                        style={[styles.pickerItem, { flexDirection: 'row', alignItems: 'center', gap: 10 }, checked && styles.pickerItemActive]}
+                        onPress={() => toggleDocenteCurso(c.id)}
+                      >
+                        <Text style={styles.dataItem}>{checked ? '☑️' : '☐'} {c.nombre}</Text>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+
+              {docenteError ? <Text style={[styles.errorText, { marginTop: 4 }]}>{docenteError}</Text> : null}
+
+              <View style={styles.courseFormActions}>
+                {docenteEditing ? (
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.outlineBtn, savingDocente && { opacity: 0.6 }]}
+                    onPress={() => {
+                      if (savingDocente) return;
+                      setDocenteEditing(null);
+                      setDocenteForm({ nombre: '', email: '', password: '' });
+                      setDocenteCursos([]);
+                    }}
+                    disabled={savingDocente}
+                  >
+                    <Text style={styles.smallBtnText}>Cancelar edición</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.createBtn, savingDocente && { opacity: 0.6 }]}
+                  onPress={handleSaveDocente}
+                  disabled={savingDocente}
+                >
+                  <Text style={styles.smallBtnText}>{savingDocente ? 'Guardando...' : docenteEditing ? 'Actualizar' : 'Crear'}</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.dataBox}>
+              <View style={styles.courseActionsRow}>
+                <Text style={styles.dataTitle}>Docentes del colegio</Text>
+                {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+              </View>
+              {docentes.length === 0 && !docentesLoading ? (
+                <Text style={styles.dataBullet}>- Aún no hay docentes</Text>
+              ) : (
+                docentes.map((d) => (
+                  <View key={d.id} style={styles.courseRow}>
+                    <View style={{ flex: 1, gap: 4 }}>
+                      <Text style={styles.dataItem}>- {d.nombre || d.email || `Docente ${d.id}`}</Text>
+                      {d.email ? <Text style={styles.dataBullet}>{d.email}</Text> : null}
+                      {d.cursos && d.cursos.length ? (
+                        <Text style={styles.dataBullet}>Cursos: {d.cursos.map(c => c.nombre).join(', ')}</Text>
+                      ) : (
+                        <Text style={styles.dataBullet}>Sin cursos asignados</Text>
+                      )}
+                    </View>
+                    <View style={styles.courseRowActions}>
+                      <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditDocente(d)}>
+                        <Text style={styles.smallBtnText}>✏️</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteDocente(d)}>
+                        <Text style={styles.smallBtnText}>🗑️</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
