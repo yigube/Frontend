@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
@@ -12,6 +13,7 @@ import { getColegios, createColegio, updateColegio, deleteColegio } from '../ser
 export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
   const user = useAuth(s => s.user);
+  const canManageCourses = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const navigation = useNavigation();
   const teacherInitial = (user?.email?.[0] || 'D').toUpperCase();
   const [periodos, setPeriodos] = useState([]);
@@ -366,6 +368,8 @@ export default function HomeScreen() {
     setDocenteCursos([]);
     setDocenteColegioId(user?.schoolId || null);
     setDocenteError('');
+    setColegioPickerOpen(false);
+    setColegiosOptions(user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : []);
     setDocenteCrudModalVisible(true);
     setLoadingCursos(true);
     try {
@@ -422,7 +426,7 @@ export default function HomeScreen() {
     const email = docenteForm.email.trim();
     const password = docenteForm.password;
     if (!nombre || !email || (!docenteEditing && !password)) {
-      return Alert.alert('Faltan datos', 'Nombre, correo y contraseña son requeridos para crear un docente');
+      return Alert.alert('Faltan datos', 'Nombre, correo y contraseÃ±a son requeridos para crear un docente');
     }
     const payload = { nombre, email, cursoIds: docenteCursos, schoolId: docenteColegioId || user?.schoolId };
     if (docenteEditing) {
@@ -497,7 +501,11 @@ export default function HomeScreen() {
       const message = e?.response?.data?.error || e?.message || 'No se pudieron cargar los colegios';
       setDocentesError(message);
       setColegiosError(message);
-      return colegiosOptions;
+      const fallback = [];
+      if (preferId) fallback.push({ id: preferId, nombre: preferName || `Colegio ${preferId}` });
+      else if (user?.schoolId) fallback.push({ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` });
+      if (fallback.length) setColegiosOptions(prev => (prev.length ? prev : fallback));
+      return fallback.length ? fallback : colegiosOptions;
     } finally {
       setColegiosLoading(false);
     }
@@ -630,14 +638,18 @@ export default function HomeScreen() {
         </View>
         <View style={styles.infoBody}>
             <View style={styles.infoHeader}>
-              <Text style={styles.infoLabelStrong}>Perfil docente</Text>
+              <Text style={styles.infoLabelStrong}>Perfil de usuario</Text>
               <View style={styles.statusPill}>
                 <Text style={styles.statusPillText}>Activo</Text>
               </View>
             </View>
             <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Docente</Text>
+              <Text style={styles.infoLabel}>Usuario</Text>
               <Text style={styles.infoValue}>{user?.email || 'Sin correo'}</Text>
+            </View>
+            <View style={styles.infoItem}>
+              <Text style={styles.infoLabel}>Rol</Text>
+              <Text style={styles.infoValue}>{user?.rol || 'Sin rol'}</Text>
             </View>
             <View style={styles.infoDivider} />
             <View style={styles.infoItem}>
@@ -649,28 +661,54 @@ export default function HomeScreen() {
 
         <View style={styles.actionGrid}>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
-            <Text style={styles.actionBtnText}>📷 Escanear QR</Text>
+            <View style={styles.btnRow}>
+              <Ionicons name="qr-code-outline" size={18} color="#fff" />
+              <Text style={styles.actionBtnText}>Escanear QR</Text>
+            </View>
           </TouchableOpacity>
+        {canManageCourses ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
-          <Text style={styles.actionBtnText}>📚 Crear cursos</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="book-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Crear cursos</Text>
+          </View>
         </TouchableOpacity>
+        ) : null}
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-          <Text style={styles.actionBtnText}>👥 Estudiantes</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="people-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Estudiantes</Text>
+          </View>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={openDocentesModal}>
-          <Text style={styles.actionBtnText}>🧑‍🏫 Docentes</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="school-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Docentes</Text>
+          </View>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
-          <Text style={styles.actionBtnText}>🛠️ Crear docentes</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="person-add-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Crear docentes</Text>
+          </View>
         </TouchableOpacity>
       <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
-        <Text style={styles.actionBtnText}>🏫 Crear colegios</Text>
+        <View style={styles.btnRow}>
+          <Ionicons name="business-outline" size={18} color="#111" />
+          <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
+        </View>
       </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
-          <Text style={styles.actionBtnText}>📊 Reportes</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="bar-chart-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Reportes</Text>
+          </View>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
-          <Text style={styles.actionBtnText}>⏱️ Activar periodos</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="calendar-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Activar periodos</Text>
+          </View>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]}
@@ -686,12 +724,18 @@ export default function HomeScreen() {
             }
           }}
         >
-          <Text style={styles.actionBtnText}>🗂️ Cursos docentes</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="folder-open-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Cursos docentes</Text>
+          </View>
         </TouchableOpacity>
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
-          <Text style={styles.logoutText}>Cerrar sesion</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="log-out-outline" size={18} color="#fff" />
+            <Text style={styles.logoutText}>Cerrar sesion</Text>
+          </View>
         </TouchableOpacity>
       </ScrollView>
 
@@ -702,7 +746,7 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>{editingPeriodo ? 'Editar periodo' : 'Crear periodo'}</Text>
                 <Pressable onPress={() => setPeriodModalVisible(false)} style={styles.closeBtn}>
-                  <Text style={styles.closeBtnText}>Cerrar</Text>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
@@ -806,7 +850,10 @@ export default function HomeScreen() {
               </View>
 
               <TouchableOpacity style={[styles.periodBtn, savingPeriodo && { opacity: 0.6 }]} onPress={handleSavePeriod} disabled={savingPeriodo}>
-                <Text style={styles.periodBtnText}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
+                <View style={styles.btnRow}>
+                  <Ionicons name="save-outline" size={16} color="#fff" />
+                  <Text style={styles.periodBtnText}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
+                </View>
               </TouchableOpacity>
 
               <View style={[styles.periodItemRow, { borderBottomWidth: 0 }]}>
@@ -821,10 +868,16 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.periodActions}>
                     <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openPeriodModal(p)}>
-                      <Text style={styles.smallBtnText}>✎</Text>
+                      <View style={styles.btnRow}>
+                        <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                        <Text style={styles.smallBtnText}>Editar</Text>
+                      </View>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeletePeriod(p.id)}>
-                      <Text style={styles.smallBtnText}>🗑</Text>
+                      <View style={styles.btnRow}>
+                        <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                        <Text style={styles.smallBtnText}>Eliminar</Text>
+                      </View>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -846,18 +899,23 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Cursos</Text>
               <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
-            <View style={styles.courseActionsRow}>
-              <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openCursoForm()}>
-                <Text style={styles.smallBtnText}>+</Text>
-              </TouchableOpacity>
-              {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
-            </View>
+            {canManageCourses ? (
+              <View style={styles.courseActionsRow}>
+                <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openCursoForm()}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>Nuevo</Text>
+                  </View>
+                </TouchableOpacity>
+                {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+              </View>
+            ) : null}
 
-            {cursoFormVisible ? (
+            {canManageCourses && cursoFormVisible ? (
               <View style={styles.courseForm}>
                 <Text style={styles.fieldLabel}>{cursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
                 <TextInput
@@ -874,7 +932,10 @@ export default function HomeScreen() {
                     onPress={() => { if (!savingCurso) { setCursoFormVisible(false); setCursoEditing(null); setCursoNombre(''); } }}
                     disabled={savingCurso}
                   >
-                    <Text style={styles.smallBtnText}>Cancelar</Text>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Cancelar</Text>
+                    </View>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
@@ -884,7 +945,10 @@ export default function HomeScreen() {
                     }}
                     disabled={savingCurso}
                   >
-                    <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
+                    </View>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -903,14 +967,22 @@ export default function HomeScreen() {
                       <Text style={styles.dataItem}>- {c.nombre}</Text>
                       {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
                     </View>
+                    {canManageCourses ? (
                     <View style={styles.courseRowActions}>
                       <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openCursoForm(c)}>
-                        <Text style={styles.smallBtnText}>✎</Text>
+                        <View style={styles.btnRow}>
+                          <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                          <Text style={styles.smallBtnText}>Editar</Text>
+                        </View>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteCurso(c)}>
-                        <Text style={styles.smallBtnText}>🗑</Text>
+                        <View style={styles.btnRow}>
+                          <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                          <Text style={styles.smallBtnText}>Eliminar</Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
+                    ) : null}
                   </View>
                 ))
               )}
@@ -930,7 +1002,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Colegios</Text>
               <Pressable onPress={closeColegiosModal} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
@@ -956,7 +1028,10 @@ export default function HomeScreen() {
                     }}
                     disabled={savingColegio}
                   >
-                    <Text style={styles.smallBtnText}>Cancelar edición</Text>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Cancelar edicion</Text>
+                    </View>
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
@@ -964,7 +1039,10 @@ export default function HomeScreen() {
                   onPress={handleSaveColegio}
                   disabled={savingColegio}
                 >
-                  <Text style={styles.smallBtnText}>{savingColegio ? 'Guardando...' : colegioEditing ? 'Actualizar' : 'Crear'}</Text>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>{savingColegio ? 'Guardando...' : colegioEditing ? 'Actualizar' : 'Crear'}</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             </View>
@@ -975,20 +1053,26 @@ export default function HomeScreen() {
                 {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
               </View>
               {colegiosList.length === 0 && !colegiosLoading ? (
-                <Text style={styles.dataBullet}>- Aún no hay colegios registrados</Text>
+                <Text style={styles.dataBullet}>- AÃºn no hay colegios registrados</Text>
               ) : (
                 colegiosList.map((c) => (
                   <View key={c.id} style={styles.courseRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
-                      {c.direccion ? <Text style={styles.dataBullet}>Dirección: {c.direccion}</Text> : null}
+                      {c.direccion ? <Text style={styles.dataBullet}>DirecciÃ³n: {c.direccion}</Text> : null}
                     </View>
                     <View style={styles.courseRowActions}>
                       <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditColegio(c)}>
-                        <Text style={styles.smallBtnText}>✏️</Text>
+                        <View style={styles.btnRow}>
+                          <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                          <Text style={styles.smallBtnText}>Editar</Text>
+                        </View>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteColegio(c)}>
-                        <Text style={styles.smallBtnText}>🗑️</Text>
+                        <View style={styles.btnRow}>
+                          <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                          <Text style={styles.smallBtnText}>Eliminar</Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1006,14 +1090,15 @@ export default function HomeScreen() {
         onRequestClose={closeDocenteCrudModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.modalCardWide]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Gestionar docentes</Text>
               <Pressable onPress={closeDocenteCrudModal} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={styles.courseForm}>
               <Text style={styles.fieldLabel}>{docenteEditing ? 'Editar docente' : 'Nuevo docente'}</Text>
               <Text style={styles.fieldLabel}>Colegio</Text>
@@ -1073,7 +1158,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder={docenteEditing ? 'Nueva contraseña (opcional)' : 'Contraseña'}
+                placeholder={docenteEditing ? 'Nueva contraseÃ±a (opcional)' : 'ContraseÃ±a'}
                 placeholderTextColor="#9ca3af"
                 secureTextEntry
                 value={docenteForm.password}
@@ -1095,7 +1180,8 @@ export default function HomeScreen() {
                         style={[styles.pickerItem, { flexDirection: 'row', alignItems: 'center', gap: 10 }, checked && styles.pickerItemActive]}
                         onPress={() => toggleDocenteCurso(c.id)}
                       >
-                        <Text style={styles.dataItem}>{checked ? '☑️' : '☐'} {c.nombre}</Text>
+                        <Ionicons name={checked ? 'checkbox-outline' : 'square-outline'} size={16} color="#e5e7eb" />
+                        <Text style={styles.dataItem}>{c.nombre}</Text>
                       </Pressable>
                     );
                   })
@@ -1116,7 +1202,10 @@ export default function HomeScreen() {
                     }}
                     disabled={savingDocente}
                   >
-                    <Text style={styles.smallBtnText}>Cancelar edición</Text>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Cancelar edicion</Text>
+                    </View>
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
@@ -1124,7 +1213,10 @@ export default function HomeScreen() {
                   onPress={handleSaveDocente}
                   disabled={savingDocente}
                 >
-                  <Text style={styles.smallBtnText}>{savingDocente ? 'Guardando...' : docenteEditing ? 'Actualizar' : 'Crear'}</Text>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>{savingDocente ? 'Guardando...' : docenteEditing ? 'Actualizar' : 'Crear'}</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1135,7 +1227,7 @@ export default function HomeScreen() {
                 {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
               </View>
               {docentes.length === 0 && !docentesLoading ? (
-                <Text style={styles.dataBullet}>- Aún no hay docentes</Text>
+                <Text style={styles.dataBullet}>- AÃºn no hay docentes</Text>
               ) : (
                 docentes.map((d) => (
                   <View key={d.id} style={styles.courseRow}>
@@ -1150,16 +1242,23 @@ export default function HomeScreen() {
                     </View>
                     <View style={styles.courseRowActions}>
                       <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditDocente(d)}>
-                        <Text style={styles.smallBtnText}>✏️</Text>
+                        <View style={styles.btnRow}>
+                          <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                          <Text style={styles.smallBtnText}>Editar</Text>
+                        </View>
                       </TouchableOpacity>
                       <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteDocente(d)}>
-                        <Text style={styles.smallBtnText}>🗑️</Text>
+                        <View style={styles.btnRow}>
+                          <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                          <Text style={styles.smallBtnText}>Eliminar</Text>
+                        </View>
                       </TouchableOpacity>
                     </View>
                   </View>
                 ))
               )}
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1175,7 +1274,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Cursos asignados</Text>
               <Pressable onPress={closeCursosModalDocente} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <Text style={styles.fieldLabel}>Docente: <Text style={styles.dataValue}>{user?.email || 'N/D'}</Text></Text>
@@ -1210,7 +1309,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Estudiantes por curso</Text>
               <Pressable onPress={closeEstudiantesModal} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
@@ -1275,7 +1374,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Docentes del colegio</Text>
               <Pressable onPress={closeDocentesModal} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
@@ -1358,7 +1457,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>{quickModal?.title || ''}</Text>
               <Pressable onPress={() => setQuickModal(null)} style={styles.closeBtn}>
-                <Text style={styles.closeBtnText}>Cerrar</Text>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <Text style={styles.fieldLabel}>{quickModal?.desc || ''}</Text>
@@ -1378,7 +1477,10 @@ export default function HomeScreen() {
               style={[styles.periodBtn, { marginTop: 12 }]}
               onPress={() => { quickModal?.action?.(); setQuickModal(null); }}
             >
-              <Text style={styles.periodBtnText}>Ir</Text>
+              <View style={styles.btnRow}>
+                <Ionicons name="arrow-forward-outline" size={16} color="#fff" />
+                <Text style={styles.periodBtnText}>Ir</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </View>
@@ -1405,12 +1507,14 @@ const styles = StyleSheet.create({
   infoLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
   infoValue: { color: '#fff', fontWeight: '800', fontSize: 17, letterSpacing: 0.2 },
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 0 },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionBtn: { flexBasis: '48%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
-  modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%' },
+  modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%', width: '100%', alignSelf: 'center' },
+  modalCardWide: { maxHeight: '92%' },
   modalContent: { padding: 16, gap: 12 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10 },
@@ -1460,3 +1564,6 @@ const styles = StyleSheet.create({
   logoutBtn: { marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
   logoutText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 }
 });
+
+
+

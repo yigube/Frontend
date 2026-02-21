@@ -16,8 +16,12 @@ import {
 } from 'react-native';
 import ScreenBackground from '../components/ScreenBackground';
 import { getCursos, createCurso, updateCurso, deleteCurso } from '../services/cursos';
+import { useAuth } from '../store/useAuth';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function CursosScreen() {
+  const user = useAuth(s => s.user);
+  const canManageCourses = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -101,14 +105,22 @@ export default function CursosScreen() {
         <Text style={styles.cardTitle}>{item.nombre}</Text>
         {item.grado ? <Text style={styles.cardMeta}>Grado: {item.grado}</Text> : null}
       </View>
-      <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(item)}>
-          <Text style={styles.iconText}>Editar</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.iconBtn, styles.danger]} onPress={() => handleDelete(item)}>
-          <Text style={styles.iconText}>Eliminar</Text>
-        </TouchableOpacity>
-      </View>
+      {canManageCourses ? (
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(item)}>
+            <View style={styles.btnRow}>
+              <Ionicons name="create-outline" size={16} color="#111" />
+              <Text style={styles.iconText}>Editar</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.iconBtn, styles.danger]} onPress={() => handleDelete(item)}>
+            <View style={styles.btnRow}>
+              <Ionicons name="trash-outline" size={16} color="#991b1b" />
+              <Text style={styles.iconText}>Eliminar</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -125,12 +137,20 @@ export default function CursosScreen() {
           onSubmitEditing={() => loadCursos(search)}
         />
         <TouchableOpacity style={styles.searchBtn} onPress={() => loadCursos(search)}>
-          <Text style={styles.searchBtnText}>Buscar</Text>
+          <View style={styles.btnRow}>
+            <Ionicons name="search-outline" size={16} color="#fff" />
+            <Text style={styles.searchBtnText}>Buscar</Text>
+          </View>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity style={styles.primaryBtn} onPress={openCreate}>
-        <Text style={styles.primaryBtnText}>Crear curso</Text>
-      </TouchableOpacity>
+      {canManageCourses ? (
+        <TouchableOpacity style={styles.primaryBtn} onPress={openCreate}>
+          <View style={styles.btnRow}>
+            <Ionicons name="add-outline" size={18} color="#fff" />
+            <Text style={styles.primaryBtnText}>Crear curso</Text>
+          </View>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 
@@ -169,10 +189,16 @@ export default function CursosScreen() {
             />
             <View style={styles.modalActions}>
               <Pressable disabled={saving} onPress={() => setModalVisible(false)} style={[styles.outlineBtn, saving && { opacity: 0.6 }]}>
-                <Text style={styles.outlineBtnText}>Cancelar</Text>
+                <View style={styles.btnRow}>
+                  <Ionicons name="close-outline" size={16} color="#111" />
+                  <Text style={styles.outlineBtnText}>Cancelar</Text>
+                </View>
               </Pressable>
               <Pressable disabled={saving} onPress={handleSave} style={[styles.primaryBtn, saving && { opacity: 0.6 }]}>
-                <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                <View style={styles.btnRow}>
+                  <Ionicons name="save-outline" size={16} color="#fff" />
+                  <Text style={styles.primaryBtnText}>{saving ? 'Guardando...' : 'Guardar'}</Text>
+                </View>
               </Pressable>
             </View>
           </KeyboardAvoidingView>
@@ -207,5 +233,6 @@ const styles = StyleSheet.create({
   input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff', color: '#111' },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   outlineBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#d1d5db' },
-  outlineBtnText: { color: '#111', fontWeight: '600' }
+  outlineBtnText: { color: '#111', fontWeight: '600' },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }
 });

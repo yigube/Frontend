@@ -1,6 +1,7 @@
 ﻿import React from 'react';
-import { View, Text, StyleSheet, TextInput, Button, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
 
 export default function LoginScreen() {
@@ -52,7 +53,16 @@ export default function LoginScreen() {
             />
           )}
         />
-        <Button title={loading ? 'Ingresando...' : 'Ingresar'} onPress={handleSubmit(onSubmit)} disabled={loading} />
+        <TouchableOpacity
+          style={[styles.loginBtn, loading && { opacity: 0.7 }]}
+          onPress={handleSubmit(onSubmit)}
+          disabled={loading}
+        >
+          <View style={styles.btnRow}>
+            <Ionicons name="log-in-outline" size={18} color="#fff" />
+            <Text style={styles.loginBtnText}>{loading ? 'Ingresando...' : 'Ingresar'}</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -64,5 +74,8 @@ const styles = StyleSheet.create({
   card: { width: '100%', gap: 10, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 12, padding: 16 },
   title: { fontSize: 22, fontWeight: '700', marginBottom: 4, textAlign: 'center', color: '#111' },
   label: { fontWeight: '600', color: '#222' },
-  input: { borderWidth: 1, borderColor: '#d9d9d9', borderRadius: 8, padding: 10, backgroundColor: '#fff' }
+  input: { borderWidth: 1, borderColor: '#d9d9d9', borderRadius: 8, padding: 10, backgroundColor: '#fff' },
+  loginBtn: { marginTop: 6, backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  loginBtnText: { color: '#fff', fontWeight: '700' },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }
 });

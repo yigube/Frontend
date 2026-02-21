@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, Button, Alert, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { api } from '../services/api';
 import ScreenBackground from '../components/ScreenBackground';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function ReportesScreen() {
   const [downloading, setDownloading] = useState(false);
@@ -25,7 +26,16 @@ export default function ReportesScreen() {
     <ScreenBackground contentStyle={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>Descarga de reportes</Text>
-        <Button title={downloading ? 'Descargando...' : 'Descargar CSV'} onPress={descargar} disabled={downloading} />
+        <TouchableOpacity
+          style={[styles.downloadBtn, downloading && { opacity: 0.7 }]}
+          onPress={descargar}
+          disabled={downloading}
+        >
+          <View style={styles.btnRow}>
+            <Ionicons name="download-outline" size={18} color="#fff" />
+            <Text style={styles.downloadText}>{downloading ? 'Descargando...' : 'Descargar CSV'}</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     </ScreenBackground>
   );
@@ -34,5 +44,8 @@ export default function ReportesScreen() {
 const styles = StyleSheet.create({
   container: { justifyContent: 'center' },
   card: { gap: 12, backgroundColor: 'rgba(255,255,255,0.92)', padding: 16, borderRadius: 12 },
-  title: { fontWeight: '700', fontSize: 16, color: '#111' }
+  title: { fontWeight: '700', fontSize: 16, color: '#111' },
+  downloadBtn: { backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  downloadText: { color: '#fff', fontWeight: '700' },
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }
 });
