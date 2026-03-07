@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,7 +23,13 @@ export default function HomeScreen() {
   const [quickModal, setQuickModal] = useState(null);
   const [cursoDocModalVisible, setCursoDocModalVisible] = useState(false);
   const [cursosAsignados, setCursosAsignados] = useState([]);
-  const [cursosDocente, setCursosDocente] = useState([]);
+  const [cursoDocColegioId, setCursoDocColegioId] = useState(null);
+  const [cursoDocPickerOpen, setCursoDocPickerOpen] = useState(false);
+  const [mostrarAsignadorCursoDoc, setMostrarAsignadorCursoDoc] = useState(false);
+  const [cursoDocCursos, setCursoDocCursos] = useState([]);
+  const [asignacionCursosDocente, setAsignacionCursosDocente] = useState({});
+  const [savingAsignacionDocenteId, setSavingAsignacionDocenteId] = useState(null);
+  const cursoDocSchoolRef = useRef(null);
   const [cursosModalVisible, setCursosModalVisible] = useState(false);
   const [loadingCursos, setLoadingCursos] = useState(false);
   const [cursoFormVisible, setCursoFormVisible] = useState(false);
@@ -53,10 +59,12 @@ export default function HomeScreen() {
   const [docenteCrudModalVisible, setDocenteCrudModalVisible] = useState(false);
   const [docenteForm, setDocenteForm] = useState({ nombre: '', email: '', password: '' });
   const [docenteCursos, setDocenteCursos] = useState([]);
+  const [docenteCursosDisponibles, setDocenteCursosDisponibles] = useState([]);
   const [docenteColegioId, setDocenteColegioId] = useState(null);
   const [docenteEditing, setDocenteEditing] = useState(null);
   const [savingDocente, setSavingDocente] = useState(false);
   const [docenteError, setDocenteError] = useState('');
+  const docenteCrudSchoolRef = useRef(null);
   const [periodForm, setPeriodForm] = useState({
     nombre: 'Periodo 1',
     startDay: 1, startMonth: 1, startYear: 2025, startHour: 0, startMinute: 0,
@@ -222,17 +230,6 @@ export default function HomeScreen() {
     setCursoNombre('');
   };
 
-  const loadCursosDocente = async () => {
-    setLoadingCursos(true);
-    try {
-      const cursos = await getCursos();
-      setCursosDocente(cursos);
-      return cursos;
-    } finally {
-      setLoadingCursos(false);
-    }
-  };
-
   const loadEstudiantesPorCurso = async (cursoId) => {
     if (!cursoId) {
       setEstudiantes([]);
@@ -278,9 +275,15 @@ export default function HomeScreen() {
 
   const closeCursosModalDocente = () => {
     setCursoDocModalVisible(false);
-    setCursoFormVisible(false);
-    setCursoEditing(null);
-    setCursoNombre('');
+    setCursoDocPickerOpen(false);
+    setCursoDocColegioId(null);
+    setMostrarAsignadorCursoDoc(false);
+    setCursoDocCursos([]);
+    setDocentes([]);
+    setCursosAsignados([]);
+    setAsignacionCursosDocente({});
+    setSavingAsignacionDocenteId(null);
+    cursoDocSchoolRef.current = null;
   };
 
   const openColegiosModal = async () => {
@@ -362,10 +365,108 @@ export default function HomeScreen() {
     }
   };
 
+  const buildAsignacionesDocenteMap = (docs = []) => {
+    const map = {};
+    docs.forEach((d) => {
+      map[d.id] = (d.cursos || []).map(c => c.id);
+    });
+    return map;
+  };
+
+  const mergeAsignacionesDocente = (docs = []) => {
+    const nextMap = buildAsignacionesDocenteMap(docs);
+    setAsignacionCursosDocente(prev => ({ ...prev, ...nextMap }));
+  };
+
+  const loadCursoDocDataExact = async (schoolId) => {
+    const targetSchoolId = Number(schoolId);
+    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return { cursos: [], docs: [] };
+    setLoadingCursos(true);
+    setDocentesError('');
+    try {
+      const [cursos, docs] = await Promise.all([
+        getCursos({ schoolId: targetSchoolId }),
+        getDocentes({ schoolId: targetSchoolId })
+      ]);
+      if (Number(cursoDocSchoolRef.current) !== targetSchoolId) return { cursos: [], docs: [] };
+      setCursoDocCursos(cursos || []);
+      setDocentes(docs || []);
+      mergeAsignacionesDocente(docs || []);
+      return { cursos: cursos || [], docs: docs || [] };
+    } catch (e) {
+      setCursoDocCursos([]);
+      setDocentes([]);
+      setDocentesError(e?.response?.data?.error || e?.message || 'No se pudieron cargar cursos/docentes');
+      return { cursos: [], docs: [] };
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const loadDataCursoDocBySchool = async (schoolId) => {
+    return loadCursoDocDataExact(schoolId);
+  };
+
+  const openCursoDocentesModal = async () => {
+    setCursoDocModalVisible(true);
+    setCursoDocPickerOpen(false);
+    setCursoDocColegioId(null);
+    setMostrarAsignadorCursoDoc(false);
+    setCursoDocCursos([]);
+    setDocentes([]);
+    setCursosAsignados([]);
+    setAsignacionCursosDocente({});
+    setDocentesError('');
+    cursoDocSchoolRef.current = null;
+    const userSchoolOption = user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : [];
+    setColegiosOptions(userSchoolOption);
+    const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
+    const defaultSchoolId = user?.schoolId || colegios?.[0]?.id || null;
+    if (defaultSchoolId) {
+      await changeCursoDocColegio(defaultSchoolId);
+    }
+  };
+
+  const changeCursoDocColegio = async (newSchoolId) => {
+    const targetSchoolId = Number(newSchoolId);
+    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return;
+    cursoDocSchoolRef.current = targetSchoolId;
+    setCursoDocColegioId(targetSchoolId);
+    setCursoDocPickerOpen(false);
+    setMostrarAsignadorCursoDoc(true);
+    await loadDataCursoDocBySchool(targetSchoolId);
+  };
+
+  const toggleCursoDocenteAsignacion = (docenteId, cursoId) => {
+    setAsignacionCursosDocente((prev) => {
+      const current = prev[docenteId] || [];
+      const next = current.includes(cursoId)
+        ? current.filter(id => id !== cursoId)
+        : [...current, cursoId];
+      return { ...prev, [docenteId]: next };
+    });
+  };
+
+  const guardarAsignacionDocente = async (docenteId) => {
+    const cursoIds = asignacionCursosDocente[docenteId] || [];
+    const schoolId = Number(cursoDocColegioId);
+    if (!Number.isFinite(schoolId) || schoolId <= 0) return;
+    setSavingAsignacionDocenteId(docenteId);
+    try {
+      await updateDocente(docenteId, { cursoIds, schoolId });
+      await loadCursoDocDataExact(schoolId);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar la asignacion');
+    } finally {
+      setSavingAsignacionDocenteId(null);
+    }
+  };
+
   const openDocenteCrudModal = async () => {
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteCursos([]);
+    setDocenteCursosDisponibles([]);
     setDocenteColegioId(user?.schoolId || null);
     setDocenteError('');
     setColegioPickerOpen(false);
@@ -376,7 +477,8 @@ export default function HomeScreen() {
       const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
       const defaultSchool = user?.schoolId || colegios?.[0]?.id || null;
       setDocenteColegioId(defaultSchool);
-      await Promise.all([loadCursosAsignados(defaultSchool), loadDocentesActual(defaultSchool)]);
+      docenteCrudSchoolRef.current = Number(defaultSchool) || null;
+      await Promise.all([loadCursosDisponiblesDocente(defaultSchool), loadDocentesActual(defaultSchool)]);
     } finally {
       setLoadingCursos(false);
     }
@@ -387,8 +489,23 @@ export default function HomeScreen() {
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteCursos([]);
+    setDocenteCursosDisponibles([]);
     setDocenteColegioId(null);
     setDocenteError('');
+    docenteCrudSchoolRef.current = null;
+  };
+
+  const loadCursosDisponiblesDocente = async (schoolIdParam = null) => {
+    const parsedSchoolId = Number(schoolIdParam || docenteColegioId || user?.schoolId);
+    if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) {
+      setDocenteCursosDisponibles([]);
+      return [];
+    }
+    const targetSchoolId = parsedSchoolId;
+    const cursos = await getCursos({ schoolId: parsedSchoolId });
+    if (Number(docenteCrudSchoolRef.current) !== targetSchoolId) return [];
+    setDocenteCursosDisponibles(cursos || []);
+    return cursos || [];
   };
 
   const toggleDocenteCurso = (cursoId) => {
@@ -396,11 +513,15 @@ export default function HomeScreen() {
   };
 
   const changeDocenteColegio = async (newId) => {
-    setDocenteColegioId(newId);
+    const parsedSchoolId = Number(newId);
+    if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
+    setDocenteColegioId(parsedSchoolId);
     setDocenteCursos([]);
+    setDocenteCursosDisponibles([]);
+    docenteCrudSchoolRef.current = parsedSchoolId;
     setLoadingCursos(true);
     try {
-      await Promise.all([loadCursosAsignados(newId), loadDocentesActual(newId)]);
+      await Promise.all([loadCursosDisponiblesDocente(parsedSchoolId), loadDocentesActual(parsedSchoolId)]);
     } finally {
       setLoadingCursos(false);
     }
@@ -409,12 +530,14 @@ export default function HomeScreen() {
   const startEditDocente = async (docente) => {
     setDocenteEditing(docente);
     setDocenteForm({ nombre: docente.nombre || '', email: docente.email || '', password: '' });
-    setDocenteColegioId(docente.schoolId || user?.schoolId || null);
+    const targetSchoolId = Number(docente.schoolId || user?.schoolId || null);
+    setDocenteColegioId(targetSchoolId);
+    docenteCrudSchoolRef.current = Number.isFinite(targetSchoolId) ? targetSchoolId : null;
     setDocenteCrudModalVisible(true);
     setLoadingCursos(true);
     try {
-      await loadCursosAsignados(docente.schoolId || user?.schoolId || null);
-      await loadDocentesActual(docente.schoolId || user?.schoolId || null);
+      await loadCursosDisponiblesDocente(targetSchoolId);
+      await loadDocentesActual(targetSchoolId);
       setDocenteCursos((docente.cursos || []).map(c => c.id));
     } finally {
       setLoadingCursos(false);
@@ -524,7 +647,6 @@ export default function HomeScreen() {
       const data = await getDocentes({ schoolId });
       setDocentes(data);
       setColegioSeleccionado(schoolId);
-      setCursosDocente(data.flatMap(d => d.cursos || []));
       setColegiosOptions(prev => {
         const exists = prev.some(opt => String(opt.id) === String(schoolId));
         if (exists) return prev;
@@ -710,25 +832,17 @@ export default function HomeScreen() {
             <Text style={styles.actionBtnText}>Activar periodos</Text>
           </View>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]}
-          onPress={async () => {
-            try {
-              setLoadingCursos(true);
-              await loadCursosDocente();
-              setCursoDocModalVisible(true);
-            } catch (e) {
-              Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar tus cursos');
-            } finally {
-              setLoadingCursos(false);
-            }
-          }}
-        >
-          <View style={styles.btnRow}>
-            <Ionicons name="folder-open-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Cursos docentes</Text>
-          </View>
-        </TouchableOpacity>
+        {canManageCourses ? (
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]}
+            onPress={openCursoDocentesModal}
+          >
+            <View style={styles.btnRow}>
+              <Ionicons name="folder-open-outline" size={18} color="#fff" />
+              <Text style={styles.actionBtnText}>Cursos docentes</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
@@ -1169,10 +1283,10 @@ export default function HomeScreen() {
               <View style={styles.dataBox}>
                 {loadingCursos ? (
                   <Text style={styles.dataBullet}>Cargando cursos...</Text>
-                ) : cursosAsignados.length === 0 ? (
+                ) : docenteCursosDisponibles.length === 0 ? (
                   <Text style={styles.dataBullet}>No hay cursos para asignar</Text>
                 ) : (
-                  cursosAsignados.map(c => {
+                  docenteCursosDisponibles.map(c => {
                     const checked = docenteCursos.includes(c.id);
                     return (
                       <Pressable
@@ -1270,30 +1384,101 @@ export default function HomeScreen() {
         onRequestClose={closeCursosModalDocente}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.modalCardWide]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Cursos asignados</Text>
+              <Text style={styles.periodTitle}>Asignar cursos a docentes</Text>
               <Pressable onPress={closeCursosModalDocente} style={styles.closeBtn}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
-            <Text style={styles.fieldLabel}>Docente: <Text style={styles.dataValue}>{user?.email || 'N/D'}</Text></Text>
-            <View style={styles.dataBox}>
-              {loadingCursos ? (
-                <Text style={styles.dataBullet}>Cargando cursos...</Text>
-              ) : cursosDocente.length === 0 ? (
-                <Text style={styles.dataBullet}>- No tienes cursos asignados</Text>
-              ) : (
-                cursosDocente.map((c) => (
-                  <View key={c.id} style={styles.courseRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.dataItem}>- {c.nombre}</Text>
-                      {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
-                    </View>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.fieldLabel}>Colegio</Text>
+              <TouchableOpacity
+                style={[styles.selectBoxFull]}
+                onPress={() => setCursoDocPickerOpen(prev => !prev)}
+                disabled={loadingCursos || colegiosLoading}
+              >
+                <Text style={styles.selectText}>{resolveColegioNombre(cursoDocColegioId || user?.schoolId)}</Text>
+              </TouchableOpacity>
+
+              {cursoDocPickerOpen && colegiosOptions.length > 0 ? (
+                <View style={styles.pickerList}>
+                  {colegiosOptions.map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.pickerItem, String(cursoDocColegioId) === String(c.id) && styles.pickerItemActive]}
+                      onPress={async () => {
+                        await changeCursoDocColegio(c.id);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+
+              {docentesError ? <Text style={styles.errorText}>{docentesError}</Text> : null}
+
+              {!mostrarAsignadorCursoDoc ? (
+                <View style={styles.dataBox}>
+                  <Text style={styles.dataBullet}>Selecciona un colegio para habilitar "Asignar cursos a docentes".</Text>
+                </View>
+              ) : null}
+
+              {mostrarAsignadorCursoDoc ? (
+                <View style={styles.dataBox}>
+                  <View style={styles.courseActionsRow}>
+                    <Text style={styles.dataTitle}>Asignar cursos a docentes</Text>
+                    <Ionicons name="checkmark-done-outline" size={18} color="#a7f3d0" />
                   </View>
-                ))
-              )}
-            </View>
+                  {loadingCursos ? (
+                    <Text style={styles.dataBullet}>Cargando docentes y cursos...</Text>
+                  ) : docentes.length === 0 ? (
+                    <Text style={styles.dataBullet}>No hay docentes para este colegio</Text>
+                  ) : (
+                    docentes.map((d) => (
+                      <View key={d.id} style={styles.periodItemRow}>
+                        <View style={{ flex: 1, gap: 6 }}>
+                          <Text style={styles.dataItem}>{d.nombre || d.email || `Docente ${d.id}`}</Text>
+                          {d.email ? <Text style={styles.dataBullet}>{d.email}</Text> : null}
+
+                          <View style={styles.dataBox}>
+                            {cursoDocCursos.length === 0 ? (
+                              <Text style={styles.dataBullet}>No hay cursos disponibles</Text>
+                            ) : (
+                              cursoDocCursos.map((c) => {
+                                const checked = (asignacionCursosDocente[d.id] || []).includes(c.id);
+                                return (
+                                  <Pressable
+                                    key={`${d.id}-${c.id}`}
+                                    style={[styles.pickerItem, { flexDirection: 'row', alignItems: 'center', gap: 10 }, checked && styles.pickerItemActive]}
+                                    onPress={() => toggleCursoDocenteAsignacion(d.id, c.id)}
+                                  >
+                                    <Ionicons name={checked ? 'checkbox-outline' : 'square-outline'} size={16} color="#e5e7eb" />
+                                    <Text style={styles.dataItem}>{c.nombre}</Text>
+                                  </Pressable>
+                                );
+                              })
+                            )}
+                          </View>
+
+                          <TouchableOpacity
+                            style={[styles.smallBtn, styles.createBtn, savingAsignacionDocenteId === d.id && { opacity: 0.6 }]}
+                            onPress={() => guardarAsignacionDocente(d.id)}
+                            disabled={savingAsignacionDocenteId === d.id}
+                          >
+                            <View style={styles.btnRow}>
+                              <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>{savingAsignacionDocenteId === d.id ? 'Guardando...' : 'Guardar asignacion'}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </View>
+              ) : null}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1564,6 +1749,7 @@ const styles = StyleSheet.create({
   logoutBtn: { marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
   logoutText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 }
 });
+
 
 
 

@@ -13,7 +13,8 @@ export default function LoginScreen() {
     try {
       await login(email, password);
     } catch (e) {
-      Alert.alert('Error de autenticacion', e?.response?.data?.message || e.message);
+      const apiError = e?.response?.data?.error || e?.response?.data?.message;
+      Alert.alert('Error de autenticacion', apiError || e.message);
     }
   };
 

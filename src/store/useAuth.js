@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
+const { create } = require('zustand');
 import { loginUser, logoutUser } from '../services/auth';
+import { getToken } from '../services/tokenStorage';
 
 export const useAuth = create((set) => ({
   user: null, loading: false, error: null,
@@ -11,10 +11,11 @@ export const useAuth = create((set) => ({
       set({ user: data.user, loading: false });
       return data.user;
     } catch (e) {
-      set({ error: e?.response?.data?.message || e.message, loading: false });
+      const apiError = e?.response?.data?.error || e?.response?.data?.message;
+      set({ error: apiError || e.message, loading: false });
       throw e;
     }
   },
   logout: async () => { await logoutUser(); set({ user: null }); },
-  restore: async () => { const token = await SecureStore.getItemAsync('token'); if(!token) set({ user: null }); }
+  restore: async () => { const token = await getToken(); if(!token) set({ user: null }); }
 }));

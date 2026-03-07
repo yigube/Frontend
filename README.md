@@ -2,12 +2,15 @@
 
 ## Pasos
 1) npm install
-2) npx expo install expo-camera expo-secure-store expo-file-system expo-constants expo-asset react-native-screens react-native-safe-area-context
-3) Crea `.env` (opcional en dev, requerido en produccion) con:
-   API_URL=http://<TU_IP_LAN>:4000
-4) npm start
+2) npx expo install expo-camera expo-secure-store expo-file-system expo-constants expo-asset react-native-screens react-native-safe-area-context react-dom react-native-web @expo/metro-runtime
+3) Crea `.env` y `.env.production` con:
+   EXPO_PUBLIC_API_URL=http://192.168.1.247:4000
+4) Mobile: `npm start` (o `npm run android` / `npm run ios`)
+5) Web: `npm run web`
 
 ## Notas
 - Android fisico: usa IP LAN (no localhost) y Expo en modo LAN. El front intenta detectar la IP de Metro; si falla, usa `10.0.2.2` (emulador) o `localhost`.
+- En web se usa `localStorage` para el token y en mobile `SecureStore`.
+- Si usas backend con CORS restringido, agrega el origen web (`http://localhost:8081` o el puerto que use Expo) a `CORS_ORIGINS`.
 - Interceptor Axios adjunta JWT automaticamente.
 - `attendance:created` se escucha en tiempo real.

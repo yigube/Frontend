@@ -1,12 +1,12 @@
 import { io } from 'socket.io-client';
-import * as SecureStore from 'expo-secure-store';
 import { API_URL } from './api';
+import { getToken } from './tokenStorage';
 
 let socket;
 
 export async function getSocket(){
   if (socket && socket.connected) return socket;
-  const token = await SecureStore.getItemAsync('token');
+  const token = await getToken();
   socket = io(API_URL, { transports:['websocket'], forceNew:true, reconnection:true, reconnectionAttempts:10, auth: token?{token}:undefined });
   socket.on('connect', ()=>console.log('[socket] connected:', socket.id));
   socket.on('disconnect', (r)=>console.log('[socket] disconnected:', r));

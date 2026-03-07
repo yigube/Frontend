@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+const { create } = require('zustand');
 import { getSocket } from '../services/socket';
 
 export const useAttendance = create((set) => ({

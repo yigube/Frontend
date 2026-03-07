@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import { View, Text, TouchableOpacity, Alert, StyleSheet, Platform } from 'react-native';
 import { api } from '../services/api';
 import ScreenBackground from '../components/ScreenBackground';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +10,22 @@ export default function ReportesScreen() {
   const descargar = async () => {
     try {
       setDownloading(true);
+      if (Platform.OS === 'web') {
+        const res = await api.get('/reportes/asistencias.csv', { responseType: 'blob' });
+        const blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: 'text/csv;charset=utf-8;' });
+        const blobUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = `asistencias-${Date.now()}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(blobUrl);
+        Alert.alert('Reporte descargado', 'El archivo CSV fue descargado en tu navegador.');
+        return;
+      }
+
+      const FileSystem = await import('expo-file-system');
       const url = `${api.defaults.baseURL}/reportes/asistencias.csv`;
       const target = FileSystem.documentDirectory + 'asistencias.csv';
       const res = await FileSystem.downloadAsync(url, target);
