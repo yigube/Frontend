@@ -5,6 +5,11 @@ export async function getCursos(params = {}) {
   return data || [];
 }
 
+export async function getCursosPorColegio(schoolId) {
+  const { data } = await api.get(`/colegios/${schoolId}/cursos`);
+  return data || [];
+}
+
 export async function createCurso(payload) {
   const { data } = await api.post('/cursos', payload);
   return data;

@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ export default function LoginScreen() {
   const { control, handleSubmit } = useForm({ defaultValues: { email: '', password: '' } });
   const login = useAuth(s => s.login);
   const loading = useAuth(s => s.loading);
+  const [showPassword, setShowPassword] = useState(false);
 
   const onSubmit = async ({ email, password }) => {
     try {
@@ -45,13 +46,22 @@ export default function LoginScreen() {
           name="password"
           rules={{ required: 'Requerido' }}
           render={({ field: { onChange, value } }) => (
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="******"
-              value={value}
-              onChangeText={onChange}
-            />
+            <View style={styles.passwordWrap}>
+              <TextInput
+                style={styles.passwordInput}
+                secureTextEntry={!showPassword}
+                placeholder="******"
+                value={value}
+                onChangeText={onChange}
+              />
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                style={styles.eyeBtn}
+                accessibilityRole="button"
+              >
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#374151" />
+              </TouchableOpacity>
+            </View>
           )}
         />
         <TouchableOpacity
@@ -76,6 +86,9 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700', marginBottom: 4, textAlign: 'center', color: '#111' },
   label: { fontWeight: '600', color: '#222' },
   input: { borderWidth: 1, borderColor: '#d9d9d9', borderRadius: 8, padding: 10, backgroundColor: '#fff' },
+  passwordWrap: { borderWidth: 1, borderColor: '#d9d9d9', borderRadius: 8, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center' },
+  passwordInput: { flex: 1, padding: 10 },
+  eyeBtn: { paddingHorizontal: 10, paddingVertical: 8 },
   loginBtn: { marginTop: 6, backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   loginBtnText: { color: '#fff', fontWeight: '700' },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }

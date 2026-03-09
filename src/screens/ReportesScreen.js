@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet, Platform } from 'react-native';
-import { api } from '../services/api';
+import { api, getApiBaseUrl } from '../services/api';
 import ScreenBackground from '../components/ScreenBackground';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -26,7 +26,8 @@ export default function ReportesScreen() {
       }
 
       const FileSystem = await import('expo-file-system');
-      const url = `${api.defaults.baseURL}/reportes/asistencias.csv`;
+      const baseUrl = await getApiBaseUrl();
+      const url = `${baseUrl}/reportes/asistencias.csv`;
       const target = FileSystem.documentDirectory + 'asistencias.csv';
       const res = await FileSystem.downloadAsync(url, target);
       Alert.alert('Reporte descargado', `Ruta: ${res.uri}`);

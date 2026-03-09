@@ -5,9 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
-import { getCursos, createCurso, updateCurso, deleteCurso } from '../services/cursos';
+import { getCursos, getCursosPorColegio, createCurso, updateCurso, deleteCurso } from '../services/cursos';
 import { getEstudiantes } from '../services/estudiantes';
-import { getDocentes, createDocente, updateDocente, deleteDocente } from '../services/docentes';
+import { getDocentes, getCursosDisponiblesDocente, createDocente, updateDocente, deleteDocente } from '../services/docentes';
 import { getColegios, createColegio, updateColegio, deleteColegio } from '../services/colegios';
 
 export default function HomeScreen() {
@@ -20,6 +20,10 @@ export default function HomeScreen() {
   const [periodModalVisible, setPeriodModalVisible] = useState(false);
   const [editingPeriodo, setEditingPeriodo] = useState(null);
   const [savingPeriodo, setSavingPeriodo] = useState(false);
+  const [periodFeedback, setPeriodFeedback] = useState({ type: '', message: '' });
+  const [periodStatusModal, setPeriodStatusModal] = useState({ visible: false, message: '' });
+  const [deletePeriodModal, setDeletePeriodModal] = useState({ visible: false, id: null });
+  const periodStatusTimeoutRef = useRef(null);
   const [quickModal, setQuickModal] = useState(null);
   const [cursoDocModalVisible, setCursoDocModalVisible] = useState(false);
   const [cursosAsignados, setCursosAsignados] = useState([]);
@@ -31,6 +35,9 @@ export default function HomeScreen() {
   const [savingAsignacionDocenteId, setSavingAsignacionDocenteId] = useState(null);
   const cursoDocSchoolRef = useRef(null);
   const [cursosModalVisible, setCursosModalVisible] = useState(false);
+  const [deleteCursoModal, setDeleteCursoModal] = useState({ visible: false, curso: null });
+  const [cursoCrudColegioId, setCursoCrudColegioId] = useState(null);
+  const [cursoCrudPickerOpen, setCursoCrudPickerOpen] = useState(false);
   const [loadingCursos, setLoadingCursos] = useState(false);
   const [cursoFormVisible, setCursoFormVisible] = useState(false);
   const [cursoNombre, setCursoNombre] = useState('');
@@ -53,6 +60,9 @@ export default function HomeScreen() {
   const [colegiosModalVisible, setColegiosModalVisible] = useState(false);
   const [colegiosList, setColegiosList] = useState([]);
   const [colegioNombre, setColegioNombre] = useState('');
+  const [colegioCodigoDane, setColegioCodigoDane] = useState('');
+  const [deleteColegioModal, setDeleteColegioModal] = useState({ visible: false, colegio: null });
+  const [daneExistsModal, setDaneExistsModal] = useState({ visible: false, message: '' });
   const [colegioEditing, setColegioEditing] = useState(null);
   const [savingColegio, setSavingColegio] = useState(false);
   const [colegiosError, setColegiosError] = useState('');
@@ -64,28 +74,68 @@ export default function HomeScreen() {
   const [docenteEditing, setDocenteEditing] = useState(null);
   const [savingDocente, setSavingDocente] = useState(false);
   const [docenteError, setDocenteError] = useState('');
+  const [deleteDocenteModal, setDeleteDocenteModal] = useState({ visible: false, docente: null });
   const docenteCrudSchoolRef = useRef(null);
-  const [periodForm, setPeriodForm] = useState({
-    nombre: 'Periodo 1',
-    startDay: 1, startMonth: 1, startYear: 2025, startHour: 0, startMinute: 0,
-    endDay: 30, endMonth: 1, endYear: 2025, endHour: 23, endMinute: 59
-  });
+  const createDefaultPeriodForm = () => {
+    const now = new Date();
+    const end = new Date(now);
+    end.setDate(end.getDate() + 30);
+    return {
+      nombre: `Periodo ${periodos.length + 1 || 1}`,
+      startDay: now.getDate(),
+      startMonth: now.getMonth() + 1,
+      startYear: now.getFullYear(),
+      startHour: 0,
+      startMinute: 0,
+      endDay: end.getDate(),
+      endMonth: end.getMonth() + 1,
+      endYear: end.getFullYear(),
+      endHour: 23,
+      endMinute: 59
+    };
+  };
+  const [periodForm, setPeriodForm] = useState(() => createDefaultPeriodForm());
 
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
-  const years = Array.from({ length: 6 }, (_, i) => 2025 + i);
+  const currentYear = new Date().getFullYear();
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes = Array.from({ length: 60 }, (_, i) => i);
   const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const getApiErrorMessage = (e, fallback) => {
+    const apiError = e?.response?.data?.error;
+    if (apiError) return apiError;
+    const validationErrors = e?.response?.data?.errors;
+    if (Array.isArray(validationErrors) && validationErrors.length > 0) {
+      return validationErrors[0]?.msg || fallback;
+    }
+    return e?.message || fallback;
+  };
+
+  const clearPeriodStatusTimeout = () => {
+    if (!periodStatusTimeoutRef.current) return;
+    clearTimeout(periodStatusTimeoutRef.current);
+    periodStatusTimeoutRef.current = null;
+  };
+
+  const showPeriodStatusModal = (message) => {
+    clearPeriodStatusTimeout();
+    setPeriodStatusModal({ visible: true, message });
+    periodStatusTimeoutRef.current = setTimeout(() => {
+      setPeriodStatusModal({ visible: false, message: '' });
+      periodStatusTimeoutRef.current = null;
+    }, 2000);
+  };
 
   const parseDateParts = (iso) => {
-    if (!iso) return { day: 1, month: 1, year: 2025 };
+    if (!iso) return { day: 1, month: 1, year: currentYear };
     const [datePart] = iso.split('T');
     const [year, month, day] = datePart.split('-').map(n => parseInt(n, 10));
     return {
       day: Number.isFinite(day) ? day : 1,
       month: Number.isFinite(month) ? month : 1,
-      year: Number.isFinite(year) ? year : 2025
+      year: Number.isFinite(year) ? year : currentYear
     };
   };
 
@@ -101,14 +151,35 @@ export default function HomeScreen() {
     try {
       const data = await getPeriodos();
       setPeriodos(data);
+      return data;
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los periodos');
+      return [];
     }
   };
 
   useEffect(() => { loadPeriodos(); }, []);
+  useEffect(() => () => clearPeriodStatusTimeout(), []);
+
+  const sortPeriodos = (list) => [...(list || [])].sort((a, b) => {
+    const aDate = new Date(a?.fechaInicio || 0).getTime();
+    const bDate = new Date(b?.fechaInicio || 0).getTime();
+    if (aDate !== bDate) return aDate - bDate;
+    return Number(a?.id || 0) - Number(b?.id || 0);
+  });
+
+  const normalizePeriodosNames = async (list) => {
+    const ordered = sortPeriodos(list);
+    const updates = ordered
+      .map((p, idx) => ({ id: p.id, nombre: `Periodo ${idx + 1}`, currentName: (p.nombre || '').trim() }))
+      .filter((item) => item.currentName !== item.nombre)
+      .map((item) => updatePeriodo(item.id, { nombre: item.nombre }));
+    if (updates.length > 0) await Promise.all(updates);
+    return updates.length;
+  };
 
   const openPeriodModal = (periodo = null) => {
+    setPeriodFeedback({ type: '', message: '' });
     if (periodo) {
       const ini = parseDateParts(periodo.fechaInicio);
       const fin = parseDateParts(periodo.fechaFin);
@@ -119,11 +190,7 @@ export default function HomeScreen() {
       });
       setEditingPeriodo(periodo);
     } else {
-      setPeriodForm({
-        nombre: `Periodo ${periodos.length + 1 || 1}`,
-        startDay: 1, startMonth: 1, startYear: 2025, startHour: 0, startMinute: 0,
-        endDay: 30, endMonth: 1, endYear: 2025, endHour: 23, endMinute: 59
-      });
+      setPeriodForm(createDefaultPeriodForm());
       setEditingPeriodo(null);
     }
     setPeriodModalVisible(true);
@@ -141,38 +208,79 @@ export default function HomeScreen() {
       }),
       activo: true
     };
+    setPeriodFeedback({ type: '', message: '' });
     setSavingPeriodo(true);
     try {
       if (editingPeriodo) {
         await updatePeriodo(editingPeriodo.id, payload);
+        showPeriodStatusModal('Periodo actualizado');
+        setEditingPeriodo(null);
+        setPeriodForm(createDefaultPeriodForm());
       } else {
         await createPeriodo(payload);
+        showPeriodStatusModal('Periodo creado');
       }
       await loadPeriodos();
-      setPeriodModalVisible(false);
     } catch (e) {
+      setPeriodFeedback({ type: 'error', message: e?.response?.data?.error || 'No se pudo guardar el periodo' });
       Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el periodo');
     } finally {
       setSavingPeriodo(false);
     }
   };
 
+  const askDeletePeriod = (id) => {
+    setDeletePeriodModal({ visible: true, id });
+  };
+
   const handleDeletePeriod = async (id) => {
-    Alert.alert('Eliminar periodo', 'Quieres eliminar este periodo?', [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deletePeriodo(id);
-            await loadPeriodos();
-          } catch (e) {
-            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar');
-          }
-        }
+    if (!id) return;
+    setDeletePeriodModal({ visible: false, id: null });
+    try {
+      await deletePeriodo(id);
+      const loaded = await loadPeriodos();
+      const normalizedCount = await normalizePeriodosNames(loaded);
+      const finalList = normalizedCount > 0 ? await loadPeriodos() : loaded;
+      const ordered = sortPeriodos(finalList);
+      const first = ordered[0];
+      setEditingPeriodo(null);
+      if (first) {
+        const ini = parseDateParts(first.fechaInicio);
+        const fin = parseDateParts(first.fechaFin);
+        setPeriodForm({
+          nombre: `Periodo ${ordered.length + 1}`,
+          startDay: ini.day,
+          startMonth: ini.month,
+          startYear: ini.year,
+          startHour: 0,
+          startMinute: 0,
+          endDay: fin.day,
+          endMonth: fin.month,
+          endYear: fin.year,
+          endHour: 23,
+          endMinute: 59
+        });
+      } else {
+        const now = new Date();
+        const end = new Date(now);
+        end.setDate(end.getDate() + 30);
+        setPeriodForm({
+          nombre: 'Periodo 1',
+          startDay: now.getDate(),
+          startMonth: now.getMonth() + 1,
+          startYear: now.getFullYear(),
+          startHour: 0,
+          startMinute: 0,
+          endDay: end.getDate(),
+          endMonth: end.getMonth() + 1,
+          endYear: end.getFullYear(),
+          endHour: 23,
+          endMinute: 59
+        });
       }
-    ]);
+    } catch (e) {
+      Alert.alert('Error', getApiErrorMessage(e, 'No se pudo eliminar'));
+    }
   };
 
   const startSelect = (key, value) => setPeriodForm(prev => ({ ...prev, [key]: value }));
@@ -212,9 +320,15 @@ export default function HomeScreen() {
     setCursoFormVisible(false);
     setCursoEditing(null);
     setCursoNombre('');
+    setCursoCrudPickerOpen(false);
     setLoadingCursos(true);
     try {
-      await loadCursosAsignados();
+      const userSchoolOption = user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : [];
+      setColegiosOptions(userSchoolOption);
+      const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
+      const defaultSchoolId = user?.schoolId || colegios?.[0]?.id || null;
+      setCursoCrudColegioId(defaultSchoolId);
+      await loadCursosAsignados(defaultSchoolId);
       setCursosModalVisible(true);
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
@@ -228,6 +342,24 @@ export default function HomeScreen() {
     setCursoFormVisible(false);
     setCursoEditing(null);
     setCursoNombre('');
+    setCursoCrudColegioId(null);
+    setCursoCrudPickerOpen(false);
+  };
+
+  const changeCursoCrudColegio = async (newSchoolId) => {
+    const parsedSchoolId = Number(newSchoolId);
+    if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
+    setCursoCrudColegioId(parsedSchoolId);
+    setCursoCrudPickerOpen(false);
+    setCursoFormVisible(false);
+    setCursoEditing(null);
+    setCursoNombre('');
+    setLoadingCursos(true);
+    try {
+      await loadCursosAsignados(parsedSchoolId);
+    } finally {
+      setLoadingCursos(false);
+    }
   };
 
   const loadEstudiantesPorCurso = async (cursoId) => {
@@ -289,6 +421,7 @@ export default function HomeScreen() {
   const openColegiosModal = async () => {
     setColegioEditing(null);
     setColegioNombre('');
+    setColegioCodigoDane('');
     setColegiosError('');
     setColegiosModalVisible(true);
     await loadColegios();
@@ -298,53 +431,59 @@ export default function HomeScreen() {
     setColegiosModalVisible(false);
     setColegioEditing(null);
     setColegioNombre('');
+    setColegioCodigoDane('');
     setColegiosError('');
   };
 
   const startEditColegio = (colegio) => {
     setColegioEditing(colegio);
     setColegioNombre(colegio?.nombre || '');
+    setColegioCodigoDane(colegio?.codigoDane || colegio?.codigo_dane || '');
   };
 
   const handleSaveColegio = async () => {
     const nombre = colegioNombre.trim();
+    const codigoDane = colegioCodigoDane.trim();
     if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el colegio');
     setSavingColegio(true);
     try {
       if (colegioEditing) {
-        await updateColegio(colegioEditing.id, { nombre });
+        await updateColegio(colegioEditing.id, { nombre, codigoDane });
       } else {
-        await createColegio({ nombre });
+        await createColegio({ nombre, codigoDane });
       }
       await loadColegios();
       setColegioEditing(null);
       setColegioNombre('');
+      setColegioCodigoDane('');
     } catch (e) {
-      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el colegio');
+      const apiError = e?.response?.data?.error || e?.message || 'No se pudo guardar el colegio';
+      if (String(apiError).toLowerCase().includes('codigo dane ya existe')) {
+        setDaneExistsModal({ visible: true, message: 'El codigo DANE ya existe. Ingresa uno diferente.' });
+      } else {
+        Alert.alert('Error', apiError);
+      }
     } finally {
       setSavingColegio(false);
     }
   };
 
-  const handleDeleteColegio = (colegio) => {
-    Alert.alert('Eliminar colegio', `Vas a eliminar "${colegio.nombre || 'este colegio'}"`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: async () => {
-          setColegiosLoading(true);
-          try {
-            await deleteColegio(colegio.id);
-            await loadColegios();
-          } catch (e) {
-            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el colegio');
-          } finally {
-            setColegiosLoading(false);
-          }
-        }
-      }
-    ]);
+  const askDeleteColegio = (colegio) => {
+    setDeleteColegioModal({ visible: true, colegio });
+  };
+
+  const handleDeleteColegio = async (colegio) => {
+    if (!colegio?.id) return;
+    setDeleteColegioModal({ visible: false, colegio: null });
+    setColegiosLoading(true);
+    try {
+      await deleteColegio(colegio.id);
+      await loadColegios();
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el colegio');
+    } finally {
+      setColegiosLoading(false);
+    }
   };
 
   const loadDocentesActual = async (schoolIdParam = null) => {
@@ -384,14 +523,28 @@ export default function HomeScreen() {
     setLoadingCursos(true);
     setDocentesError('');
     try {
-      const [cursos, docs] = await Promise.all([
-        getCursos({ schoolId: targetSchoolId }),
+      const [cursosResult, docsResult] = await Promise.allSettled([
+        getCursosDisponiblesDocente({ schoolId: targetSchoolId }),
         getDocentes({ schoolId: targetSchoolId })
       ]);
+      const cursos = cursosResult.status === 'fulfilled' ? (cursosResult.value || []) : [];
+      const docs = docsResult.status === 'fulfilled' ? (docsResult.value || []) : [];
       if (Number(cursoDocSchoolRef.current) !== targetSchoolId) return { cursos: [], docs: [] };
       setCursoDocCursos(cursos || []);
       setDocentes(docs || []);
       mergeAsignacionesDocente(docs || []);
+
+      if (docsResult.status === 'rejected' || cursosResult.status === 'rejected') {
+        const cursosError = cursosResult.status === 'rejected' ? cursosResult.reason : null;
+        const docsError = docsResult.status === 'rejected' ? docsResult.reason : null;
+        const message = docsError?.response?.data?.error
+          || cursosError?.response?.data?.error
+          || docsError?.message
+          || cursosError?.message
+          || 'No se pudieron cargar todos los datos';
+        setDocentesError(message);
+      }
+
       return { cursos: cursos || [], docs: docs || [] };
     } catch (e) {
       setCursoDocCursos([]);
@@ -502,11 +655,32 @@ export default function HomeScreen() {
       return [];
     }
     const targetSchoolId = parsedSchoolId;
-    const cursos = await getCursos({ schoolId: parsedSchoolId });
-    if (Number(docenteCrudSchoolRef.current) !== targetSchoolId) return [];
-    setDocenteCursosDisponibles(cursos || []);
-    return cursos || [];
+    try {
+      let cursos = [];
+      try {
+        cursos = await getCursosPorColegio(parsedSchoolId);
+      } catch {
+        cursos = await getCursosDisponiblesDocente({ schoolId: parsedSchoolId });
+      }
+      if (Number(docenteCrudSchoolRef.current) !== targetSchoolId) return [];
+      setDocenteError('');
+      setDocenteCursosDisponibles(cursos || []);
+      return cursos || [];
+    } catch (e) {
+      if (Number(docenteCrudSchoolRef.current) === targetSchoolId) {
+        setDocenteCursosDisponibles([]);
+        setDocenteError(e?.response?.data?.error || e?.message || 'No se pudieron cargar los cursos');
+      }
+      return [];
+    }
   };
+
+  useEffect(() => {
+    const parsedSchoolId = Number(docenteColegioId);
+    if (!docenteCrudModalVisible || !Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
+    docenteCrudSchoolRef.current = parsedSchoolId;
+    loadCursosDisponiblesDocente(parsedSchoolId);
+  }, [docenteCrudModalVisible, docenteColegioId]);
 
   const toggleDocenteCurso = (cursoId) => {
     setDocenteCursos(prev => prev.includes(cursoId) ? prev.filter(id => id !== cursoId) : [...prev, cursoId]);
@@ -545,11 +719,33 @@ export default function HomeScreen() {
   };
 
   const handleSaveDocente = async () => {
-    const nombre = docenteForm.nombre.trim();
+    const nombreInput = docenteForm.nombre.trim();
     const email = docenteForm.email.trim();
     const password = docenteForm.password;
-    if (!nombre || !email || (!docenteEditing && !password)) {
-      return Alert.alert('Faltan datos', 'Nombre, correo y contraseÃ±a son requeridos para crear un docente');
+    const nombreInferido = email.includes('@') ? email.split('@')[0] : '';
+    const nombre = nombreInput || nombreInferido;
+
+    setDocenteError('');
+
+    if (!email || (!docenteEditing && !password)) {
+      setDocenteError('Correo y contrasena son requeridos para crear un docente');
+      return;
+    }
+
+    if ((!docenteEditing && password.length < 4) || (docenteEditing && password && password.length < 4)) {
+      setDocenteError('La contrasena debe tener minimo 4 caracteres');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setDocenteError('Ingresa un correo valido');
+      return;
+    }
+
+    if (!nombre) {
+      setDocenteError('Nombre requerido');
+      return;
     }
     const payload = { nombre, email, cursoIds: docenteCursos, schoolId: docenteColegioId || user?.schoolId };
     if (docenteEditing) {
@@ -565,36 +761,38 @@ export default function HomeScreen() {
       } else {
         await createDocente(payload);
       }
-      await loadDocentesActual();
+      await loadDocentesActual(payload.schoolId);
       setDocenteForm({ nombre: '', email: '', password: '' });
       setDocenteCursos([]);
       setDocenteEditing(null);
     } catch (e) {
-      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el docente');
+      const rawMessage = getApiErrorMessage(e, 'No se pudo guardar el docente');
+      const message = String(rawMessage).toLowerCase().includes('validation')
+        ? 'No se pudo guardar. Verifica que el correo no este en uso'
+        : rawMessage;
+      setDocenteError(message);
+      Alert.alert('Error', message);
     } finally {
       setSavingDocente(false);
     }
   };
 
-  const handleDeleteDocente = (docente) => {
-    Alert.alert('Eliminar docente', `Vas a eliminar "${docente.nombre || docente.email || 'este docente'}"`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: async () => {
-          setDocentesLoading(true);
-          try {
-            await deleteDocente(docente.id);
-            await loadDocentesActual();
-          } catch (e) {
-            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el docente');
-          } finally {
-            setDocentesLoading(false);
-          }
-        }
-      }
-    ]);
+  const askDeleteDocente = (docente) => {
+    setDeleteDocenteModal({ visible: true, docente });
+  };
+
+  const handleDeleteDocente = async (docente) => {
+    if (!docente?.id) return;
+    setDeleteDocenteModal({ visible: false, docente: null });
+    setDocentesLoading(true);
+    try {
+      await deleteDocente(docente.id);
+      await loadDocentesActual(docenteColegioId || user?.schoolId);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el docente');
+    } finally {
+      setDocentesLoading(false);
+    }
   };
 
   const loadColegios = async ({ preferId = null, preferName } = {}) => {
@@ -604,17 +802,11 @@ export default function HomeScreen() {
       const data = await getColegios();
       setColegiosList(data || []);
       const mapped = data.map(c => ({ id: c.id, nombre: c.nombre || `Colegio ${c.id}` }));
-      let merged = [];
-      setColegiosOptions(prev => {
-        merged = [...prev];
-        const addIfMissing = (item) => {
-          if (!item?.id) return;
-          if (!merged.some(o => String(o.id) === String(item.id))) merged.push(item);
-        };
-        mapped.forEach(addIfMissing);
-        if (preferId) addIfMissing({ id: preferId, nombre: preferName || `Colegio ${preferId}` });
-        return merged;
-      });
+      const merged = [...mapped];
+      if (preferId && !merged.some(o => String(o.id) === String(preferId))) {
+        merged.push({ id: preferId, nombre: preferName || `Colegio ${preferId}` });
+      }
+      setColegiosOptions(merged);
       const firstId = preferId || merged[0]?.id || null;
       if (!colegioSeleccionado && firstId) {
         setColegioSeleccionado(firstId);
@@ -695,15 +887,19 @@ export default function HomeScreen() {
   const handleSaveCurso = async () => {
     const nombre = cursoNombre.trim();
     if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el curso');
+    const schoolId = Number(cursoCrudColegioId || user?.schoolId);
+    if (!Number.isFinite(schoolId) || schoolId <= 0) {
+      return Alert.alert('Colegio requerido', 'Selecciona un colegio antes de guardar el curso');
+    }
     setSavingCurso(true);
     setLoadingCursos(true);
     try {
       if (cursoEditing) {
-        await updateCurso(cursoEditing.id, { nombre });
+        await updateCurso(cursoEditing.id, { nombre, schoolId });
       } else {
-        await createCurso({ nombre });
+        await createCurso({ nombre, schoolId });
       }
-      await loadCursosAsignados();
+      await loadCursosAsignados(schoolId);
       setCursoFormVisible(false);
       setCursoEditing(null);
       setCursoNombre('');
@@ -715,25 +911,22 @@ export default function HomeScreen() {
     }
   };
 
-  const handleDeleteCurso = (curso) => {
-    Alert.alert('Eliminar curso', `Vas a eliminar "${curso.nombre}"`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            setLoadingCursos(true);
-            await deleteCurso(curso.id);
-            await loadCursosAsignados();
-          } catch (e) {
-            Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el curso');
-          } finally {
-            setLoadingCursos(false);
-          }
-        }
-      }
-    ]);
+  const askDeleteCurso = (curso) => {
+    setDeleteCursoModal({ visible: true, curso });
+  };
+
+  const handleDeleteCurso = async (curso) => {
+    if (!curso?.id) return;
+    setDeleteCursoModal({ visible: false, curso: null });
+    try {
+      setLoadingCursos(true);
+      await deleteCurso(curso.id);
+      await loadCursosAsignados(cursoCrudColegioId || user?.schoolId);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el curso');
+    } finally {
+      setLoadingCursos(false);
+    }
   };
 
   const cursoSeleccionadoNombre = cursoSeleccionado
@@ -802,12 +995,6 @@ export default function HomeScreen() {
             <Text style={styles.actionBtnText}>Estudiantes</Text>
           </View>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#10b981' }]} onPress={openDocentesModal}>
-          <View style={styles.btnRow}>
-            <Ionicons name="school-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Docentes</Text>
-          </View>
-        </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
           <View style={styles.btnRow}>
             <Ionicons name="person-add-outline" size={18} color="#fff" />
@@ -832,17 +1019,6 @@ export default function HomeScreen() {
             <Text style={styles.actionBtnText}>Activar periodos</Text>
           </View>
         </TouchableOpacity>
-        {canManageCourses ? (
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]}
-            onPress={openCursoDocentesModal}
-          >
-            <View style={styles.btnRow}>
-              <Ionicons name="folder-open-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Cursos docentes</Text>
-            </View>
-          </TouchableOpacity>
-        ) : null}
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
@@ -969,6 +1145,11 @@ export default function HomeScreen() {
                   <Text style={styles.periodBtnText}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
                 </View>
               </TouchableOpacity>
+              {periodFeedback.type === 'error' && periodFeedback.message ? (
+                <Text style={periodFeedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>
+                  {periodFeedback.message}
+                </Text>
+              ) : null}
 
               <View style={[styles.periodItemRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.periodTitle}>Lista</Text>
@@ -987,7 +1168,7 @@ export default function HomeScreen() {
                         <Text style={styles.smallBtnText}>Editar</Text>
                       </View>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeletePeriod(p.id)}>
+                    <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeletePeriod(p.id)}>
                       <View style={styles.btnRow}>
                         <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
                         <Text style={styles.smallBtnText}>Eliminar</Text>
@@ -1029,6 +1210,34 @@ export default function HomeScreen() {
               </View>
             ) : null}
 
+            {canManageCourses ? (
+              <View style={{ marginBottom: 10 }}>
+                <Text style={styles.fieldLabel}>Colegio</Text>
+                <TouchableOpacity
+                  style={[styles.selectBoxFull, { marginTop: 6 }]}
+                  onPress={() => setCursoCrudPickerOpen(prev => !prev)}
+                  disabled={loadingCursos || colegiosLoading}
+                >
+                  <Text style={styles.selectText}>{resolveColegioNombre(cursoCrudColegioId || user?.schoolId)}</Text>
+                </TouchableOpacity>
+                {cursoCrudPickerOpen && colegiosOptions.length > 0 ? (
+                  <View style={styles.pickerList}>
+                    {colegiosOptions.map(c => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.pickerItem, String(cursoCrudColegioId) === String(c.id) && styles.pickerItemActive]}
+                        onPress={async () => {
+                          await changeCursoCrudColegio(c.id);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+
             {canManageCourses && cursoFormVisible ? (
               <View style={styles.courseForm}>
                 <Text style={styles.fieldLabel}>{cursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
@@ -1053,10 +1262,7 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
-                    onPress={async () => {
-                      await handleSaveCurso();
-                      await loadCursosAsignados();
-                    }}
+                    onPress={handleSaveCurso}
                     disabled={savingCurso}
                   >
                     <View style={styles.btnRow}>
@@ -1089,7 +1295,7 @@ export default function HomeScreen() {
                           <Text style={styles.smallBtnText}>Editar</Text>
                         </View>
                       </TouchableOpacity>
-                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteCurso(c)}>
+                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
                         <View style={styles.btnRow}>
                           <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
                           <Text style={styles.smallBtnText}>Eliminar</Text>
@@ -1130,6 +1336,15 @@ export default function HomeScreen() {
                 editable={!savingColegio}
                 onChangeText={setColegioNombre}
               />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Codigo DANE de la institucion"
+                placeholderTextColor="#9ca3af"
+                value={colegioCodigoDane}
+                editable={!savingColegio}
+                onChangeText={setColegioCodigoDane}
+                autoCapitalize="characters"
+              />
               {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
               <View style={styles.courseFormActions}>
                 {colegioEditing ? (
@@ -1139,6 +1354,7 @@ export default function HomeScreen() {
                       if (savingColegio) return;
                       setColegioEditing(null);
                       setColegioNombre('');
+                      setColegioCodigoDane('');
                     }}
                     disabled={savingColegio}
                   >
@@ -1173,6 +1389,7 @@ export default function HomeScreen() {
                   <View key={c.id} style={styles.courseRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
+                      {(c.codigoDane || c.codigo_dane) ? <Text style={styles.dataBullet}>Codigo DANE: {c.codigoDane || c.codigo_dane}</Text> : null}
                       {c.direccion ? <Text style={styles.dataBullet}>DirecciÃ³n: {c.direccion}</Text> : null}
                     </View>
                     <View style={styles.courseRowActions}>
@@ -1182,7 +1399,7 @@ export default function HomeScreen() {
                           <Text style={styles.smallBtnText}>Editar</Text>
                         </View>
                       </TouchableOpacity>
-                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteColegio(c)}>
+                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteColegio(c)}>
                         <View style={styles.btnRow}>
                           <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
                           <Text style={styles.smallBtnText}>Eliminar</Text>
@@ -1361,7 +1578,7 @@ export default function HomeScreen() {
                           <Text style={styles.smallBtnText}>Editar</Text>
                         </View>
                       </TouchableOpacity>
-                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => handleDeleteDocente(d)}>
+                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteDocente(d)}>
                         <View style={styles.btnRow}>
                           <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
                           <Text style={styles.smallBtnText}>Eliminar</Text>
@@ -1670,6 +1887,178 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={periodStatusModal.visible}
+        onRequestClose={() => {
+          clearPeriodStatusTimeout();
+          setPeriodStatusModal({ visible: false, message: '' });
+        }}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.statusModalCard}>
+            <Ionicons name="checkmark-circle-outline" size={22} color="#22c55e" />
+            <Text style={styles.statusModalText}>{periodStatusModal.message}</Text>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={deletePeriodModal.visible}
+        onRequestClose={() => setDeletePeriodModal({ visible: false, id: null })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="warning-outline" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar periodo</Text>
+            <Text style={styles.deleteModalText}>Esta accion no se puede deshacer. Se reorganizaran los periodos restantes.</Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                onPress={() => setDeletePeriodModal({ visible: false, id: null })}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                onPress={() => handleDeletePeriod(deletePeriodModal.id)}
+              >
+                <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={deleteColegioModal.visible}
+        onRequestClose={() => setDeleteColegioModal({ visible: false, colegio: null })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="warning-outline" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar colegio</Text>
+            <Text style={styles.deleteModalText}>
+              Vas a eliminar "{deleteColegioModal?.colegio?.nombre || 'este colegio'}". Esta accion no se puede deshacer.
+            </Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                onPress={() => setDeleteColegioModal({ visible: false, colegio: null })}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                onPress={() => handleDeleteColegio(deleteColegioModal.colegio)}
+              >
+                <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={deleteCursoModal.visible}
+        onRequestClose={() => setDeleteCursoModal({ visible: false, curso: null })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="warning-outline" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar curso</Text>
+            <Text style={styles.deleteModalText}>
+              Vas a eliminar "{deleteCursoModal?.curso?.nombre || 'este curso'}". Esta accion no se puede deshacer.
+            </Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                onPress={() => setDeleteCursoModal({ visible: false, curso: null })}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                onPress={() => handleDeleteCurso(deleteCursoModal.curso)}
+              >
+                <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={deleteDocenteModal.visible}
+        onRequestClose={() => setDeleteDocenteModal({ visible: false, docente: null })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="warning-outline" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar docente</Text>
+            <Text style={styles.deleteModalText}>
+              Vas a eliminar "{deleteDocenteModal?.docente?.nombre || deleteDocenteModal?.docente?.email || 'este docente'}". Esta accion no se puede deshacer.
+            </Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                onPress={() => setDeleteDocenteModal({ visible: false, docente: null })}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                onPress={() => handleDeleteDocente(deleteDocenteModal.docente)}
+              >
+                <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={daneExistsModal.visible}
+        onRequestClose={() => setDaneExistsModal({ visible: false, message: '' })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="alert-circle-outline" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Codigo DANE duplicado</Text>
+            <Text style={styles.deleteModalText}>{daneExistsModal.message}</Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                onPress={() => setDaneExistsModal({ visible: false, message: '' })}
+              >
+                <Text style={styles.deleteModalConfirmText}>Entendido</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScreenBackground>
   );
 }
@@ -1697,6 +2086,20 @@ const styles = StyleSheet.create({
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  feedbackSuccess: { color: '#bbf7d0', fontWeight: '700', fontSize: 13, marginTop: 6 },
+  feedbackError: { color: '#fecaca', fontWeight: '700', fontSize: 13, marginTop: 6 },
+  statusModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  statusModalCard: { minWidth: 260, maxWidth: '90%', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 18, backgroundColor: '#0f172a', borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statusModalText: { color: '#dcfce7', fontWeight: '800', fontSize: 16 },
+  deleteModalCard: { width: '100%', maxWidth: 360, borderRadius: 16, padding: 18, backgroundColor: '#111827', borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)', alignItems: 'center' },
+  deleteModalIconWrap: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  deleteModalTitle: { color: '#fee2e2', fontWeight: '900', fontSize: 18, marginBottom: 6 },
+  deleteModalText: { color: '#fecaca', textAlign: 'center', fontSize: 13, lineHeight: 18 },
+  deleteModalActions: { flexDirection: 'row', gap: 10, marginTop: 16, width: '100%' },
+  deleteModalCancelBtn: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', backgroundColor: 'rgba(148,163,184,0.15)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.35)' },
+  deleteModalConfirmBtn: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', backgroundColor: '#dc2626', borderWidth: 1, borderColor: '#ef4444' },
+  deleteModalCancelText: { color: '#e2e8f0', fontWeight: '800' },
+  deleteModalConfirmText: { color: '#fff', fontWeight: '900' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%', width: '100%', alignSelf: 'center' },
   modalCardWide: { maxHeight: '92%' },
