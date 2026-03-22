@@ -13,6 +13,7 @@ import { getColegios, createColegio, updateColegio, deleteColegio } from '../ser
 export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
   const user = useAuth(s => s.user);
+  const isAdmin = user?.rol === 'admin';
   const canManageCourses = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const navigation = useNavigation();
   const teacherInitial = (user?.email?.[0] || 'D').toUpperCase();
@@ -49,6 +50,8 @@ export default function HomeScreen() {
   const [estudiantesError, setEstudiantesError] = useState('');
   const [cursoSeleccionado, setCursoSeleccionado] = useState(null);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
+  const [estudiantesColegioId, setEstudiantesColegioId] = useState(null);
+  const [estudiantesColegioPickerOpen, setEstudiantesColegioPickerOpen] = useState(false);
   const [docentesModalVisible, setDocentesModalVisible] = useState(false);
   const [docentes, setDocentes] = useState([]);
   const [docentesLoading, setDocentesLoading] = useState(false);
@@ -61,6 +64,12 @@ export default function HomeScreen() {
   const [colegiosList, setColegiosList] = useState([]);
   const [colegioNombre, setColegioNombre] = useState('');
   const [colegioCodigoDane, setColegioCodigoDane] = useState('');
+  const [rectorNombre, setRectorNombre] = useState('');
+  const [rectorApellido, setRectorApellido] = useState('');
+  const [rectorCorreo, setRectorCorreo] = useState('');
+  const [rectorTelefono, setRectorTelefono] = useState('');
+  const [rectorCedula, setRectorCedula] = useState('');
+  const [rectorPassword, setRectorPassword] = useState('');
   const [deleteColegioModal, setDeleteColegioModal] = useState({ visible: false, colegio: null });
   const [daneExistsModal, setDaneExistsModal] = useState({ visible: false, message: '' });
   const [colegioEditing, setColegioEditing] = useState(null);
@@ -76,6 +85,7 @@ export default function HomeScreen() {
   const [docenteError, setDocenteError] = useState('');
   const [deleteDocenteModal, setDeleteDocenteModal] = useState({ visible: false, docente: null });
   const docenteCrudSchoolRef = useRef(null);
+  const colegiosScrollRef = useRef(null);
   const createDefaultPeriodForm = () => {
     const now = new Date();
     const end = new Date(now);
@@ -95,6 +105,7 @@ export default function HomeScreen() {
     };
   };
   const [periodForm, setPeriodForm] = useState(() => createDefaultPeriodForm());
+  const isEditingColegio = Boolean(colegioEditing?.id);
 
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -383,10 +394,17 @@ export default function HomeScreen() {
   const openEstudiantesModal = async () => {
     setEstudiantesModalVisible(true);
     setCursoPickerOpen(false);
+    setEstudiantesColegioPickerOpen(false);
     setEstudiantesError('');
     try {
       setLoadingCursos(true);
-      const cursos = await loadCursosAsignados();
+      const userSchoolOption = user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : [];
+      setColegiosOptions(userSchoolOption);
+      const defaultSchool = user?.schoolId || colegioSeleccionado || null;
+      const options = await loadColegios({ preferId: defaultSchool, preferName: user?.schoolName });
+      const selectedSchoolId = defaultSchool || options?.[0]?.id || null;
+      setEstudiantesColegioId(selectedSchoolId);
+      const cursos = await loadCursosAsignados(selectedSchoolId);
       const firstId = (cursos && cursos[0]?.id) || null;
       setCursoSeleccionado(firstId);
       await loadEstudiantesPorCurso(firstId);
@@ -400,9 +418,28 @@ export default function HomeScreen() {
   const closeEstudiantesModal = () => {
     setEstudiantesModalVisible(false);
     setCursoPickerOpen(false);
+    setEstudiantesColegioPickerOpen(false);
+    setEstudiantesColegioId(null);
     setCursoSeleccionado(null);
     setEstudiantes([]);
     setEstudiantesError('');
+  };
+
+  const changeEstudiantesColegio = async (newSchoolId) => {
+    const parsedSchoolId = Number(newSchoolId);
+    if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
+    setEstudiantesColegioId(parsedSchoolId);
+    setEstudiantesColegioPickerOpen(false);
+    setCursoPickerOpen(false);
+    setLoadingCursos(true);
+    try {
+      const cursos = await loadCursosAsignados(parsedSchoolId);
+      const firstId = (cursos && cursos[0]?.id) || null;
+      setCursoSeleccionado(firstId);
+      await loadEstudiantesPorCurso(firstId);
+    } finally {
+      setLoadingCursos(false);
+    }
   };
 
   const closeCursosModalDocente = () => {
@@ -422,6 +459,12 @@ export default function HomeScreen() {
     setColegioEditing(null);
     setColegioNombre('');
     setColegioCodigoDane('');
+    setRectorNombre('');
+    setRectorApellido('');
+    setRectorCorreo('');
+    setRectorTelefono('');
+    setRectorCedula('');
+    setRectorPassword('');
     setColegiosError('');
     setColegiosModalVisible(true);
     await loadColegios();
@@ -432,6 +475,12 @@ export default function HomeScreen() {
     setColegioEditing(null);
     setColegioNombre('');
     setColegioCodigoDane('');
+    setRectorNombre('');
+    setRectorApellido('');
+    setRectorCorreo('');
+    setRectorTelefono('');
+    setRectorCedula('');
+    setRectorPassword('');
     setColegiosError('');
   };
 
@@ -439,28 +488,56 @@ export default function HomeScreen() {
     setColegioEditing(colegio);
     setColegioNombre(colegio?.nombre || '');
     setColegioCodigoDane(colegio?.codigoDane || colegio?.codigo_dane || '');
+    setRectorNombre(colegio?.rectorNombre || colegio?.rector_nombre || '');
+    setRectorApellido(colegio?.rectorApellido || colegio?.rector_apellido || '');
+    setRectorCorreo(colegio?.rectorCorreo || colegio?.rector_correo || '');
+    setRectorTelefono(colegio?.rectorTelefono || colegio?.rector_telefono || '');
+    setRectorCedula(colegio?.rectorCedula || colegio?.rector_cedula || '');
+    setRectorPassword('');
+    setColegiosError('');
+    setTimeout(() => {
+      colegiosScrollRef.current?.scrollTo?.({ y: 0, animated: true });
+    }, 0);
   };
 
   const handleSaveColegio = async () => {
     const nombre = colegioNombre.trim();
     const codigoDane = colegioCodigoDane.trim();
+    const payload = {
+      nombre,
+      codigoDane,
+      rectorNombre: rectorNombre.trim(),
+      rectorApellido: rectorApellido.trim(),
+      rectorCorreo: rectorCorreo.trim(),
+      rectorTelefono: rectorTelefono.trim(),
+      rectorCedula: rectorCedula.trim(),
+      rectorPassword: rectorPassword.trim()
+    };
     if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el colegio');
     setSavingColegio(true);
+    setColegiosError('');
     try {
       if (colegioEditing) {
-        await updateColegio(colegioEditing.id, { nombre, codigoDane });
+        await updateColegio(colegioEditing.id, payload);
       } else {
-        await createColegio({ nombre, codigoDane });
+        await createColegio(payload);
       }
       await loadColegios();
       setColegioEditing(null);
       setColegioNombre('');
       setColegioCodigoDane('');
+      setRectorNombre('');
+      setRectorApellido('');
+      setRectorCorreo('');
+      setRectorTelefono('');
+      setRectorCedula('');
+      setRectorPassword('');
     } catch (e) {
-      const apiError = e?.response?.data?.error || e?.message || 'No se pudo guardar el colegio';
+      const apiError = getApiErrorMessage(e, 'No se pudo guardar el colegio');
       if (String(apiError).toLowerCase().includes('codigo dane ya existe')) {
         setDaneExistsModal({ visible: true, message: 'El codigo DANE ya existe. Ingresa uno diferente.' });
       } else {
+        setColegiosError(apiError);
         Alert.alert('Error', apiError);
       }
     } finally {
@@ -975,12 +1052,14 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.actionGrid}>
+        {!isAdmin ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
             <View style={styles.btnRow}>
               <Ionicons name="qr-code-outline" size={18} color="#fff" />
               <Text style={styles.actionBtnText}>Escanear QR</Text>
             </View>
           </TouchableOpacity>
+        ) : null}
         {canManageCourses ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
           <View style={styles.btnRow}>
@@ -989,12 +1068,14 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
         ) : null}
+        {!isAdmin ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
           <View style={styles.btnRow}>
             <Ionicons name="people-outline" size={18} color="#fff" />
             <Text style={styles.actionBtnText}>Estudiantes</Text>
           </View>
         </TouchableOpacity>
+        ) : null}
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
           <View style={styles.btnRow}>
             <Ionicons name="person-add-outline" size={18} color="#fff" />
@@ -1013,7 +1094,7 @@ export default function HomeScreen() {
             <Text style={styles.actionBtnText}>Reportes</Text>
           </View>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+        <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
           <View style={styles.btnRow}>
             <Ionicons name="calendar-outline" size={18} color="#fff" />
             <Text style={styles.actionBtnText}>Activar periodos</Text>
@@ -1319,15 +1400,26 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Colegios</Text>
-              <Pressable onPress={closeColegiosModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
-              </Pressable>
-            </View>
+            <ScrollView
+              ref={colegiosScrollRef}
+              contentContainerStyle={styles.modalContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.periodTitle}>Colegios</Text>
+                <Pressable onPress={closeColegiosModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                </Pressable>
+              </View>
 
             <View style={styles.courseForm}>
-              <Text style={styles.fieldLabel}>{colegioEditing ? 'Editar colegio' : 'Nuevo colegio'}</Text>
+              <Text style={styles.fieldLabel}>{isEditingColegio ? 'Editar colegio' : 'Nuevo colegio'}</Text>
+              {isEditingColegio ? (
+                <Text style={styles.dataBullet}>
+                  Editando: {colegioEditing?.nombre || `Colegio ${colegioEditing?.id}`}
+                </Text>
+              ) : null}
               <TextInput
                 style={styles.courseInput}
                 placeholder="Nombre del colegio"
@@ -1345,9 +1437,64 @@ export default function HomeScreen() {
                 onChangeText={setColegioCodigoDane}
                 autoCapitalize="characters"
               />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Nombre del rector"
+                placeholderTextColor="#9ca3af"
+                value={rectorNombre}
+                editable={!savingColegio}
+                onChangeText={setRectorNombre}
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Apellido del rector"
+                placeholderTextColor="#9ca3af"
+                value={rectorApellido}
+                editable={!savingColegio}
+                onChangeText={setRectorApellido}
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Correo del rector"
+                placeholderTextColor="#9ca3af"
+                value={rectorCorreo}
+                editable={!savingColegio}
+                onChangeText={setRectorCorreo}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Telefono del rector"
+                placeholderTextColor="#9ca3af"
+                value={rectorTelefono}
+                editable={!savingColegio}
+                onChangeText={setRectorTelefono}
+                keyboardType="phone-pad"
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Cedula del rector"
+                placeholderTextColor="#9ca3af"
+                value={rectorCedula}
+                editable={!savingColegio}
+                onChangeText={setRectorCedula}
+                keyboardType="numeric"
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder={isEditingColegio ? 'Nueva contrasena del rector (opcional)' : 'Contrasena del rector'}
+                placeholderTextColor="#9ca3af"
+                value={rectorPassword}
+                editable={!savingColegio}
+                onChangeText={setRectorPassword}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
               {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
               <View style={styles.courseFormActions}>
-                {colegioEditing ? (
+                {isEditingColegio ? (
                   <TouchableOpacity
                     style={[styles.smallBtn, styles.outlineBtn, savingColegio && { opacity: 0.6 }]}
                     onPress={() => {
@@ -1355,6 +1502,12 @@ export default function HomeScreen() {
                       setColegioEditing(null);
                       setColegioNombre('');
                       setColegioCodigoDane('');
+                      setRectorNombre('');
+                      setRectorApellido('');
+                      setRectorCorreo('');
+                      setRectorTelefono('');
+                      setRectorCedula('');
+                      setRectorPassword('');
                     }}
                     disabled={savingColegio}
                   >
@@ -1371,7 +1524,7 @@ export default function HomeScreen() {
                 >
                   <View style={styles.btnRow}>
                     <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>{savingColegio ? 'Guardando...' : colegioEditing ? 'Actualizar' : 'Crear'}</Text>
+                    <Text style={styles.smallBtnText}>{savingColegio ? 'Guardando...' : isEditingColegio ? 'Guardar cambios' : 'Crear'}</Text>
                   </View>
                 </TouchableOpacity>
               </View>
@@ -1386,12 +1539,20 @@ export default function HomeScreen() {
                 <Text style={styles.dataBullet}>- AÃºn no hay colegios registrados</Text>
               ) : (
                 colegiosList.map((c) => (
-                  <View key={c.id} style={styles.courseRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
-                      {(c.codigoDane || c.codigo_dane) ? <Text style={styles.dataBullet}>Codigo DANE: {c.codigoDane || c.codigo_dane}</Text> : null}
-                      {c.direccion ? <Text style={styles.dataBullet}>DirecciÃ³n: {c.direccion}</Text> : null}
-                    </View>
+                    <View key={c.id} style={[styles.courseRow, isEditingColegio && String(colegioEditing?.id) === String(c.id) && styles.courseRowActive]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
+                        {(c.codigoDane || c.codigo_dane) ? <Text style={styles.dataBullet}>Codigo DANE: {c.codigoDane || c.codigo_dane}</Text> : null}
+                        {(c.rectorNombre || c.rector_nombre || c.rectorApellido || c.rector_apellido) ? (
+                          <Text style={styles.dataBullet}>
+                            Rector: {[c.rectorNombre || c.rector_nombre, c.rectorApellido || c.rector_apellido].filter(Boolean).join(' ')}
+                          </Text>
+                        ) : null}
+                        {(c.rectorCorreo || c.rector_correo) ? <Text style={styles.dataBullet}>Correo rector: {c.rectorCorreo || c.rector_correo}</Text> : null}
+                        {(c.rectorTelefono || c.rector_telefono) ? <Text style={styles.dataBullet}>Telefono rector: {c.rectorTelefono || c.rector_telefono}</Text> : null}
+                        {(c.rectorCedula || c.rector_cedula) ? <Text style={styles.dataBullet}>Cedula rector: {c.rectorCedula || c.rector_cedula}</Text> : null}
+                        {c.direccion ? <Text style={styles.dataBullet}>DirecciÃ³n: {c.direccion}</Text> : null}
+                      </View>
                     <View style={styles.courseRowActions}>
                       <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditColegio(c)}>
                         <View style={styles.btnRow}>
@@ -1410,6 +1571,7 @@ export default function HomeScreen() {
                 ))
               )}
             </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1714,6 +1876,36 @@ export default function HomeScreen() {
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
+
+            <Text style={styles.fieldLabel}>Selecciona colegio</Text>
+            <Pressable
+              style={styles.selectBoxFull}
+              onPress={() => setEstudiantesColegioPickerOpen(prev => !prev)}
+            >
+              <Text style={styles.selectText}>
+                {resolveColegioNombre(estudiantesColegioId)}
+              </Text>
+            </Pressable>
+            {estudiantesColegioPickerOpen ? (
+              <View style={styles.dropdownList}>
+                {colegiosLoading ? <Text style={styles.dataBullet}>Cargando colegios...</Text> : null}
+                {colegiosOptions.length === 0 ? (
+                  <Text style={styles.dataBullet}>No hay colegios disponibles</Text>
+                ) : (
+                  colegiosOptions.map(c => (
+                    <Pressable
+                      key={c.id}
+                      style={[styles.dropdownItem, String(estudiantesColegioId) === String(c.id) && styles.dropdownItemSelected]}
+                      onPress={async () => {
+                        await changeEstudiantesColegio(c.id);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                    </Pressable>
+                  ))
+                )}
+              </View>
+            ) : null}
 
             <Text style={styles.fieldLabel}>Selecciona un curso</Text>
             <Pressable style={styles.selectBoxFull} onPress={() => setCursoPickerOpen(prev => !prev)}>
@@ -2083,6 +2275,7 @@ const styles = StyleSheet.create({
   actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 0 },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionBtn: { flexBasis: '48%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
+  actionBtnFull: { flexBasis: '100%' },
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
@@ -2139,6 +2332,7 @@ const styles = StyleSheet.create({
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
   courseRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  courseRowActive: { backgroundColor: 'rgba(56,189,248,0.08)', borderRadius: 10, paddingHorizontal: 8 },
   courseRowActions: { flexDirection: 'row', gap: 8 },
   pickerList: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 8 },
   pickerItem: { paddingHorizontal: 12, paddingVertical: 10 },

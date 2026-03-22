@@ -21,6 +21,16 @@ const pillLabel = (label) => ({ focused }) => (
 );
 
 function AppTabs() {
+  const user = useAuth(s => s.user);
+  const isAdmin = user?.rol === 'admin';
+  const screens = [
+    { name: 'Inicio', component: HomeScreen },
+    { name: 'Cursos', component: CursosScreen },
+    ...(!isAdmin ? [{ name: 'Estudiantes', component: EstudiantesScreen }] : []),
+    { name: 'Reportes', component: ReportesScreen },
+    ...(!isAdmin ? [{ name: 'QR', component: QRComponent }] : [])
+  ];
+
   if (Platform.OS === 'web') {
     return (
       <Tab.Navigator
@@ -32,11 +42,9 @@ function AppTabs() {
           tabBarItemStyle: styles.webTabItem
         }}
       >
-        <Tab.Screen name="Inicio" component={HomeScreen} />
-        <Tab.Screen name="Cursos" component={CursosScreen} />
-        <Tab.Screen name="Estudiantes" component={EstudiantesScreen} />
-        <Tab.Screen name="Reportes" component={ReportesScreen} />
-        <Tab.Screen name="QR" component={QRComponent} />
+        {screens.map((screen) => (
+          <Tab.Screen key={screen.name} name={screen.name} component={screen.component} />
+        ))}
       </Tab.Navigator>
     );
   }
@@ -48,11 +56,14 @@ function AppTabs() {
       tabBarItemStyle: { marginHorizontal: 6 },
       tabBarLabelStyle: { fontWeight: '700', fontSize: 13 }
     }}>
-      <Tab.Screen name="Inicio" component={HomeScreen} options={{ tabBarLabel: pillLabel('Inicio') }} />
-      <Tab.Screen name="Cursos" component={CursosScreen} options={{ tabBarLabel: pillLabel('Cursos') }} />
-      <Tab.Screen name="Estudiantes" component={EstudiantesScreen} options={{ tabBarLabel: pillLabel('Estudiantes') }} />
-      <Tab.Screen name="Reportes" component={ReportesScreen} options={{ tabBarLabel: pillLabel('Reportes') }} />
-      <Tab.Screen name="QR" component={QRComponent} options={{ tabBarLabel: pillLabel('QR') }} />
+      {screens.map((screen) => (
+        <Tab.Screen
+          key={screen.name}
+          name={screen.name}
+          component={screen.component}
+          options={{ tabBarLabel: pillLabel(screen.name) }}
+        />
+      ))}
     </Tab.Navigator>
   );
 }
