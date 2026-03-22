@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import LoginScreen from '../screens/LoginScreen';
 import QRWebScreen from '../screens/QRWebScreen';
 import { useAuth } from '../store/useAuth';
+import { LOCAL_MODE } from '../config/runtime';
 
 const Stack = Platform.OS === 'web' ? null : createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -23,6 +24,33 @@ const pillLabel = (label) => ({ focused }) => (
 function AppTabs() {
   const user = useAuth(s => s.user);
   const isAdmin = user?.rol === 'admin';
+  if (LOCAL_MODE) {
+    const localScreens = [
+      { name: 'Cursos', component: CursosScreen },
+      { name: 'Estudiantes', component: EstudiantesScreen },
+      { name: 'QR', component: QRComponent }
+    ];
+    return (
+      <Tab.Navigator
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: styles.webTabBar,
+          tabBarActiveTintColor: '#fff',
+          tabBarInactiveTintColor: '#9ca3af',
+          tabBarItemStyle: styles.webTabItem
+        }}
+      >
+        {localScreens.map((screen) => (
+          <Tab.Screen
+            key={screen.name}
+            name={screen.name}
+            component={screen.component}
+            options={{ tabBarLabel: pillLabel(screen.name) }}
+          />
+        ))}
+      </Tab.Navigator>
+    );
+  }
   const screens = [
     { name: 'Inicio', component: HomeScreen },
     { name: 'Cursos', component: CursosScreen },

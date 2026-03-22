@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { registrarAsistencia } from '../services/asistencias';
+import {
+  registrarAsistenciaConFallback,
+  sincronizarAsistenciasPendientes,
+  contarAsistenciasPendientes
+} from '../services/asistencias';
 import { getCursos } from '../services/cursos';
+import { LOCAL_MODE } from '../config/runtime';
 import { Ionicons } from '@expo/vector-icons';
 
 const getLocalDateISO = () => {
@@ -29,6 +34,8 @@ export default function QRScreen() {
   const [pendingQr, setPendingQr] = useState('');
   const [estadoModalVisible, setEstadoModalVisible] = useState(false);
   const [savingEstado, setSavingEstado] = useState(false);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [syncingPending, setSyncingPending] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -42,16 +49,51 @@ export default function QRScreen() {
     (async () => {
       setLoadingCursos(true);
       try {
+        if (LOCAL_MODE) {
+          const localCursos = [{ id: 1, nombre: 'Curso Local' }];
+          setCursos(localCursos);
+          setCursoId(localCursos[0].id);
+          return;
+        }
         const data = await getCursos();
         setCursos(data);
         if (data.length > 0) setCursoId(data[0].id);
       } catch (e) {
-        Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
+        const localFallback = [{ id: 1, nombre: 'Curso Local' }];
+        setCursos(localFallback);
+        setCursoId(localFallback[0].id);
       } finally {
         setLoadingCursos(false);
       }
     })();
   }, []);
+
+  const refreshPendingCount = async () => {
+    try {
+      const count = await contarAsistenciasPendientes();
+      setPendingSyncCount(count);
+    } catch {}
+  };
+
+  useEffect(() => {
+    refreshPendingCount();
+  }, []);
+
+  const handleSyncPendientes = async () => {
+    setSyncingPending(true);
+    try {
+      const result = await sincronizarAsistenciasPendientes(200);
+      await refreshPendingCount();
+      Alert.alert(
+        'Sincronizacion',
+        `Sincronizadas: ${result.synced}\nFallidas: ${result.failed}\nPendientes: ${result.remaining}`
+      );
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || e?.message || 'No se pudieron sincronizar pendientes');
+    } finally {
+      setSyncingPending(false);
+    }
+  };
 
   const onBarcodeScanned = async ({ data }) => {
     if (scanned) return;
@@ -77,14 +119,19 @@ export default function QRScreen() {
     setSavingEstado(true);
     try {
       const flags = buildEstadoFlags(estado);
-      await registrarAsistencia({
+      const response = await registrarAsistenciaConFallback({
         qr: pendingQr,
         cursoId: cursoValue,
         fecha: getLocalDateISO(),
         estado,
         ...flags
       });
-      Alert.alert('Asistencia registrada', `QR: ${pendingQr}\nEstado: ${estado}`);
+      await refreshPendingCount();
+      if (response?.offline) {
+        Alert.alert('Sin conexion', `${response.message}\nPendientes: ${await contarAsistenciasPendientes()}`);
+      } else {
+        Alert.alert('Asistencia registrada', `QR: ${pendingQr}\nEstado: ${estado}`);
+      }
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || e.message);
     } finally {
@@ -139,6 +186,22 @@ export default function QRScreen() {
             )}
           </View>
         ) : null}
+
+        <View style={styles.syncRow}>
+          <Text style={styles.syncLabel}>
+            {LOCAL_MODE ? `Modo local (SQLite). Registros: ${pendingSyncCount}` : `Pendientes sin conexion: ${pendingSyncCount}`}
+          </Text>
+          <TouchableOpacity
+            style={[styles.syncBtn, syncingPending && { opacity: 0.6 }]}
+            onPress={handleSyncPendientes}
+            disabled={syncingPending}
+          >
+            <View style={styles.btnRow}>
+              <Ionicons name="sync-outline" size={14} color="#fff" />
+              <Text style={styles.syncBtnText}>{syncingPending ? 'Sincronizando...' : (LOCAL_MODE ? 'Refrescar' : 'Sincronizar')}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Modal transparent visible={estadoModalVisible} onRequestClose={() => {}} animationType="fade">
@@ -216,6 +279,23 @@ const styles = StyleSheet.create({
   dropdownItemActive: { backgroundColor: 'rgba(34,197,94,0.2)' },
   dropdownText: { color: '#e5e7eb' },
   dropdownHint: { color: '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10 },
+  syncRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8
+  },
+  syncLabel: { color: '#cbd5e1', fontSize: 12, flex: 1 },
+  syncBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+    backgroundColor: 'rgba(59,130,246,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.65)'
+  },
+  syncBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   modalBackdrop: {
     flex: 1,

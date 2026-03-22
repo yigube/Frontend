@@ -7,8 +7,8 @@ const HEALTHCHECK_PATH = '/';
 const HEALTHCHECK_TIMEOUT_MS = 1500;
 const API_URL_CACHE_MS = 15000;
 const LAN_FALLBACK_URLS = [
-  `http://192.168.1.247:${API_PORT}`,
   `http://192.168.100.5:${API_PORT}`,
+  `http://192.168.1.247:${API_PORT}`,
 ];
 
 const parseHostFromValue = (value) => {
@@ -32,6 +32,8 @@ const normalizeApiUrl = (url) => {
 const resolvePreferredApiUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
   if (envUrl) return normalizeApiUrl(envUrl);
+  const extraUrl = Constants?.expoConfig?.extra?.apiUrl || Constants?.manifest2?.extra?.expoClient?.extra?.apiUrl;
+  if (typeof extraUrl === 'string' && extraUrl.trim()) return normalizeApiUrl(extraUrl);
 
   const expoHost = parseHostFromValue(
     Constants?.expoConfig?.hostUri ||
