@@ -6,7 +6,7 @@ import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
 import { getCursos, getCursosPorColegio, createCurso, updateCurso, deleteCurso } from '../services/cursos';
-import { getEstudiantes, createEstudiante, createEstudiantesLote } from '../services/estudiantes';
+import { getEstudiantes, createEstudiante, createEstudiantesLote, updateEstudiante, deleteEstudiante } from '../services/estudiantes';
 import { getDocentes, getCursosDisponiblesDocente, createDocente, updateDocente, deleteDocente } from '../services/docentes';
 import { getColegios, createColegio, updateColegio, deleteColegio } from '../services/colegios';
 
@@ -59,9 +59,13 @@ export default function HomeScreen() {
   const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
   const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
   const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
-  const [estudianteCsvText, setEstudianteCsvText] = useState('');
+  const [selectedCsvFile, setSelectedCsvFile] = useState(null);
+  const [uploadedStudents, setUploadedStudents] = useState([]);
   const [estudianteCreateError, setEstudianteCreateError] = useState('');
   const [savingEstudiante, setSavingEstudiante] = useState(false);
+  const [estudianteEditing, setEstudianteEditing] = useState(null);
+  const [estudianteEditForm, setEstudianteEditForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+  const [savingEstudianteEdit, setSavingEstudianteEdit] = useState(false);
   const [docentesModalVisible, setDocentesModalVisible] = useState(false);
   const [docentes, setDocentes] = useState([]);
   const [docentesLoading, setDocentesLoading] = useState(false);
@@ -436,6 +440,8 @@ export default function HomeScreen() {
     setCursoSeleccionado(null);
     setEstudiantes([]);
     setEstudiantesError('');
+    setEstudianteEditing(null);
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
   };
 
   const changeEstudiantesColegio = async (newSchoolId) => {
@@ -444,6 +450,8 @@ export default function HomeScreen() {
     setEstudiantesColegioId(parsedSchoolId);
     setEstudiantesColegioPickerOpen(false);
     setCursoPickerOpen(false);
+    setEstudianteEditing(null);
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
     setLoadingCursos(true);
     try {
       const cursos = await loadCursosAsignados(parsedSchoolId);
@@ -453,6 +461,67 @@ export default function HomeScreen() {
     } finally {
       setLoadingCursos(false);
     }
+  };
+
+  const startEditEstudiante = (estudiante) => {
+    setEstudianteEditing(estudiante?.id || null);
+    setEstudianteEditForm({
+      nombres: estudiante?.nombres || '',
+      apellidos: estudiante?.apellidos || '',
+      qr: estudiante?.qr || '',
+      codigoEstudiante: estudiante?.codigoEstudiante || ''
+    });
+  };
+
+  const cancelEditEstudiante = () => {
+    setEstudianteEditing(null);
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+  };
+
+  const handleUpdateEstudiante = async (id) => {
+    const nombres = (estudianteEditForm.nombres || '').trim();
+    const apellidos = (estudianteEditForm.apellidos || '').trim();
+    const qr = (estudianteEditForm.qr || '').trim();
+    const codigoEstudiante = (estudianteEditForm.codigoEstudiante || '').trim();
+    if (!nombres || !apellidos || !qr) {
+      Alert.alert('Campos requeridos', 'Completa nombres, apellidos y QR');
+      return;
+    }
+    setSavingEstudianteEdit(true);
+    try {
+      await updateEstudiante(id, { nombres, apellidos, qr, codigoEstudiante });
+      await loadEstudiantesPorCurso(cursoSeleccionado);
+      cancelEditEstudiante();
+      Alert.alert('Listo', 'Estudiante actualizado');
+    } catch (e) {
+      Alert.alert('Error', getApiErrorMessage(e, 'No se pudo actualizar el estudiante'));
+    } finally {
+      setSavingEstudianteEdit(false);
+    }
+  };
+
+  const askDeleteEstudiante = (estudiante) => {
+    Alert.alert(
+      'Eliminar estudiante',
+      `Vas a eliminar a "${estudiante?.nombres || ''} ${estudiante?.apellidos || ''}". Esta accion no se puede deshacer.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteEstudiante(estudiante?.id);
+              await loadEstudiantesPorCurso(cursoSeleccionado);
+              if (String(estudianteEditing) === String(estudiante?.id)) cancelEditEstudiante();
+              Alert.alert('Listo', 'Estudiante eliminado');
+            } catch (e) {
+              Alert.alert('Error', getApiErrorMessage(e, 'No se pudo eliminar el estudiante'));
+            }
+          }
+        }
+      ]
+    );
   };
 
   const parseCsvRows = (csvText) => {
@@ -481,7 +550,8 @@ export default function HomeScreen() {
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
     setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
-    setEstudianteCsvText('');
+    setSelectedCsvFile(null);
+    setUploadedStudents([]);
     setLoadingCursos(true);
     try {
       const schoolId = user?.schoolId || null;
@@ -500,36 +570,13 @@ export default function HomeScreen() {
     setEstudianteCreateError('');
     setEstudianteCreateCursoId(null);
     setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
-    setEstudianteCsvText('');
+    setSelectedCsvFile(null);
+    setUploadedStudents([]);
     setSavingEstudiante(false);
   };
 
   const handleImportCsv = async () => {
-    const cursoId = Number(estudianteCreateCursoId);
-    if (!Number.isFinite(cursoId) || cursoId <= 0) {
-      setEstudianteCreateError('Selecciona un curso antes de importar CSV');
-      return;
-    }
-
-    const importRows = async (content) => {
-      const estudiantes = parseCsvRows(content);
-      if (!estudiantes.length) {
-        setEstudianteCreateError('CSV invalido. Encabezados requeridos: nombres,apellidos,qr,codigoEstudiante');
-        return;
-      }
-      setSavingEstudiante(true);
-      setEstudianteCreateError('');
-      try {
-        const data = await createEstudiantesLote({ cursoId, estudiantes });
-        Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
-        closeCreateEstudianteModal();
-      } catch (e) {
-        setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo importar el CSV'));
-      } finally {
-        setSavingEstudiante(false);
-      }
-    };
-
+    setEstudianteCreateError('');
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
       input.type = 'file';
@@ -538,7 +585,9 @@ export default function HomeScreen() {
         const file = event?.target?.files?.[0];
         if (!file) return;
         const content = await file.text();
-        await importRows(content);
+        const dotIdx = file.name.lastIndexOf('.');
+        const ext = dotIdx >= 0 ? file.name.slice(dotIdx + 1).toLowerCase() : '';
+        setSelectedCsvFile({ name: file.name, ext, content });
       };
       input.click();
       return;
@@ -556,19 +605,26 @@ export default function HomeScreen() {
       const file = result.assets?.[0];
       if (!file?.uri) return;
       const content = await FileSystem.readAsStringAsync(file.uri);
-      await importRows(content);
+      const name = file.name || file.uri.split('/').pop() || 'archivo.csv';
+      const dotIdx = name.lastIndexOf('.');
+      const ext = dotIdx >= 0 ? name.slice(dotIdx + 1).toLowerCase() : '';
+      setSelectedCsvFile({ name, ext, content });
     } catch (e) {
       setEstudianteCreateError('No se pudo abrir el selector de archivos del dispositivo.');
     }
   };
 
-  const handleImportCsvText = async () => {
+  const handleUploadCsv = async () => {
     const cursoId = Number(estudianteCreateCursoId);
     if (!Number.isFinite(cursoId) || cursoId <= 0) {
-      setEstudianteCreateError('Selecciona un curso antes de importar CSV');
+      setEstudianteCreateError('Selecciona un curso antes de subir el archivo');
       return;
     }
-    const estudiantes = parseCsvRows(estudianteCsvText);
+    if (!selectedCsvFile?.content) {
+      setEstudianteCreateError('Primero selecciona un archivo CSV');
+      return;
+    }
+    const estudiantes = parseCsvRows(selectedCsvFile.content);
     if (!estudiantes.length) {
       setEstudianteCreateError('CSV invalido. Encabezados requeridos: nombres,apellidos,qr,codigoEstudiante');
       return;
@@ -577,10 +633,10 @@ export default function HomeScreen() {
     setEstudianteCreateError('');
     try {
       const data = await createEstudiantesLote({ cursoId, estudiantes });
+      setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantes);
       Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
-      closeCreateEstudianteModal();
     } catch (e) {
-      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo importar el CSV pegado'));
+      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo CSV'));
     } finally {
       setSavingEstudiante(false);
     }
@@ -1256,6 +1312,12 @@ export default function HomeScreen() {
                   <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Agregar estudiantes</Text>
                 </View>
               </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, styles.actionBtnFull, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="people-outline" size={18} color="#fff" />
+                  <Text style={styles.actionBtnText}>Ver estudiantes por curso</Text>
+                </View>
+              </TouchableOpacity>
             </>
           ) : (
             <>
@@ -1408,30 +1470,38 @@ export default function HomeScreen() {
               >
                 <View style={styles.btnRow}>
                   <Ionicons name="document-attach-outline" size={14} color="#e5e7eb" />
-                  <Text style={styles.smallBtnText}>Cargar CSV</Text>
+                  <Text style={styles.smallBtnText}>Seleccionar archivo</Text>
                 </View>
               </TouchableOpacity>
               <Text style={styles.dataBullet}>CSV encabezados: nombres,apellidos,qr,codigoEstudiante</Text>
-              <TextInput
-                style={[styles.courseInput, { minHeight: 90, textAlignVertical: 'top' }]}
-                placeholder={'Pega aqui el CSV\\nEjemplo:\\nnombres,apellidos,qr,codigoEstudiante\\nAna,Perez,QR-ANA,COD-1'}
-                placeholderTextColor="#9ca3af"
-                multiline
-                value={estudianteCsvText}
-                editable={!savingEstudiante}
-                onChangeText={setEstudianteCsvText}
-              />
+              {selectedCsvFile ? (
+                <Text style={styles.dataBullet}>
+                  Archivo: {selectedCsvFile.name} {selectedCsvFile.ext ? `(.${selectedCsvFile.ext})` : ''}
+                </Text>
+              ) : (
+                <Text style={styles.dataBullet}>Archivo: no seleccionado</Text>
+              )}
               <TouchableOpacity
-                style={[styles.smallBtn, styles.outlineBtn, savingEstudiante && { opacity: 0.6 }]}
-                onPress={handleImportCsvText}
+                style={[styles.smallBtn, styles.createBtn, savingEstudiante && { opacity: 0.6 }]}
+                onPress={handleUploadCsv}
                 disabled={savingEstudiante}
               >
                 <View style={styles.btnRow}>
-                  <Ionicons name="clipboard-outline" size={14} color="#e5e7eb" />
-                  <Text style={styles.smallBtnText}>Importar CSV pegado</Text>
+                  <Ionicons name="cloud-upload-outline" size={14} color="#e5e7eb" />
+                  <Text style={styles.smallBtnText}>{savingEstudiante ? 'Subiendo...' : 'Subir archivo'}</Text>
                 </View>
               </TouchableOpacity>
               {estudianteCreateError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudianteCreateError}</Text> : null}
+              {uploadedStudents.length > 0 ? (
+                <View style={styles.dataBox}>
+                  <Text style={styles.dataTitle}>Estudiantes cargados</Text>
+                  {uploadedStudents.map((s, idx) => (
+                    <Text key={`${s.id || 'new'}-${idx}`} style={styles.dataBullet}>
+                      - {s.nombres} {s.apellidos} | QR: {s.qr}{s.codigoEstudiante ? ` | Codigo: ${s.codigoEstudiante}` : ''}
+                    </Text>
+                  ))}
+                </View>
+              ) : null}
               <View style={styles.courseFormActions}>
                 <TouchableOpacity
                   style={[styles.smallBtn, styles.createBtn, savingEstudiante && { opacity: 0.6 }]}
@@ -2308,6 +2378,8 @@ export default function HomeScreen() {
                       onPress={async () => {
                         setCursoSeleccionado(c.id);
                         setCursoPickerOpen(false);
+                        setEstudianteEditing(null);
+                        setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
                         await loadEstudiantesPorCurso(c.id);
                       }}
                     >
@@ -2330,8 +2402,89 @@ export default function HomeScreen() {
                 estudiantes.map((e) => (
                   <View key={e.id} style={styles.courseRow}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.dataItem}>- {e.nombre || `${e.nombres || ''} ${e.apellidos || ''}`.trim()}</Text>
-                      {e.documento ? <Text style={styles.dataBullet}>ID: {e.documento}</Text> : null}
+                      {String(estudianteEditing) === String(e.id) ? (
+                        <View style={[styles.courseForm, { marginBottom: 0 }]}>
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.nombres}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({ ...prev, nombres: value }))}
+                            placeholder="Nombres"
+                            placeholderTextColor="#94a3b8"
+                            editable={!savingEstudianteEdit}
+                          />
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.apellidos}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({ ...prev, apellidos: value }))}
+                            placeholder="Apellidos"
+                            placeholderTextColor="#94a3b8"
+                            editable={!savingEstudianteEdit}
+                          />
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.qr}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({ ...prev, qr: value }))}
+                            placeholder="Codigo QR"
+                            placeholderTextColor="#94a3b8"
+                            editable={!savingEstudianteEdit}
+                          />
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.codigoEstudiante}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({ ...prev, codigoEstudiante: value }))}
+                            placeholder="Codigo del estudiante"
+                            placeholderTextColor="#94a3b8"
+                            editable={!savingEstudianteEdit}
+                          />
+                        </View>
+                      ) : (
+                        <>
+                          <Text style={styles.dataItem}>- {e.nombre || `${e.nombres || ''} ${e.apellidos || ''}`.trim()}</Text>
+                          {e.codigoEstudiante ? <Text style={styles.dataBullet}>Codigo: {e.codigoEstudiante}</Text> : null}
+                          {e.qr ? <Text style={styles.dataBullet}>QR: {e.qr}</Text> : null}
+                        </>
+                      )}
+                    </View>
+                    <View style={styles.courseRowActions}>
+                      {String(estudianteEditing) === String(e.id) ? (
+                        <>
+                          <TouchableOpacity
+                            style={[styles.smallBtn, styles.outlineBtn, savingEstudianteEdit && { opacity: 0.6 }]}
+                            onPress={cancelEditEstudiante}
+                            disabled={savingEstudianteEdit}
+                          >
+                            <View style={styles.btnRow}>
+                              <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Cancelar</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.smallBtn, styles.createBtn, savingEstudianteEdit && { opacity: 0.6 }]}
+                            onPress={() => handleUpdateEstudiante(e.id)}
+                            disabled={savingEstudianteEdit}
+                          >
+                            <View style={styles.btnRow}>
+                              <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>{savingEstudianteEdit ? 'Guardando...' : 'Guardar'}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </>
+                      ) : (
+                        <>
+                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditEstudiante(e)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Actualizar</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteEstudiante(e)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </>
+                      )}
                     </View>
                   </View>
                 ))

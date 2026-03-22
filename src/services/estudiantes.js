@@ -14,3 +14,13 @@ export async function createEstudiantesLote(payload) {
   const { data } = await api.post('/estudiantes/lote', payload);
   return data;
 }
+
+export async function updateEstudiante(id, payload) {
+  const { data } = await api.put(`/estudiantes/${id}`, payload);
+  return data;
+}
+
+export async function deleteEstudiante(id) {
+  const { data } = await api.delete(`/estudiantes/${id}`);
+  return data;
+}
