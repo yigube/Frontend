@@ -71,6 +71,7 @@ export default function HomeScreen() {
   const [rectorCorreo, setRectorCorreo] = useState('');
   const [rectorTelefono, setRectorTelefono] = useState('');
   const [rectorCedula, setRectorCedula] = useState('');
+  const [rectorCargo, setRectorCargo] = useState('rector');
   const [rectorPassword, setRectorPassword] = useState('');
   const [showRectorPassword, setShowRectorPassword] = useState(false);
   const [hasRectorPassword, setHasRectorPassword] = useState(false);
@@ -468,6 +469,7 @@ export default function HomeScreen() {
     setRectorCorreo('');
     setRectorTelefono('');
     setRectorCedula('');
+    setRectorCargo('rector');
     setRectorPassword('');
     setShowRectorPassword(false);
     setHasRectorPassword(false);
@@ -486,6 +488,7 @@ export default function HomeScreen() {
     setRectorCorreo('');
     setRectorTelefono('');
     setRectorCedula('');
+    setRectorCargo('rector');
     setRectorPassword('');
     setShowRectorPassword(false);
     setHasRectorPassword(false);
@@ -501,6 +504,7 @@ export default function HomeScreen() {
     setRectorCorreo(colegio?.rectorCorreo || colegio?.rector_correo || '');
     setRectorTelefono(colegio?.rectorTelefono || colegio?.rector_telefono || '');
     setRectorCedula(colegio?.rectorCedula || colegio?.rector_cedula || '');
+    setRectorCargo((colegio?.rectorCargo || colegio?.rector?.cargo || 'rector') === 'coordinador' ? 'coordinador' : 'rector');
     setRectorPassword('');
     setShowRectorPassword(false);
     setHasRectorPassword(Boolean(colegio?.rectorTienePassword));
@@ -517,6 +521,7 @@ export default function HomeScreen() {
     const payload = {
       nombre,
       codigoDane,
+      rectorCargo,
       rectorNombre: rectorNombre.trim(),
       rectorApellido: rectorApellido.trim(),
       rectorCorreo: rectorCorreo.trim(),
@@ -544,6 +549,7 @@ export default function HomeScreen() {
       setRectorCorreo('');
       setRectorTelefono('');
       setRectorCedula('');
+      setRectorCargo('rector');
       setRectorPassword('');
       setShowRectorPassword(false);
       setHasRectorPassword(false);
@@ -1460,7 +1466,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder="Nombre del rector"
+                placeholder={`Nombre del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
                 placeholderTextColor="#9ca3af"
                 value={rectorNombre}
                 editable={!savingColegio}
@@ -1468,7 +1474,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder="Apellido del rector"
+                placeholder={`Apellido del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
                 placeholderTextColor="#9ca3af"
                 value={rectorApellido}
                 editable={!savingColegio}
@@ -1476,7 +1482,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder="Correo del rector"
+                placeholder={`Correo del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
                 placeholderTextColor="#9ca3af"
                 value={rectorCorreo}
                 editable={!savingColegio}
@@ -1486,7 +1492,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder="Telefono del rector"
+                placeholder={`Telefono del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
                 placeholderTextColor="#9ca3af"
                 value={rectorTelefono}
                 editable={!savingColegio}
@@ -1495,7 +1501,7 @@ export default function HomeScreen() {
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder="Cedula del rector"
+                placeholder={`Cedula del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
                 placeholderTextColor="#9ca3af"
                 value={rectorCedula}
                 editable={!savingColegio}
@@ -1505,7 +1511,9 @@ export default function HomeScreen() {
               <View style={styles.passwordInputWrap}>
                 <TextInput
                   style={[styles.courseInput, styles.passwordInput]}
-                  placeholder={isEditingColegio ? 'Nueva contrasena del rector (opcional)' : 'Contrasena del rector'}
+                  placeholder={isEditingColegio
+                    ? `Nueva contrasena del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'} (opcional)`
+                    : `Contrasena del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
                   placeholderTextColor="#9ca3af"
                   value={rectorPassword}
                   editable={!savingColegio}
@@ -1523,8 +1531,31 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
               {isEditingColegio && hasRectorPassword && !rectorPassword ? (
-                <Text style={styles.dataBullet}>El rector ya tiene contrasena configurada. Escribe una nueva solo si deseas cambiarla.</Text>
+                <Text style={styles.dataBullet}>Este usuario directivo ya tiene contrasena configurada. Escribe una nueva solo si deseas cambiarla.</Text>
               ) : null}
+              <Text style={styles.fieldLabel}>Cargo del directivo</Text>
+              <View style={styles.inlineRow}>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.outlineBtn, rectorCargo === 'rector' && styles.pickerItemActive, savingColegio && { opacity: 0.6 }]}
+                  onPress={() => setRectorCargo('rector')}
+                  disabled={savingColegio}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="school-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>Rector</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.outlineBtn, rectorCargo === 'coordinador' && styles.pickerItemActive, savingColegio && { opacity: 0.6 }]}
+                  onPress={() => setRectorCargo('coordinador')}
+                  disabled={savingColegio}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="people-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>Coordinador</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
               {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
               <View style={styles.courseFormActions}>
                 {isEditingColegio ? (
@@ -1540,6 +1571,7 @@ export default function HomeScreen() {
                       setRectorCorreo('');
                       setRectorTelefono('');
                       setRectorCedula('');
+                      setRectorCargo('rector');
                       setRectorPassword('');
                       setShowRectorPassword(false);
                       setHasRectorPassword(false);
@@ -1573,19 +1605,23 @@ export default function HomeScreen() {
               {colegiosList.length === 0 && !colegiosLoading ? (
                 <Text style={styles.dataBullet}>- AÃºn no hay colegios registrados</Text>
               ) : (
-                colegiosList.map((c) => (
+                colegiosList.map((c) => {
+                  const cargoValue = (c?.rectorCargo || c?.rector?.cargo || 'rector').toLowerCase();
+                  const cargoLabel = cargoValue === 'coordinador' ? 'Coordinador' : 'Rector';
+                  return (
                     <View key={c.id} style={[styles.courseRow, isEditingColegio && String(colegioEditing?.id) === String(c.id) && styles.courseRowActive]}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
                         {(c.codigoDane || c.codigo_dane) ? <Text style={styles.dataBullet}>Codigo DANE: {c.codigoDane || c.codigo_dane}</Text> : null}
                         {(c.rectorNombre || c.rector_nombre || c.rectorApellido || c.rector_apellido) ? (
                           <Text style={styles.dataBullet}>
-                            Rector: {[c.rectorNombre || c.rector_nombre, c.rectorApellido || c.rector_apellido].filter(Boolean).join(' ')}
+                            {cargoLabel}: {[c.rectorNombre || c.rector_nombre, c.rectorApellido || c.rector_apellido].filter(Boolean).join(' ')}
                           </Text>
                         ) : null}
-                        {(c.rectorCorreo || c.rector_correo) ? <Text style={styles.dataBullet}>Correo rector: {c.rectorCorreo || c.rector_correo}</Text> : null}
-                        {(c.rectorTelefono || c.rector_telefono) ? <Text style={styles.dataBullet}>Telefono rector: {c.rectorTelefono || c.rector_telefono}</Text> : null}
-                        {(c.rectorCedula || c.rector_cedula) ? <Text style={styles.dataBullet}>Cedula rector: {c.rectorCedula || c.rector_cedula}</Text> : null}
+                        <Text style={styles.dataBullet}>Rol: {cargoLabel.toLowerCase()}</Text>
+                        {(c.rectorCorreo || c.rector_correo) ? <Text style={styles.dataBullet}>Correo {cargoLabel.toLowerCase()}: {c.rectorCorreo || c.rector_correo}</Text> : null}
+                        {(c.rectorTelefono || c.rector_telefono) ? <Text style={styles.dataBullet}>Telefono {cargoLabel.toLowerCase()}: {c.rectorTelefono || c.rector_telefono}</Text> : null}
+                        {(c.rectorCedula || c.rector_cedula) ? <Text style={styles.dataBullet}>Cedula {cargoLabel.toLowerCase()}: {c.rectorCedula || c.rector_cedula}</Text> : null}
                         {c.direccion ? <Text style={styles.dataBullet}>DirecciÃ³n: {c.direccion}</Text> : null}
                       </View>
                     <View style={styles.courseRowActions}>
@@ -1603,7 +1639,8 @@ export default function HomeScreen() {
                       </TouchableOpacity>
                     </View>
                   </View>
-                ))
+                );
+                })
               )}
             </View>
             </ScrollView>
