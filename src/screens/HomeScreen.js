@@ -14,7 +14,9 @@ export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
   const user = useAuth(s => s.user);
   const isAdmin = user?.rol === 'admin';
+  const isRectorCoordinador = ['rector', 'coordinador'].includes(user?.rol);
   const canManageCourses = ['admin', 'rector', 'coordinador'].includes(user?.rol);
+  const canManagePeriods = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const navigation = useNavigation();
   const teacherInitial = (user?.email?.[0] || 'D').toUpperCase();
   const [periodos, setPeriodos] = useState([]);
@@ -70,6 +72,8 @@ export default function HomeScreen() {
   const [rectorTelefono, setRectorTelefono] = useState('');
   const [rectorCedula, setRectorCedula] = useState('');
   const [rectorPassword, setRectorPassword] = useState('');
+  const [showRectorPassword, setShowRectorPassword] = useState(false);
+  const [hasRectorPassword, setHasRectorPassword] = useState(false);
   const [deleteColegioModal, setDeleteColegioModal] = useState({ visible: false, colegio: null });
   const [daneExistsModal, setDaneExistsModal] = useState({ visible: false, message: '' });
   const [colegioEditing, setColegioEditing] = useState(null);
@@ -465,6 +469,8 @@ export default function HomeScreen() {
     setRectorTelefono('');
     setRectorCedula('');
     setRectorPassword('');
+    setShowRectorPassword(false);
+    setHasRectorPassword(false);
     setColegiosError('');
     setColegiosModalVisible(true);
     await loadColegios();
@@ -481,6 +487,8 @@ export default function HomeScreen() {
     setRectorTelefono('');
     setRectorCedula('');
     setRectorPassword('');
+    setShowRectorPassword(false);
+    setHasRectorPassword(false);
     setColegiosError('');
   };
 
@@ -494,6 +502,8 @@ export default function HomeScreen() {
     setRectorTelefono(colegio?.rectorTelefono || colegio?.rector_telefono || '');
     setRectorCedula(colegio?.rectorCedula || colegio?.rector_cedula || '');
     setRectorPassword('');
+    setShowRectorPassword(false);
+    setHasRectorPassword(Boolean(colegio?.rectorTienePassword));
     setColegiosError('');
     setTimeout(() => {
       colegiosScrollRef.current?.scrollTo?.({ y: 0, animated: true });
@@ -503,6 +513,7 @@ export default function HomeScreen() {
   const handleSaveColegio = async () => {
     const nombre = colegioNombre.trim();
     const codigoDane = colegioCodigoDane.trim();
+    const passwordDraft = rectorPassword.trim();
     const payload = {
       nombre,
       codigoDane,
@@ -510,9 +521,11 @@ export default function HomeScreen() {
       rectorApellido: rectorApellido.trim(),
       rectorCorreo: rectorCorreo.trim(),
       rectorTelefono: rectorTelefono.trim(),
-      rectorCedula: rectorCedula.trim(),
-      rectorPassword: rectorPassword.trim()
+      rectorCedula: rectorCedula.trim()
     };
+    if (passwordDraft) {
+      payload.rectorPassword = passwordDraft;
+    }
     if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el colegio');
     setSavingColegio(true);
     setColegiosError('');
@@ -532,6 +545,8 @@ export default function HomeScreen() {
       setRectorTelefono('');
       setRectorCedula('');
       setRectorPassword('');
+      setShowRectorPassword(false);
+      setHasRectorPassword(false);
     } catch (e) {
       const apiError = getApiErrorMessage(e, 'No se pudo guardar el colegio');
       if (String(apiError).toLowerCase().includes('codigo dane ya existe')) {
@@ -1052,7 +1067,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.actionGrid}>
-        {!isAdmin ? (
+        {!isAdmin && !isRectorCoordinador ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
             <View style={styles.btnRow}>
               <Ionicons name="qr-code-outline" size={18} color="#fff" />
@@ -1068,7 +1083,7 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
         ) : null}
-        {!isAdmin ? (
+        {!isAdmin && !isRectorCoordinador ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
           <View style={styles.btnRow}>
             <Ionicons name="people-outline" size={18} color="#fff" />
@@ -1076,30 +1091,36 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
         ) : null}
+        {canManageCourses ? (
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
           <View style={styles.btnRow}>
             <Ionicons name="person-add-outline" size={18} color="#fff" />
             <Text style={styles.actionBtnText}>Crear docentes</Text>
           </View>
         </TouchableOpacity>
+        ) : null}
+      {isAdmin ? (
       <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
         <View style={styles.btnRow}>
           <Ionicons name="business-outline" size={18} color="#111" />
           <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
         </View>
       </TouchableOpacity>
+      ) : null}
         <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
           <View style={styles.btnRow}>
             <Ionicons name="bar-chart-outline" size={18} color="#fff" />
             <Text style={styles.actionBtnText}>Reportes</Text>
           </View>
         </TouchableOpacity>
+        {canManagePeriods ? (
         <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
           <View style={styles.btnRow}>
             <Ionicons name="calendar-outline" size={18} color="#fff" />
             <Text style={styles.actionBtnText}>Activar periodos</Text>
           </View>
         </TouchableOpacity>
+        ) : null}
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
@@ -1481,17 +1502,29 @@ export default function HomeScreen() {
                 onChangeText={setRectorCedula}
                 keyboardType="numeric"
               />
-              <TextInput
-                style={styles.courseInput}
-                placeholder={isEditingColegio ? 'Nueva contrasena del rector (opcional)' : 'Contrasena del rector'}
-                placeholderTextColor="#9ca3af"
-                value={rectorPassword}
-                editable={!savingColegio}
-                onChangeText={setRectorPassword}
-                secureTextEntry
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              <View style={styles.passwordInputWrap}>
+                <TextInput
+                  style={[styles.courseInput, styles.passwordInput]}
+                  placeholder={isEditingColegio ? 'Nueva contrasena del rector (opcional)' : 'Contrasena del rector'}
+                  placeholderTextColor="#9ca3af"
+                  value={rectorPassword}
+                  editable={!savingColegio}
+                  onChangeText={setRectorPassword}
+                  secureTextEntry={!showRectorPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={styles.passwordEyeBtn}
+                  onPress={() => setShowRectorPassword((prev) => !prev)}
+                  disabled={savingColegio}
+                >
+                  <Ionicons name={showRectorPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
+                </TouchableOpacity>
+              </View>
+              {isEditingColegio && hasRectorPassword && !rectorPassword ? (
+                <Text style={styles.dataBullet}>El rector ya tiene contrasena configurada. Escribe una nueva solo si deseas cambiarla.</Text>
+              ) : null}
               {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
               <View style={styles.courseFormActions}>
                 {isEditingColegio ? (
@@ -1508,6 +1541,8 @@ export default function HomeScreen() {
                       setRectorTelefono('');
                       setRectorCedula('');
                       setRectorPassword('');
+                      setShowRectorPassword(false);
+                      setHasRectorPassword(false);
                     }}
                     disabled={savingColegio}
                   >
@@ -2328,6 +2363,16 @@ const styles = StyleSheet.create({
   courseActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   courseForm: { marginBottom: 10, gap: 8 },
   courseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+  passwordInputWrap: { position: 'relative', justifyContent: 'center' },
+  passwordInput: { paddingRight: 44 },
+  passwordEyeBtn: {
+    position: 'absolute',
+    right: 10,
+    height: 28,
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   courseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
