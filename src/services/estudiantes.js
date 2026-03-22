@@ -9,3 +9,8 @@ export async function createEstudiante(payload) {
   const { data } = await api.post('/estudiantes', payload);
   return data;
 }
+
+export async function createEstudiantesLote(payload) {
+  const { data } = await api.post('/estudiantes/lote', payload);
+  return data;
+}

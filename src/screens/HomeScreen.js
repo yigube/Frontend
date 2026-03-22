@@ -1,12 +1,12 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
 import { getCursos, getCursosPorColegio, createCurso, updateCurso, deleteCurso } from '../services/cursos';
-import { getEstudiantes, createEstudiante } from '../services/estudiantes';
+import { getEstudiantes, createEstudiante, createEstudiantesLote } from '../services/estudiantes';
 import { getDocentes, getCursosDisponiblesDocente, createDocente, updateDocente, deleteDocente } from '../services/docentes';
 import { getColegios, createColegio, updateColegio, deleteColegio } from '../services/colegios';
 
@@ -58,7 +58,8 @@ export default function HomeScreen() {
   const [estudianteCreateModalVisible, setEstudianteCreateModalVisible] = useState(false);
   const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
   const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
-  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', qr: '' });
+  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+  const [estudianteCsvText, setEstudianteCsvText] = useState('');
   const [estudianteCreateError, setEstudianteCreateError] = useState('');
   const [savingEstudiante, setSavingEstudiante] = useState(false);
   const [docentesModalVisible, setDocentesModalVisible] = useState(false);
@@ -454,11 +455,33 @@ export default function HomeScreen() {
     }
   };
 
+  const parseCsvRows = (csvText) => {
+    const normalized = String(csvText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalized.split('\n').map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+    const idxNombres = headers.indexOf('nombres');
+    const idxApellidos = headers.indexOf('apellidos');
+    const idxQr = headers.indexOf('qr');
+    const idxCodigo = headers.indexOf('codigoestudiante');
+    if (idxNombres < 0 || idxApellidos < 0 || idxQr < 0) return [];
+    return lines.slice(1).map((line) => {
+      const cols = line.split(',').map((c) => c.trim());
+      return {
+        nombres: cols[idxNombres] || '',
+        apellidos: cols[idxApellidos] || '',
+        qr: cols[idxQr] || '',
+        codigoEstudiante: idxCodigo >= 0 ? (cols[idxCodigo] || '') : ''
+      };
+    }).filter((row) => row.nombres && row.apellidos && row.qr);
+  };
+
   const openCreateEstudianteModal = async () => {
     setEstudianteCreateModalVisible(true);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
-    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '' });
+    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteCsvText('');
     setLoadingCursos(true);
     try {
       const schoolId = user?.schoolId || null;
@@ -476,14 +499,98 @@ export default function HomeScreen() {
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
     setEstudianteCreateCursoId(null);
-    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '' });
+    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteCsvText('');
     setSavingEstudiante(false);
+  };
+
+  const handleImportCsv = async () => {
+    const cursoId = Number(estudianteCreateCursoId);
+    if (!Number.isFinite(cursoId) || cursoId <= 0) {
+      setEstudianteCreateError('Selecciona un curso antes de importar CSV');
+      return;
+    }
+
+    const importRows = async (content) => {
+      const estudiantes = parseCsvRows(content);
+      if (!estudiantes.length) {
+        setEstudianteCreateError('CSV invalido. Encabezados requeridos: nombres,apellidos,qr,codigoEstudiante');
+        return;
+      }
+      setSavingEstudiante(true);
+      setEstudianteCreateError('');
+      try {
+        const data = await createEstudiantesLote({ cursoId, estudiantes });
+        Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
+        closeCreateEstudianteModal();
+      } catch (e) {
+        setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo importar el CSV'));
+      } finally {
+        setSavingEstudiante(false);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.csv,text/csv';
+      input.onchange = async (event) => {
+        const file = event?.target?.files?.[0];
+        if (!file) return;
+        const content = await file.text();
+        await importRows(content);
+      };
+      input.click();
+      return;
+    }
+
+    try {
+      const DocumentPicker = await import('expo-document-picker');
+      const FileSystem = await import('expo-file-system');
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/comma-separated-values', 'text/plain'],
+        copyToCacheDirectory: true,
+        multiple: false
+      });
+      if (result.canceled) return;
+      const file = result.assets?.[0];
+      if (!file?.uri) return;
+      const content = await FileSystem.readAsStringAsync(file.uri);
+      await importRows(content);
+    } catch (e) {
+      setEstudianteCreateError('No se pudo abrir el selector de archivos del dispositivo.');
+    }
+  };
+
+  const handleImportCsvText = async () => {
+    const cursoId = Number(estudianteCreateCursoId);
+    if (!Number.isFinite(cursoId) || cursoId <= 0) {
+      setEstudianteCreateError('Selecciona un curso antes de importar CSV');
+      return;
+    }
+    const estudiantes = parseCsvRows(estudianteCsvText);
+    if (!estudiantes.length) {
+      setEstudianteCreateError('CSV invalido. Encabezados requeridos: nombres,apellidos,qr,codigoEstudiante');
+      return;
+    }
+    setSavingEstudiante(true);
+    setEstudianteCreateError('');
+    try {
+      const data = await createEstudiantesLote({ cursoId, estudiantes });
+      Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
+      closeCreateEstudianteModal();
+    } catch (e) {
+      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo importar el CSV pegado'));
+    } finally {
+      setSavingEstudiante(false);
+    }
   };
 
   const handleCreateEstudiante = async () => {
     const nombres = (estudianteCreateForm.nombres || '').trim();
     const apellidos = (estudianteCreateForm.apellidos || '').trim();
     const qr = (estudianteCreateForm.qr || '').trim();
+    const codigoEstudiante = (estudianteCreateForm.codigoEstudiante || '').trim();
     const cursoId = Number(estudianteCreateCursoId);
     if (!nombres || !apellidos || !qr) {
       setEstudianteCreateError('Completa nombres, apellidos y QR');
@@ -496,7 +603,7 @@ export default function HomeScreen() {
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      await createEstudiante({ nombres, apellidos, qr, cursoId });
+      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId });
       Alert.alert('Listo', 'Estudiante agregado correctamente');
       closeCreateEstudianteModal();
     } catch (e) {
@@ -1146,7 +1253,7 @@ export default function HomeScreen() {
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]} onPress={openCreateEstudianteModal}>
                 <View style={styles.btnRow}>
                   <Ionicons name="person-add-outline" size={18} color="#fff" />
-                  <Text style={styles.actionBtnText}>Agregar estudiantes</Text>
+                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Agregar estudiantes</Text>
                 </View>
               </TouchableOpacity>
             </>
@@ -1286,6 +1393,44 @@ export default function HomeScreen() {
                 editable={!savingEstudiante}
                 onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, qr: v }))}
               />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Codigo del estudiante"
+                placeholderTextColor="#9ca3af"
+                value={estudianteCreateForm.codigoEstudiante}
+                editable={!savingEstudiante}
+                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, codigoEstudiante: v }))}
+              />
+              <TouchableOpacity
+                style={[styles.smallBtn, styles.outlineBtn, savingEstudiante && { opacity: 0.6 }]}
+                onPress={handleImportCsv}
+                disabled={savingEstudiante}
+              >
+                <View style={styles.btnRow}>
+                  <Ionicons name="document-attach-outline" size={14} color="#e5e7eb" />
+                  <Text style={styles.smallBtnText}>Cargar CSV</Text>
+                </View>
+              </TouchableOpacity>
+              <Text style={styles.dataBullet}>CSV encabezados: nombres,apellidos,qr,codigoEstudiante</Text>
+              <TextInput
+                style={[styles.courseInput, { minHeight: 90, textAlignVertical: 'top' }]}
+                placeholder={'Pega aqui el CSV\\nEjemplo:\\nnombres,apellidos,qr,codigoEstudiante\\nAna,Perez,QR-ANA,COD-1'}
+                placeholderTextColor="#9ca3af"
+                multiline
+                value={estudianteCsvText}
+                editable={!savingEstudiante}
+                onChangeText={setEstudianteCsvText}
+              />
+              <TouchableOpacity
+                style={[styles.smallBtn, styles.outlineBtn, savingEstudiante && { opacity: 0.6 }]}
+                onPress={handleImportCsvText}
+                disabled={savingEstudiante}
+              >
+                <View style={styles.btnRow}>
+                  <Ionicons name="clipboard-outline" size={14} color="#e5e7eb" />
+                  <Text style={styles.smallBtnText}>Importar CSV pegado</Text>
+                </View>
+              </TouchableOpacity>
               {estudianteCreateError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudianteCreateError}</Text> : null}
               <View style={styles.courseFormActions}>
                 <TouchableOpacity
@@ -2516,6 +2661,7 @@ const styles = StyleSheet.create({
   actionBtn: { flexBasis: '48%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   actionBtnFull: { flexBasis: '100%' },
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  actionBtnTextCompact: { fontSize: 13, flexShrink: 1, textAlign: 'center' },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   feedbackSuccess: { color: '#bbf7d0', fontWeight: '700', fontSize: 13, marginTop: 6 },
