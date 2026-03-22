@@ -1,34 +1,6 @@
 {
-  "expo": {
-    "name": "Asistencia",
-    "slug": "asistencia-frontend",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "scheme": "asistencia",
-    "userInterfaceStyle": "automatic",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "android": {
-      "package": "com.yigube.asistencia",
-      "versionCode": 2,
-      "usesCleartextTraffic": true,
-      "permissions": [
-        "CAMERA",
-        "INTERNET"
-      ]
-    },
-    "plugins": [
-      "expo-secure-store",
-      "expo-asset"
-    ],
-    "extra": {
-      "apiUrl": "http://192.168.100.5:4000",
-      "localMode": true,
-      "eas": {
-        "projectId": "9504b4ab-69e9-4dc4-b3e0-7030bc6b59ec"
-      }
-    },
-    "owner": "yigube"
-  }
+  "plugins": [
+    "expo-secure-store",
+    "expo-asset"
+  ]
 }
