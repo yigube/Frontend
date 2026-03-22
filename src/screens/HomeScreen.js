@@ -6,7 +6,7 @@ import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
 import { getCursos, getCursosPorColegio, createCurso, updateCurso, deleteCurso } from '../services/cursos';
-import { getEstudiantes } from '../services/estudiantes';
+import { getEstudiantes, createEstudiante } from '../services/estudiantes';
 import { getDocentes, getCursosDisponiblesDocente, createDocente, updateDocente, deleteDocente } from '../services/docentes';
 import { getColegios, createColegio, updateColegio, deleteColegio } from '../services/colegios';
 
@@ -14,6 +14,7 @@ export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
   const user = useAuth(s => s.user);
   const isAdmin = user?.rol === 'admin';
+  const isDocente = user?.rol === 'docente';
   const isRectorCoordinador = ['rector', 'coordinador'].includes(user?.rol);
   const canManageCourses = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const canManagePeriods = ['admin', 'rector', 'coordinador'].includes(user?.rol);
@@ -54,6 +55,12 @@ export default function HomeScreen() {
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
   const [estudiantesColegioId, setEstudiantesColegioId] = useState(null);
   const [estudiantesColegioPickerOpen, setEstudiantesColegioPickerOpen] = useState(false);
+  const [estudianteCreateModalVisible, setEstudianteCreateModalVisible] = useState(false);
+  const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
+  const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
+  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', qr: '' });
+  const [estudianteCreateError, setEstudianteCreateError] = useState('');
+  const [savingEstudiante, setSavingEstudiante] = useState(false);
   const [docentesModalVisible, setDocentesModalVisible] = useState(false);
   const [docentes, setDocentes] = useState([]);
   const [docentesLoading, setDocentesLoading] = useState(false);
@@ -444,6 +451,58 @@ export default function HomeScreen() {
       await loadEstudiantesPorCurso(firstId);
     } finally {
       setLoadingCursos(false);
+    }
+  };
+
+  const openCreateEstudianteModal = async () => {
+    setEstudianteCreateModalVisible(true);
+    setEstudianteCreateCursoPickerOpen(false);
+    setEstudianteCreateError('');
+    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '' });
+    setLoadingCursos(true);
+    try {
+      const schoolId = user?.schoolId || null;
+      const cursos = await loadCursosAsignados(schoolId);
+      setEstudianteCreateCursoId(cursos?.[0]?.id || null);
+    } catch (e) {
+      setEstudianteCreateError(e?.response?.data?.error || 'No se pudieron cargar los cursos');
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const closeCreateEstudianteModal = () => {
+    setEstudianteCreateModalVisible(false);
+    setEstudianteCreateCursoPickerOpen(false);
+    setEstudianteCreateError('');
+    setEstudianteCreateCursoId(null);
+    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '' });
+    setSavingEstudiante(false);
+  };
+
+  const handleCreateEstudiante = async () => {
+    const nombres = (estudianteCreateForm.nombres || '').trim();
+    const apellidos = (estudianteCreateForm.apellidos || '').trim();
+    const qr = (estudianteCreateForm.qr || '').trim();
+    const cursoId = Number(estudianteCreateCursoId);
+    if (!nombres || !apellidos || !qr) {
+      setEstudianteCreateError('Completa nombres, apellidos y QR');
+      return;
+    }
+    if (!Number.isFinite(cursoId) || cursoId <= 0) {
+      setEstudianteCreateError('Selecciona un curso');
+      return;
+    }
+    setSavingEstudiante(true);
+    setEstudianteCreateError('');
+    try {
+      await createEstudiante({ nombres, apellidos, qr, cursoId });
+      Alert.alert('Listo', 'Estudiante agregado correctamente');
+      closeCreateEstudianteModal();
+    } catch (e) {
+      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo agregar el estudiante'));
+    } finally {
+      setSavingEstudiante(false);
     }
   };
 
@@ -1030,6 +1089,9 @@ export default function HomeScreen() {
   const cursoSeleccionadoNombre = cursoSeleccionado
     ? (cursosAsignados.find(c => c.id === cursoSeleccionado)?.nombre || 'Curso sin nombre')
     : 'Selecciona curso';
+  const estudianteCreateCursoNombre = estudianteCreateCursoId
+    ? (cursosAsignados.find(c => c.id === estudianteCreateCursoId)?.nombre || 'Curso sin nombre')
+    : 'Selecciona curso';
 
   const resolveColegioNombre = (id) => {
     if (!id) return 'Selecciona colegio';
@@ -1073,60 +1135,79 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.actionGrid}>
-        {!isAdmin && !isRectorCoordinador ? (
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
-            <View style={styles.btnRow}>
-              <Ionicons name="qr-code-outline" size={18} color="#fff" />
-              <Text style={styles.actionBtnText}>Escanear QR</Text>
-            </View>
-          </TouchableOpacity>
-        ) : null}
-        {canManageCourses ? (
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
-          <View style={styles.btnRow}>
-            <Ionicons name="book-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Crear cursos</Text>
-          </View>
-        </TouchableOpacity>
-        ) : null}
-        {!isAdmin && !isRectorCoordinador ? (
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-          <View style={styles.btnRow}>
-            <Ionicons name="people-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Estudiantes</Text>
-          </View>
-        </TouchableOpacity>
-        ) : null}
-        {canManageCourses ? (
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
-          <View style={styles.btnRow}>
-            <Ionicons name="person-add-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Crear docentes</Text>
-          </View>
-        </TouchableOpacity>
-        ) : null}
-      {isAdmin ? (
-      <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
-        <View style={styles.btnRow}>
-          <Ionicons name="business-outline" size={18} color="#111" />
-          <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
-        </View>
-      </TouchableOpacity>
-      ) : null}
-        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
-          <View style={styles.btnRow}>
-            <Ionicons name="bar-chart-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Reportes</Text>
-          </View>
-        </TouchableOpacity>
-        {canManagePeriods ? (
-        <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
-          <View style={styles.btnRow}>
-            <Ionicons name="calendar-outline" size={18} color="#fff" />
-            <Text style={styles.actionBtnText}>Activar periodos</Text>
-          </View>
-        </TouchableOpacity>
-        ) : null}
+          {isDocente ? (
+            <>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="qr-code-outline" size={18} color="#fff" />
+                  <Text style={styles.actionBtnText}>Escanear QR</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]} onPress={openCreateEstudianteModal}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="person-add-outline" size={18} color="#fff" />
+                  <Text style={styles.actionBtnText}>Agregar estudiantes</Text>
+                </View>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {!isAdmin && !isRectorCoordinador ? (
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="qr-code-outline" size={18} color="#fff" />
+                    <Text style={styles.actionBtnText}>Escanear QR</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {canManageCourses ? (
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="book-outline" size={18} color="#fff" />
+                    <Text style={styles.actionBtnText}>Crear cursos</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {!isAdmin && !isRectorCoordinador ? (
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="people-outline" size={18} color="#fff" />
+                    <Text style={styles.actionBtnText}>Estudiantes</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {canManageCourses ? (
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="person-add-outline" size={18} color="#fff" />
+                    <Text style={styles.actionBtnText}>Crear docentes</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              {isAdmin ? (
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="business-outline" size={18} color="#111" />
+                    <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="bar-chart-outline" size={18} color="#fff" />
+                  <Text style={styles.actionBtnText}>Reportes</Text>
+                </View>
+              </TouchableOpacity>
+              {canManagePeriods ? (
+                <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="calendar-outline" size={18} color="#fff" />
+                    <Text style={styles.actionBtnText}>Activar periodos</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
@@ -1136,6 +1217,92 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
       </ScrollView>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={estudianteCreateModalVisible}
+        onRequestClose={closeCreateEstudianteModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Agregar estudiante</Text>
+              <Pressable onPress={closeCreateEstudianteModal} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={styles.fieldLabel}>Curso</Text>
+              <TouchableOpacity
+                style={[styles.selectBoxFull, { marginBottom: 6 }]}
+                onPress={() => setEstudianteCreateCursoPickerOpen(prev => !prev)}
+                disabled={loadingCursos || savingEstudiante}
+              >
+                <Text style={styles.selectText}>{loadingCursos ? 'Cargando cursos...' : estudianteCreateCursoNombre}</Text>
+              </TouchableOpacity>
+              {estudianteCreateCursoPickerOpen ? (
+                <View style={styles.dropdownList}>
+                  {cursosAsignados.length === 0 ? (
+                    <Text style={[styles.dataBullet, { padding: 12 }]}>No hay cursos disponibles</Text>
+                  ) : (
+                    cursosAsignados.map((c) => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.dropdownItem, String(estudianteCreateCursoId) === String(c.id) && styles.dropdownItemSelected]}
+                        onPress={() => {
+                          setEstudianteCreateCursoId(c.id);
+                          setEstudianteCreateCursoPickerOpen(false);
+                        }}
+                      >
+                        <Text style={styles.selectText}>{c.nombre || `Curso ${c.id}`}</Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Nombres"
+                placeholderTextColor="#9ca3af"
+                value={estudianteCreateForm.nombres}
+                editable={!savingEstudiante}
+                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, nombres: v }))}
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Apellidos"
+                placeholderTextColor="#9ca3af"
+                value={estudianteCreateForm.apellidos}
+                editable={!savingEstudiante}
+                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, apellidos: v }))}
+              />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Codigo QR"
+                placeholderTextColor="#9ca3af"
+                value={estudianteCreateForm.qr}
+                editable={!savingEstudiante}
+                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, qr: v }))}
+              />
+              {estudianteCreateError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudianteCreateError}</Text> : null}
+              <View style={styles.courseFormActions}>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.createBtn, savingEstudiante && { opacity: 0.6 }]}
+                  onPress={handleCreateEstudiante}
+                  disabled={savingEstudiante}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>{savingEstudiante ? 'Guardando...' : 'Guardar estudiante'}</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal transparent animationType="slide" visible={periodModalVisible} onRequestClose={() => setPeriodModalVisible(false)}>
         <View style={styles.modalBackdrop}>
