@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput, Platform } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
@@ -38,6 +38,12 @@ export default function HomeScreen() {
   const [asignacionCursosDocente, setAsignacionCursosDocente] = useState({});
   const [savingAsignacionDocenteId, setSavingAsignacionDocenteId] = useState(null);
   const cursoDocSchoolRef = useRef(null);
+  const [materiaDocModalVisible, setMateriaDocModalVisible] = useState(false);
+  const [materiaDocColegioId, setMateriaDocColegioId] = useState(null);
+  const [materiaDocPickerOpen, setMateriaDocPickerOpen] = useState(false);
+  const [materiasDraftPorDocente, setMateriasDraftPorDocente] = useState({});
+  const [savingMateriasDocenteId, setSavingMateriasDocenteId] = useState(null);
+  const materiaDocSchoolRef = useRef(null);
   const [cursosModalVisible, setCursosModalVisible] = useState(false);
   const [deleteCursoModal, setDeleteCursoModal] = useState({ visible: false, curso: null });
   const [cursoCrudColegioId, setCursoCrudColegioId] = useState(null);
@@ -95,12 +101,17 @@ export default function HomeScreen() {
   const [docenteCrudModalVisible, setDocenteCrudModalVisible] = useState(false);
   const [docenteForm, setDocenteForm] = useState({ nombre: '', email: '', password: '' });
   const [docenteCursos, setDocenteCursos] = useState([]);
+  const [docenteMateriasPorCurso, setDocenteMateriasPorCurso] = useState({});
+  const [docenteNuevaMateriaPorCurso, setDocenteNuevaMateriaPorCurso] = useState({});
   const [docenteCursosDisponibles, setDocenteCursosDisponibles] = useState([]);
   const [docenteColegioId, setDocenteColegioId] = useState(null);
   const [docenteEditing, setDocenteEditing] = useState(null);
   const [savingDocente, setSavingDocente] = useState(false);
   const [docenteError, setDocenteError] = useState('');
   const [deleteDocenteModal, setDeleteDocenteModal] = useState({ visible: false, docente: null });
+  const [docentePerfilCursos, setDocentePerfilCursos] = useState([]);
+  const [docentePerfilLoading, setDocentePerfilLoading] = useState(false);
+  const [docentePerfilError, setDocentePerfilError] = useState('');
   const docenteCrudSchoolRef = useRef(null);
   const colegiosScrollRef = useRef(null);
   const createDefaultPeriodForm = () => {
@@ -824,6 +835,48 @@ export default function HomeScreen() {
     }
   };
 
+  const loadDocentePerfilMaterias = async () => {
+    if (!isDocente || !user?.schoolId) {
+      setDocentePerfilCursos([]);
+      setDocentePerfilError('');
+      return;
+    }
+
+    setDocentePerfilLoading(true);
+    setDocentePerfilError('');
+    try {
+      const data = await getDocentes({ schoolId: user.schoolId });
+      const byId = (data || []).find((docente) => String(docente?.id) === String(user?.id));
+      const byEmail = (data || []).find(
+        (docente) => String(docente?.email || '').toLowerCase() === String(user?.email || '').toLowerCase()
+      );
+      const currentDocente = byId || byEmail || null;
+      setDocentePerfilCursos(Array.isArray(currentDocente?.cursos) ? currentDocente.cursos : []);
+    } catch (e) {
+      setDocentePerfilCursos([]);
+      setDocentePerfilError(e?.response?.data?.error || e?.message || 'No se pudieron cargar tus materias');
+    } finally {
+      setDocentePerfilLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDocente) {
+      setDocentePerfilCursos([]);
+      setDocentePerfilError('');
+      return;
+    }
+    loadDocentePerfilMaterias();
+  }, [isDocente, user?.id, user?.email, user?.schoolId]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (!isDocente) return undefined;
+      loadDocentePerfilMaterias();
+      return undefined;
+    }, [isDocente, user?.id, user?.email, user?.schoolId])
+  );
+
   const buildAsignacionesDocenteMap = (docs = []) => {
     const map = {};
     docs.forEach((d) => {
@@ -935,10 +988,135 @@ export default function HomeScreen() {
     }
   };
 
+  const parseMateriasTexto = (value) => String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const buildMateriasDraftMap = (docs = []) => {
+    const map = {};
+    docs.forEach((docente) => {
+      const cursosMap = {};
+      (docente?.cursos || []).forEach((curso) => {
+        cursosMap[curso.id] = Array.isArray(curso?.materias) ? curso.materias.join(', ') : '';
+      });
+      map[docente.id] = cursosMap;
+    });
+    return map;
+  };
+
+  const loadMateriaDocDataExact = async (schoolId) => {
+    const targetSchoolId = Number(schoolId);
+    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return [];
+    setDocentesLoading(true);
+    setDocentesError('');
+    try {
+      const data = await getDocentes({ schoolId: targetSchoolId });
+      if (Number(materiaDocSchoolRef.current) !== targetSchoolId) return [];
+      setDocentes(data || []);
+      setMateriasDraftPorDocente(buildMateriasDraftMap(data || []));
+      return data || [];
+    } catch (e) {
+      if (Number(materiaDocSchoolRef.current) === targetSchoolId) {
+        const message = e?.response?.data?.error || e?.message || 'No se pudieron cargar docentes';
+        setDocentes([]);
+        setDocentesError(message);
+      }
+      return [];
+    } finally {
+      setDocentesLoading(false);
+    }
+  };
+
+  const changeMateriaDocColegio = async (newSchoolId) => {
+    const targetSchoolId = Number(newSchoolId);
+    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return;
+    materiaDocSchoolRef.current = targetSchoolId;
+    setMateriaDocColegioId(targetSchoolId);
+    setMateriaDocPickerOpen(false);
+    await loadMateriaDocDataExact(targetSchoolId);
+  };
+
+  const openMateriaDocentesModal = async () => {
+    setMateriaDocModalVisible(true);
+    setMateriaDocColegioId(null);
+    setMateriaDocPickerOpen(false);
+    setDocentes([]);
+    setDocentesError('');
+    setMateriasDraftPorDocente({});
+    materiaDocSchoolRef.current = null;
+    const userSchoolOption = user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : [];
+    setColegiosOptions(userSchoolOption);
+    const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
+    const defaultSchoolId = user?.schoolId || colegios?.[0]?.id || null;
+    if (defaultSchoolId) {
+      await changeMateriaDocColegio(defaultSchoolId);
+    }
+  };
+
+  const closeMateriaDocentesModal = () => {
+    setMateriaDocModalVisible(false);
+    setMateriaDocColegioId(null);
+    setMateriaDocPickerOpen(false);
+    setSavingMateriasDocenteId(null);
+    setMateriasDraftPorDocente({});
+    materiaDocSchoolRef.current = null;
+  };
+
+  const refreshAfterGuardarMaterias = async (schoolId) => {
+    const targetSchoolId = Number(schoolId);
+    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return;
+
+    const tasks = [
+      loadMateriaDocDataExact(targetSchoolId),
+      loadDocentesActual(targetSchoolId)
+    ];
+
+    if (docentesModalVisible || Number(colegioSeleccionado) === targetSchoolId) {
+      tasks.push(loadDocentesColegio(targetSchoolId));
+    }
+    if (cursoDocModalVisible || Number(cursoDocColegioId) === targetSchoolId) {
+      tasks.push(loadCursoDocDataExact(targetSchoolId));
+    }
+    if (docenteCrudModalVisible || Number(docenteColegioId) === targetSchoolId) {
+      tasks.push(loadCursosDisponiblesDocente(targetSchoolId));
+    }
+
+    await Promise.allSettled(tasks);
+  };
+
+  const guardarMateriasDocente = async (docente) => {
+    const schoolId = Number(materiaDocColegioId);
+    if (!Number.isFinite(schoolId) || schoolId <= 0 || !docente?.id) return;
+
+    const cursoIds = (docente.cursos || []).map((curso) => Number(curso.id)).filter((id) => Number.isFinite(id) && id > 0);
+    const draft = materiasDraftPorDocente?.[docente.id] || {};
+    const materiasPorCurso = {};
+
+    cursoIds.forEach((cursoId) => {
+      const materias = parseMateriasTexto(draft[cursoId]);
+      if (materias.length > 0) {
+        materiasPorCurso[cursoId] = materias;
+      }
+    });
+
+    setSavingMateriasDocenteId(docente.id);
+    try {
+      await updateDocente(docente.id, { cursoIds, materiasPorCurso, schoolId });
+      await refreshAfterGuardarMaterias(schoolId);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron guardar las materias');
+    } finally {
+      setSavingMateriasDocenteId(null);
+    }
+  };
+
   const openDocenteCrudModal = async () => {
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteCursos([]);
+    setDocenteMateriasPorCurso({});
+    setDocenteNuevaMateriaPorCurso({});
     setDocenteCursosDisponibles([]);
     setDocenteColegioId(user?.schoolId || null);
     setDocenteError('');
@@ -962,6 +1140,8 @@ export default function HomeScreen() {
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteCursos([]);
+    setDocenteMateriasPorCurso({});
+    setDocenteNuevaMateriaPorCurso({});
     setDocenteCursosDisponibles([]);
     setDocenteColegioId(null);
     setDocenteError('');
@@ -1003,7 +1183,35 @@ export default function HomeScreen() {
   }, [docenteCrudModalVisible, docenteColegioId]);
 
   const toggleDocenteCurso = (cursoId) => {
-    setDocenteCursos(prev => prev.includes(cursoId) ? prev.filter(id => id !== cursoId) : [...prev, cursoId]);
+    setDocenteCursos((prev) => {
+      if (prev.includes(cursoId)) {
+        setDocenteMateriasPorCurso((current) => {
+          const next = { ...current };
+          delete next[cursoId];
+          return next;
+        });
+        setDocenteNuevaMateriaPorCurso((current) => {
+          const next = { ...current };
+          delete next[cursoId];
+          return next;
+        });
+        return prev.filter((id) => id !== cursoId);
+      }
+      return [...prev, cursoId];
+    });
+  };
+
+  const agregarMateriaACurso = (cursoId) => {
+    const nuevaMateria = String(docenteNuevaMateriaPorCurso[cursoId] || '').trim();
+    if (!nuevaMateria) return;
+
+    setDocenteMateriasPorCurso((prev) => {
+      const actuales = parseMateriasTexto(prev[cursoId]);
+      const yaExiste = actuales.some((item) => item.toLowerCase() === nuevaMateria.toLowerCase());
+      if (!yaExiste) actuales.push(nuevaMateria);
+      return { ...prev, [cursoId]: actuales.join(', ') };
+    });
+    setDocenteNuevaMateriaPorCurso((prev) => ({ ...prev, [cursoId]: '' }));
   };
 
   const changeDocenteColegio = async (newId) => {
@@ -1011,6 +1219,8 @@ export default function HomeScreen() {
     if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
     setDocenteColegioId(parsedSchoolId);
     setDocenteCursos([]);
+    setDocenteMateriasPorCurso({});
+    setDocenteNuevaMateriaPorCurso({});
     setDocenteCursosDisponibles([]);
     docenteCrudSchoolRef.current = parsedSchoolId;
     setLoadingCursos(true);
@@ -1032,7 +1242,16 @@ export default function HomeScreen() {
     try {
       await loadCursosDisponiblesDocente(targetSchoolId);
       await loadDocentesActual(targetSchoolId);
-      setDocenteCursos((docente.cursos || []).map(c => c.id));
+      const cursosAsignados = (docente.cursos || []).map((c) => c.id);
+      const materiasMap = {};
+      (docente.cursos || []).forEach((curso) => {
+        if (Array.isArray(curso?.materias) && curso.materias.length > 0) {
+          materiasMap[curso.id] = curso.materias.join(', ');
+        }
+      });
+      setDocenteCursos(cursosAsignados);
+      setDocenteMateriasPorCurso(materiasMap);
+      setDocenteNuevaMateriaPorCurso({});
     } finally {
       setLoadingCursos(false);
     }
@@ -1067,7 +1286,23 @@ export default function HomeScreen() {
       setDocenteError('Nombre requerido');
       return;
     }
-    const payload = { nombre, email, cursoIds: docenteCursos, schoolId: docenteColegioId || user?.schoolId };
+    const materiasPorCurso = {};
+    docenteCursos.forEach((cursoId) => {
+      const raw = docenteMateriasPorCurso[cursoId];
+      if (!raw) return;
+      const materias = parseMateriasTexto(raw);
+      if (materias.length > 0) {
+        materiasPorCurso[cursoId] = materias;
+      }
+    });
+
+    const payload = {
+      nombre,
+      email,
+      cursoIds: docenteCursos,
+      materiasPorCurso,
+      schoolId: docenteColegioId || user?.schoolId
+    };
     if (docenteEditing) {
       if (password) payload.password = password;
     } else {
@@ -1084,6 +1319,8 @@ export default function HomeScreen() {
       await loadDocentesActual(payload.schoolId);
       setDocenteForm({ nombre: '', email: '', password: '' });
       setDocenteCursos([]);
+      setDocenteMateriasPorCurso({});
+      setDocenteNuevaMateriaPorCurso({});
       setDocenteEditing(null);
     } catch (e) {
       const rawMessage = getApiErrorMessage(e, 'No se pudo guardar el docente');
@@ -1300,10 +1537,22 @@ export default function HomeScreen() {
         <View style={styles.actionGrid}>
           {isDocente ? (
             <>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
                 <View style={styles.btnRow}>
                   <Ionicons name="qr-code-outline" size={18} color="#fff" />
                   <Text style={styles.actionBtnText}>Escanear QR</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f59e0b' }]} onPress={() => navigation.navigate('QR', { scanMode: 'absent-only' })}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="scan-outline" size={18} color="#fff" />
+                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Escanear ausentes</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="people-outline" size={18} color="#fff" />
+                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Ver estudiantes</Text>
                 </View>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]} onPress={openCreateEstudianteModal}>
@@ -1312,17 +1561,11 @@ export default function HomeScreen() {
                   <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Agregar estudiantes</Text>
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, styles.actionBtnFull, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="people-outline" size={18} color="#fff" />
-                  <Text style={styles.actionBtnText}>Ver estudiantes por curso</Text>
-                </View>
-              </TouchableOpacity>
             </>
           ) : (
             <>
               {!isAdmin && !isRectorCoordinador ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR')}>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
                   <View style={styles.btnRow}>
                     <Ionicons name="qr-code-outline" size={18} color="#fff" />
                     <Text style={styles.actionBtnText}>Escanear QR</Text>
@@ -1353,6 +1596,14 @@ export default function HomeScreen() {
                   </View>
                 </TouchableOpacity>
               ) : null}
+              {isRectorCoordinador ? (
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0f766e' }]} onPress={openMateriaDocentesModal}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="library-outline" size={18} color="#fff" />
+                    <Text style={styles.actionBtnText}>Agregar materias</Text>
+                  </View>
+                </TouchableOpacity>
+              ) : null}
               {isAdmin ? (
                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
                   <View style={styles.btnRow}>
@@ -1378,6 +1629,30 @@ export default function HomeScreen() {
             </>
           )}
         </View>
+
+        {isDocente ? (
+          <View style={styles.dataBox}>
+            <View style={styles.courseActionsRow}>
+              <Text style={styles.dataTitle}>Mis cursos y materias</Text>
+              {docentePerfilLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+            </View>
+            {docentePerfilError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{docentePerfilError}</Text> : null}
+            {!docentePerfilLoading && !docentePerfilError && docentePerfilCursos.length === 0 ? (
+              <Text style={styles.dataBullet}>No tienes materias asignadas</Text>
+            ) : (
+              docentePerfilCursos.map((curso) => (
+                <View key={`mis-materias-${curso.id}`} style={{ gap: 2, marginBottom: 6 }}>
+                  <Text style={styles.dataItem}>Curso: {curso.nombre || `Curso ${curso.id}`}</Text>
+                  {Array.isArray(curso.materias) && curso.materias.length > 0 ? (
+                    <Text style={styles.dataBullet}>Materias: {curso.materias.join(', ')}</Text>
+                  ) : (
+                    <Text style={styles.dataBullet}>Materias: sin asignar</Text>
+                  )}
+                </View>
+              ))
+            )}
+          </View>
+        ) : null}
 
         <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
           <View style={styles.btnRow}>
@@ -2135,6 +2410,47 @@ export default function HomeScreen() {
                 )}
               </View>
 
+              <Text style={styles.fieldLabel}>Materias por curso</Text>
+              <View style={styles.dataBox}>
+                {docenteCursos.length === 0 ? (
+                  <Text style={styles.dataBullet}>Selecciona uno o mas cursos para habilitar materias.</Text>
+                ) : (
+                  docenteCursos
+                    .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso.id) === String(cursoId)))
+                    .filter(Boolean)
+                    .map((curso) => (
+                      <View key={`materias-${curso.id}`} style={{ gap: 6 }}>
+                        <Text style={styles.dataItem}>{curso.nombre || `Curso ${curso.id}`}</Text>
+                        <TextInput
+                          style={styles.courseInput}
+                          placeholder="Materias (ej: Matematicas, Fisica, Quimica)"
+                          placeholderTextColor="#9ca3af"
+                          value={docenteMateriasPorCurso[curso.id] || ''}
+                          onChangeText={(txt) => setDocenteMateriasPorCurso((prev) => ({ ...prev, [curso.id]: txt }))}
+                        />
+                        <View style={{ gap: 8 }}>
+                          <TextInput
+                            style={styles.courseInput}
+                            placeholder="Nueva materia"
+                            placeholderTextColor="#9ca3af"
+                            value={docenteNuevaMateriaPorCurso[curso.id] || ''}
+                            onChangeText={(txt) => setDocenteNuevaMateriaPorCurso((prev) => ({ ...prev, [curso.id]: txt }))}
+                          />
+                          <TouchableOpacity
+                            style={[styles.smallBtn, styles.createBtn, { alignSelf: 'flex-start' }]}
+                            onPress={() => agregarMateriaACurso(curso.id)}
+                          >
+                            <View style={styles.btnRow}>
+                              <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Agregar materia</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                )}
+              </View>
+
               {docenteError ? <Text style={[styles.errorText, { marginTop: 4 }]}>{docenteError}</Text> : null}
 
               <View style={styles.courseFormActions}>
@@ -2146,6 +2462,8 @@ export default function HomeScreen() {
                       setDocenteEditing(null);
                       setDocenteForm({ nombre: '', email: '', password: '' });
                       setDocenteCursos([]);
+                      setDocenteMateriasPorCurso({});
+                      setDocenteNuevaMateriaPorCurso({});
                     }}
                     disabled={savingDocente}
                   >
@@ -2182,7 +2500,13 @@ export default function HomeScreen() {
                       <Text style={styles.dataItem}>- {d.nombre || d.email || `Docente ${d.id}`}</Text>
                       {d.email ? <Text style={styles.dataBullet}>{d.email}</Text> : null}
                       {d.cursos && d.cursos.length ? (
-                        <Text style={styles.dataBullet}>Cursos: {d.cursos.map(c => c.nombre).join(', ')}</Text>
+                        <View style={{ marginTop: 4, gap: 2 }}>
+                          {d.cursos.map((c) => (
+                            <Text key={c.id} style={styles.dataBullet}>
+                              - {c.nombre}{Array.isArray(c.materias) && c.materias.length ? ` | Materias: ${c.materias.join(', ')}` : ''}
+                            </Text>
+                          ))}
+                        </View>
                       ) : (
                         <Text style={styles.dataBullet}>Sin cursos asignados</Text>
                       )}
@@ -2205,6 +2529,116 @@ export default function HomeScreen() {
                 ))
               )}
             </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={materiaDocModalVisible}
+        onRequestClose={closeMateriaDocentesModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.modalCardWide]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Agregar materias a docentes</Text>
+              <Pressable onPress={closeMateriaDocentesModal} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.fieldLabel}>Colegio</Text>
+              <TouchableOpacity
+                style={styles.selectBoxFull}
+                onPress={() => setMateriaDocPickerOpen(prev => !prev)}
+                disabled={docentesLoading || colegiosLoading}
+              >
+                <Text style={styles.selectText}>{resolveColegioNombre(materiaDocColegioId || user?.schoolId)}</Text>
+              </TouchableOpacity>
+
+              {materiaDocPickerOpen && colegiosOptions.length > 0 ? (
+                <View style={styles.pickerList}>
+                  {colegiosOptions.map((c) => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.pickerItem, String(materiaDocColegioId) === String(c.id) && styles.pickerItemActive]}
+                      onPress={async () => {
+                        await changeMateriaDocColegio(c.id);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : null}
+
+              {docentesError ? <Text style={styles.errorText}>{docentesError}</Text> : null}
+
+              <View style={styles.dataBox}>
+                <View style={styles.courseActionsRow}>
+                  <Text style={styles.dataTitle}>Docentes y materias</Text>
+                  {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+                </View>
+                {docentes.length === 0 && !docentesLoading ? (
+                  <Text style={styles.dataBullet}>No hay docentes para este colegio</Text>
+                ) : (
+                  docentes.map((d) => (
+                    <View key={`materia-doc-${d.id}`} style={styles.periodItemRow}>
+                      <View style={{ flex: 1, gap: 8 }}>
+                        <View style={styles.courseInput}>
+                          <Text style={styles.dataItem}>Docente: {d.nombre || d.email || `Docente ${d.id}`}</Text>
+                        </View>
+                        {d.email ? (
+                          <View style={styles.courseInput}>
+                            <Text style={styles.dataItem}>Correo: {d.email}</Text>
+                          </View>
+                        ) : null}
+
+                        {Array.isArray(d.cursos) && d.cursos.length > 0 ? (
+                          d.cursos.map((c) => (
+                            <View key={`${d.id}-${c.id}`} style={{ gap: 6 }}>
+                              <View style={styles.courseInput}>
+                                <Text style={styles.dataItem}>Curso: {c.nombre || `Curso ${c.id}`}</Text>
+                              </View>
+                              <TextInput
+                                style={styles.courseInput}
+                                placeholder="Materias (ej: Matematicas, Fisica)"
+                                placeholderTextColor="#9ca3af"
+                                value={materiasDraftPorDocente?.[d.id]?.[c.id] || ''}
+                                onChangeText={(txt) => setMateriasDraftPorDocente((prev) => ({
+                                  ...prev,
+                                  [d.id]: {
+                                    ...(prev[d.id] || {}),
+                                    [c.id]: txt
+                                  }
+                                }))}
+                              />
+                            </View>
+                          ))
+                        ) : (
+                          <Text style={styles.dataBullet}>Sin cursos asignados</Text>
+                        )}
+
+                        {Array.isArray(d.cursos) && d.cursos.length > 0 ? (
+                          <TouchableOpacity
+                            style={[styles.smallBtn, styles.createBtn, savingMateriasDocenteId === d.id && { opacity: 0.6 }]}
+                            onPress={() => guardarMateriasDocente(d)}
+                            disabled={savingMateriasDocenteId === d.id}
+                          >
+                            <View style={styles.btnRow}>
+                              <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>{savingMateriasDocenteId === d.id ? 'Guardando...' : 'Guardar materias'}</Text>
+                            </View>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -2561,7 +2995,9 @@ export default function HomeScreen() {
                         {d.cursos && d.cursos.length > 0 ? (
                           <View style={{ marginTop: 4, gap: 2 }}>
                             {d.cursos.map((c) => (
-                              <Text key={c.id} style={styles.dataBullet}>- {c.nombre}{c.grado ? ` (Grado: ${c.grado})` : ''}</Text>
+                              <Text key={c.id} style={styles.dataBullet}>
+                                - {c.nombre}{c.grado ? ` (Grado: ${c.grado})` : ''}{Array.isArray(c.materias) && c.materias.length ? ` | Materias: ${c.materias.join(', ')}` : ''}
+                              </Text>
                             ))}
                           </View>
                         ) : (
