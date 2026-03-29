@@ -6,9 +6,9 @@ const API_PORT = '4000';
 const HEALTHCHECK_PATH = '/';
 const HEALTHCHECK_TIMEOUT_MS = 1500;
 const API_URL_CACHE_MS = 15000;
-const LAN_FALLBACK_URLS = [
-  `http://192.168.1.247:${API_PORT}`,
-  `http://192.168.100.5:${API_PORT}`,
+const LOOPBACK_FALLBACK_URLS = [
+  `http://localhost:${API_PORT}`,
+  `http://127.0.0.1:${API_PORT}`,
 ];
 
 const parseHostFromValue = (value) => {
@@ -29,33 +29,36 @@ const normalizeApiUrl = (url) => {
   return url.trim().replace(/\/+$/, '');
 };
 
-const resolvePreferredApiUrl = () => {
+const getEnvApiUrl = () => {
   const envUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
-  if (envUrl) return normalizeApiUrl(envUrl);
+  return envUrl ? normalizeApiUrl(envUrl) : null;
+};
 
-  const expoHost = parseHostFromValue(
-    Constants?.expoConfig?.hostUri ||
-      Constants?.manifest2?.extra?.expoClient?.hostUri ||
-      Constants?.manifest?.debuggerHost,
-  );
+const collectRuntimeHosts = () => {
+  const hosts = [];
 
-  if (expoHost && expoHost !== 'localhost' && expoHost !== '127.0.0.1') {
-    return normalizeApiUrl(`http://${expoHost}:${API_PORT}`);
-  }
+  const pushHost = (value) => {
+    const host = parseHostFromValue(value);
+    if (host) hosts.push(host);
+  };
+
+  pushHost(Constants?.expoConfig?.hostUri);
+  pushHost(Constants?.manifest2?.extra?.expoClient?.hostUri);
+  pushHost(Constants?.manifest?.debuggerHost);
 
   if (typeof window !== 'undefined' && window?.location?.hostname) {
-    const webHost = window.location.hostname;
-    if (webHost !== 'localhost' && webHost !== '127.0.0.1') {
-      return normalizeApiUrl(`http://${webHost}:${API_PORT}`);
-    }
+    pushHost(window.location.hostname);
   }
 
-  return normalizeApiUrl(LAN_FALLBACK_URLS[0]);
+  return [...new Set(hosts)];
 };
 
 const buildCandidateApiUrls = () => {
-  const preferred = resolvePreferredApiUrl();
-  const values = [preferred, ...LAN_FALLBACK_URLS.map(normalizeApiUrl)];
+  const envUrl = getEnvApiUrl();
+  const runtimeUrls = collectRuntimeHosts().map((host) =>
+    normalizeApiUrl(`http://${host}:${API_PORT}`),
+  );
+  const values = [envUrl, ...runtimeUrls, ...LOOPBACK_FALLBACK_URLS.map(normalizeApiUrl)];
   return [...new Set(values.filter(Boolean))];
 };
 
@@ -73,7 +76,7 @@ const isApiReachable = async (baseUrl) => {
   }
 };
 
-let currentApiUrl = resolvePreferredApiUrl();
+let currentApiUrl = buildCandidateApiUrls()[0] || LOOPBACK_FALLBACK_URLS[0];
 let resolvingApiUrlPromise = null;
 let lastApiUrlResolvedAt = 0;
 

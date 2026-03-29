@@ -38,12 +38,6 @@ export default function HomeScreen() {
   const [asignacionCursosDocente, setAsignacionCursosDocente] = useState({});
   const [savingAsignacionDocenteId, setSavingAsignacionDocenteId] = useState(null);
   const cursoDocSchoolRef = useRef(null);
-  const [materiaDocModalVisible, setMateriaDocModalVisible] = useState(false);
-  const [materiaDocColegioId, setMateriaDocColegioId] = useState(null);
-  const [materiaDocPickerOpen, setMateriaDocPickerOpen] = useState(false);
-  const [materiasDraftPorDocente, setMateriasDraftPorDocente] = useState({});
-  const [savingMateriasDocenteId, setSavingMateriasDocenteId] = useState(null);
-  const materiaDocSchoolRef = useRef(null);
   const [cursosModalVisible, setCursosModalVisible] = useState(false);
   const [deleteCursoModal, setDeleteCursoModal] = useState({ visible: false, curso: null });
   const [cursoCrudColegioId, setCursoCrudColegioId] = useState(null);
@@ -81,6 +75,7 @@ export default function HomeScreen() {
   const [colegioPickerOpen, setColegioPickerOpen] = useState(false);
   const [colegiosLoading, setColegiosLoading] = useState(false);
   const [colegiosModalVisible, setColegiosModalVisible] = useState(false);
+  const [colegiosListModalVisible, setColegiosListModalVisible] = useState(false);
   const [colegiosList, setColegiosList] = useState([]);
   const [colegioNombre, setColegioNombre] = useState('');
   const [colegioCodigoDane, setColegioCodigoDane] = useState('');
@@ -99,20 +94,22 @@ export default function HomeScreen() {
   const [savingColegio, setSavingColegio] = useState(false);
   const [colegiosError, setColegiosError] = useState('');
   const [docenteCrudModalVisible, setDocenteCrudModalVisible] = useState(false);
+  const [docenteCrudListModalVisible, setDocenteCrudListModalVisible] = useState(false);
   const [docenteForm, setDocenteForm] = useState({ nombre: '', email: '', password: '' });
   const [docenteCursos, setDocenteCursos] = useState([]);
-  const [docenteMateriasPorCurso, setDocenteMateriasPorCurso] = useState({});
-  const [docenteNuevaMateriaPorCurso, setDocenteNuevaMateriaPorCurso] = useState({});
   const [docenteCursosDisponibles, setDocenteCursosDisponibles] = useState([]);
   const [docenteColegioId, setDocenteColegioId] = useState(null);
   const [docenteEditing, setDocenteEditing] = useState(null);
   const [savingDocente, setSavingDocente] = useState(false);
+  const [savingDocenteMaterias, setSavingDocenteMaterias] = useState(false);
   const [docenteError, setDocenteError] = useState('');
+  const [docenteMateriasDraft, setDocenteMateriasDraft] = useState({});
   const [deleteDocenteModal, setDeleteDocenteModal] = useState({ visible: false, docente: null });
   const [docentePerfilCursos, setDocentePerfilCursos] = useState([]);
   const [docentePerfilLoading, setDocentePerfilLoading] = useState(false);
   const [docentePerfilError, setDocentePerfilError] = useState('');
   const docenteCrudSchoolRef = useRef(null);
+  const docenteMateriasDraftRef = useRef({});
   const colegiosScrollRef = useRef(null);
   const createDefaultPeriodForm = () => {
     const now = new Date();
@@ -150,6 +147,29 @@ export default function HomeScreen() {
       return validationErrors[0]?.msg || fallback;
     }
     return e?.message || fallback;
+  };
+  const normalizeColegioItem = (colegio = {}) => {
+    const rectorSource = colegio?.rector || {};
+    const rector = {
+      cargo: colegio?.rectorCargo || rectorSource?.cargo || null,
+      nombre: colegio?.rectorNombre || colegio?.rector_nombre || rectorSource?.nombre || null,
+      apellido: colegio?.rectorApellido || colegio?.rector_apellido || rectorSource?.apellido || null,
+      correo: colegio?.rectorCorreo || colegio?.rector_correo || rectorSource?.correo || null,
+      telefono: colegio?.rectorTelefono || colegio?.rector_telefono || rectorSource?.telefono || null,
+      cedula: colegio?.rectorCedula || colegio?.rector_cedula || rectorSource?.cedula || null
+    };
+    return {
+      ...colegio,
+      codigoDane: colegio?.codigoDane || colegio?.codigo_dane || '',
+      rector,
+      rectorCargo: rector.cargo || 'rector',
+      rectorNombre: rector.nombre || '',
+      rectorApellido: rector.apellido || '',
+      rectorCorreo: rector.correo || '',
+      rectorTelefono: rector.telefono || '',
+      rectorCedula: rector.cedula || '',
+      rectorTienePassword: Boolean(colegio?.rectorTienePassword)
+    };
   };
 
   const clearPeriodStatusTimeout = () => {
@@ -713,6 +733,7 @@ export default function HomeScreen() {
 
   const closeColegiosModal = () => {
     setColegiosModalVisible(false);
+    setColegiosListModalVisible(false);
     setColegioEditing(null);
     setColegioNombre('');
     setColegioCodigoDane('');
@@ -729,18 +750,20 @@ export default function HomeScreen() {
   };
 
   const startEditColegio = (colegio) => {
-    setColegioEditing(colegio);
-    setColegioNombre(colegio?.nombre || '');
-    setColegioCodigoDane(colegio?.codigoDane || colegio?.codigo_dane || '');
-    setRectorNombre(colegio?.rectorNombre || colegio?.rector_nombre || '');
-    setRectorApellido(colegio?.rectorApellido || colegio?.rector_apellido || '');
-    setRectorCorreo(colegio?.rectorCorreo || colegio?.rector_correo || '');
-    setRectorTelefono(colegio?.rectorTelefono || colegio?.rector_telefono || '');
-    setRectorCedula(colegio?.rectorCedula || colegio?.rector_cedula || '');
-    setRectorCargo((colegio?.rectorCargo || colegio?.rector?.cargo || 'rector') === 'coordinador' ? 'coordinador' : 'rector');
+    const normalized = normalizeColegioItem(colegio);
+    setColegiosListModalVisible(false);
+    setColegioEditing(normalized);
+    setColegioNombre(normalized?.nombre || '');
+    setColegioCodigoDane(normalized?.codigoDane || '');
+    setRectorNombre(normalized?.rectorNombre || '');
+    setRectorApellido(normalized?.rectorApellido || '');
+    setRectorCorreo(normalized?.rectorCorreo || '');
+    setRectorTelefono(normalized?.rectorTelefono || '');
+    setRectorCedula(normalized?.rectorCedula || '');
+    setRectorCargo((normalized?.rectorCargo || 'rector') === 'coordinador' ? 'coordinador' : 'rector');
     setRectorPassword('');
     setShowRectorPassword(false);
-    setHasRectorPassword(Boolean(colegio?.rectorTienePassword));
+    setHasRectorPassword(Boolean(normalized?.rectorTienePassword));
     setColegiosError('');
     setTimeout(() => {
       colegiosScrollRef.current?.scrollTo?.({ y: 0, animated: true });
@@ -797,6 +820,15 @@ export default function HomeScreen() {
     } finally {
       setSavingColegio(false);
     }
+  };
+
+  const openColegiosListModal = async () => {
+    await loadColegios();
+    setColegiosListModalVisible(true);
+  };
+
+  const closeColegiosListModal = () => {
+    setColegiosListModalVisible(false);
   };
 
   const askDeleteColegio = (colegio) => {
@@ -988,135 +1020,12 @@ export default function HomeScreen() {
     }
   };
 
-  const parseMateriasTexto = (value) => String(value || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const buildMateriasDraftMap = (docs = []) => {
-    const map = {};
-    docs.forEach((docente) => {
-      const cursosMap = {};
-      (docente?.cursos || []).forEach((curso) => {
-        cursosMap[curso.id] = Array.isArray(curso?.materias) ? curso.materias.join(', ') : '';
-      });
-      map[docente.id] = cursosMap;
-    });
-    return map;
-  };
-
-  const loadMateriaDocDataExact = async (schoolId) => {
-    const targetSchoolId = Number(schoolId);
-    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return [];
-    setDocentesLoading(true);
-    setDocentesError('');
-    try {
-      const data = await getDocentes({ schoolId: targetSchoolId });
-      if (Number(materiaDocSchoolRef.current) !== targetSchoolId) return [];
-      setDocentes(data || []);
-      setMateriasDraftPorDocente(buildMateriasDraftMap(data || []));
-      return data || [];
-    } catch (e) {
-      if (Number(materiaDocSchoolRef.current) === targetSchoolId) {
-        const message = e?.response?.data?.error || e?.message || 'No se pudieron cargar docentes';
-        setDocentes([]);
-        setDocentesError(message);
-      }
-      return [];
-    } finally {
-      setDocentesLoading(false);
-    }
-  };
-
-  const changeMateriaDocColegio = async (newSchoolId) => {
-    const targetSchoolId = Number(newSchoolId);
-    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return;
-    materiaDocSchoolRef.current = targetSchoolId;
-    setMateriaDocColegioId(targetSchoolId);
-    setMateriaDocPickerOpen(false);
-    await loadMateriaDocDataExact(targetSchoolId);
-  };
-
-  const openMateriaDocentesModal = async () => {
-    setMateriaDocModalVisible(true);
-    setMateriaDocColegioId(null);
-    setMateriaDocPickerOpen(false);
-    setDocentes([]);
-    setDocentesError('');
-    setMateriasDraftPorDocente({});
-    materiaDocSchoolRef.current = null;
-    const userSchoolOption = user?.schoolId ? [{ id: user.schoolId, nombre: user?.schoolName || `Colegio ${user.schoolId}` }] : [];
-    setColegiosOptions(userSchoolOption);
-    const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
-    const defaultSchoolId = user?.schoolId || colegios?.[0]?.id || null;
-    if (defaultSchoolId) {
-      await changeMateriaDocColegio(defaultSchoolId);
-    }
-  };
-
-  const closeMateriaDocentesModal = () => {
-    setMateriaDocModalVisible(false);
-    setMateriaDocColegioId(null);
-    setMateriaDocPickerOpen(false);
-    setSavingMateriasDocenteId(null);
-    setMateriasDraftPorDocente({});
-    materiaDocSchoolRef.current = null;
-  };
-
-  const refreshAfterGuardarMaterias = async (schoolId) => {
-    const targetSchoolId = Number(schoolId);
-    if (!Number.isFinite(targetSchoolId) || targetSchoolId <= 0) return;
-
-    const tasks = [
-      loadMateriaDocDataExact(targetSchoolId),
-      loadDocentesActual(targetSchoolId)
-    ];
-
-    if (docentesModalVisible || Number(colegioSeleccionado) === targetSchoolId) {
-      tasks.push(loadDocentesColegio(targetSchoolId));
-    }
-    if (cursoDocModalVisible || Number(cursoDocColegioId) === targetSchoolId) {
-      tasks.push(loadCursoDocDataExact(targetSchoolId));
-    }
-    if (docenteCrudModalVisible || Number(docenteColegioId) === targetSchoolId) {
-      tasks.push(loadCursosDisponiblesDocente(targetSchoolId));
-    }
-
-    await Promise.allSettled(tasks);
-  };
-
-  const guardarMateriasDocente = async (docente) => {
-    const schoolId = Number(materiaDocColegioId);
-    if (!Number.isFinite(schoolId) || schoolId <= 0 || !docente?.id) return;
-
-    const cursoIds = (docente.cursos || []).map((curso) => Number(curso.id)).filter((id) => Number.isFinite(id) && id > 0);
-    const draft = materiasDraftPorDocente?.[docente.id] || {};
-    const materiasPorCurso = {};
-
-    cursoIds.forEach((cursoId) => {
-      const materias = parseMateriasTexto(draft[cursoId]);
-      if (materias.length > 0) {
-        materiasPorCurso[cursoId] = materias;
-      }
-    });
-
-    setSavingMateriasDocenteId(docente.id);
-    try {
-      await updateDocente(docente.id, { cursoIds, materiasPorCurso, schoolId });
-      await refreshAfterGuardarMaterias(schoolId);
-    } catch (e) {
-      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron guardar las materias');
-    } finally {
-      setSavingMateriasDocenteId(null);
-    }
-  };
-
   const openDocenteCrudModal = async () => {
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteCursos([]);
-    setDocenteMateriasPorCurso({});
-    setDocenteNuevaMateriaPorCurso({});
+    docenteMateriasDraftRef.current = {};
+    setDocenteMateriasDraft({});
     setDocenteCursosDisponibles([]);
     setDocenteColegioId(user?.schoolId || null);
     setDocenteError('');
@@ -1126,7 +1035,7 @@ export default function HomeScreen() {
     setLoadingCursos(true);
     try {
       const colegios = await loadColegios({ preferId: user?.schoolId, preferName: user?.schoolName });
-      const defaultSchool = user?.schoolId || colegios?.[0]?.id || null;
+      const defaultSchool = user?.schoolId || colegioSeleccionado || colegios?.[0]?.id || null;
       setDocenteColegioId(defaultSchool);
       docenteCrudSchoolRef.current = Number(defaultSchool) || null;
       await Promise.all([loadCursosDisponiblesDocente(defaultSchool), loadDocentesActual(defaultSchool)]);
@@ -1137,15 +1046,24 @@ export default function HomeScreen() {
 
   const closeDocenteCrudModal = () => {
     setDocenteCrudModalVisible(false);
+    setDocenteCrudListModalVisible(false);
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteCursos([]);
-    setDocenteMateriasPorCurso({});
-    setDocenteNuevaMateriaPorCurso({});
+    docenteMateriasDraftRef.current = {};
+    setDocenteMateriasDraft({});
     setDocenteCursosDisponibles([]);
     setDocenteColegioId(null);
     setDocenteError('');
     docenteCrudSchoolRef.current = null;
+  };
+
+  const openDocenteCrudListModal = async () => {
+    const targetSchoolId = Number(docenteColegioId || user?.schoolId);
+    if (Number.isFinite(targetSchoolId) && targetSchoolId > 0) {
+      await loadDocentesActual(targetSchoolId);
+    }
+    setDocenteCrudListModalVisible(true);
   };
 
   const loadCursosDisponiblesDocente = async (schoolIdParam = null) => {
@@ -1182,53 +1100,84 @@ export default function HomeScreen() {
     loadCursosDisponiblesDocente(parsedSchoolId);
   }, [docenteCrudModalVisible, docenteColegioId]);
 
+  const setDocenteMateriasState = (nextValue) => {
+    docenteMateriasDraftRef.current = nextValue;
+    setDocenteMateriasDraft(nextValue);
+  };
+
+  const buildDocenteMateriasDraft = (cursos = []) => {
+    const nextValue = {};
+    (cursos || []).forEach((curso) => {
+      nextValue[curso.id] = Array.isArray(curso?.materias) ? curso.materias.join(', ') : '';
+    });
+    return nextValue;
+  };
+
+  const syncDocenteMateriasWithCursos = (cursoIds = [], sourceDraft = docenteMateriasDraftRef.current) => {
+    const nextValue = {};
+    (cursoIds || [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .forEach((cursoId) => {
+        nextValue[cursoId] = sourceDraft?.[cursoId] || '';
+      });
+    setDocenteMateriasState(nextValue);
+    return nextValue;
+  };
+
+  const updateDocenteMateriaDraft = (cursoId, value) => {
+    const nextValue = {
+      ...docenteMateriasDraftRef.current,
+      [cursoId]: value
+    };
+    setDocenteMateriasState(nextValue);
+  };
+
+  const commitDocenteMateriaDraft = (cursoId, maybeText) => {
+    if (typeof maybeText !== 'string') return;
+    updateDocenteMateriaDraft(cursoId, maybeText);
+  };
+
+  const parseMateriasTexto = (value) => Array.from(
+    new Set(
+      String(value || '')
+        .split(/[,\n]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+
+  const buildMateriasPorCursoPayload = (cursoIds = docenteCursos) => {
+    const payload = {};
+    (cursoIds || [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+      .forEach((cursoId) => {
+        const materias = parseMateriasTexto(docenteMateriasDraftRef.current?.[cursoId]);
+        if (materias.length > 0) {
+          payload[cursoId] = materias;
+        }
+      });
+    return payload;
+  };
+
+  const flushActiveInputBeforeDocenteSave = async () => {
+    if (Platform.OS !== 'web') return;
+    const activeElement = typeof document !== 'undefined' ? document.activeElement : null;
+    if (activeElement && typeof activeElement.blur === 'function') {
+      activeElement.blur();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  };
+
   const toggleDocenteCurso = (cursoId) => {
     setDocenteCursos((prev) => {
-      if (prev.includes(cursoId)) {
-        setDocenteMateriasPorCurso((current) => {
-          const next = { ...current };
-          delete next[cursoId];
-          return next;
-        });
-        setDocenteNuevaMateriaPorCurso((current) => {
-          const next = { ...current };
-          delete next[cursoId];
-          return next;
-        });
-        return prev.filter((id) => id !== cursoId);
-      }
-      return [...prev, cursoId];
+      const next = prev.includes(cursoId)
+        ? prev.filter((id) => id !== cursoId)
+        : [...prev, cursoId];
+      syncDocenteMateriasWithCursos(next);
+      return next;
     });
-  };
-
-  const agregarMateriaACurso = (cursoId) => {
-    const nuevaMateria = String(docenteNuevaMateriaPorCurso[cursoId] || '').trim();
-    if (!nuevaMateria) return;
-
-    setDocenteMateriasPorCurso((prev) => {
-      const actuales = parseMateriasTexto(prev[cursoId]);
-      const yaExiste = actuales.some((item) => item.toLowerCase() === nuevaMateria.toLowerCase());
-      if (!yaExiste) actuales.push(nuevaMateria);
-      return { ...prev, [cursoId]: actuales.join(', ') };
-    });
-    setDocenteNuevaMateriaPorCurso((prev) => ({ ...prev, [cursoId]: '' }));
-  };
-
-  const changeDocenteColegio = async (newId) => {
-    const parsedSchoolId = Number(newId);
-    if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
-    setDocenteColegioId(parsedSchoolId);
-    setDocenteCursos([]);
-    setDocenteMateriasPorCurso({});
-    setDocenteNuevaMateriaPorCurso({});
-    setDocenteCursosDisponibles([]);
-    docenteCrudSchoolRef.current = parsedSchoolId;
-    setLoadingCursos(true);
-    try {
-      await Promise.all([loadCursosDisponiblesDocente(parsedSchoolId), loadDocentesActual(parsedSchoolId)]);
-    } finally {
-      setLoadingCursos(false);
-    }
   };
 
   const startEditDocente = async (docente) => {
@@ -1243,21 +1192,20 @@ export default function HomeScreen() {
       await loadCursosDisponiblesDocente(targetSchoolId);
       await loadDocentesActual(targetSchoolId);
       const cursosAsignados = (docente.cursos || []).map((c) => c.id);
-      const materiasMap = {};
-      (docente.cursos || []).forEach((curso) => {
-        if (Array.isArray(curso?.materias) && curso.materias.length > 0) {
-          materiasMap[curso.id] = curso.materias.join(', ');
-        }
-      });
+      const materiasDraft = buildDocenteMateriasDraft(docente.cursos || []);
       setDocenteCursos(cursosAsignados);
-      setDocenteMateriasPorCurso(materiasMap);
-      setDocenteNuevaMateriaPorCurso({});
+      syncDocenteMateriasWithCursos(cursosAsignados, materiasDraft);
     } finally {
       setLoadingCursos(false);
     }
   };
 
   const handleSaveDocente = async () => {
+    const editingDocenteSnapshot = docenteEditing;
+    const editingDocenteId = Number(editingDocenteSnapshot?.id);
+    const isEditingDocente = Number.isInteger(editingDocenteId) && editingDocenteId > 0;
+    await flushActiveInputBeforeDocenteSave();
+    const selectedCursoIds = [...docenteCursos];
     const nombreInput = docenteForm.nombre.trim();
     const email = docenteForm.email.trim();
     const password = docenteForm.password;
@@ -1266,12 +1214,12 @@ export default function HomeScreen() {
 
     setDocenteError('');
 
-    if (!email || (!docenteEditing && !password)) {
+    if (!email || (!isEditingDocente && !password)) {
       setDocenteError('Correo y contrasena son requeridos para crear un docente');
       return;
     }
 
-    if ((!docenteEditing && password.length < 4) || (docenteEditing && password && password.length < 4)) {
+    if ((!isEditingDocente && password.length < 4) || (isEditingDocente && password && password.length < 4)) {
       setDocenteError('La contrasena debe tener minimo 4 caracteres');
       return;
     }
@@ -1286,24 +1234,14 @@ export default function HomeScreen() {
       setDocenteError('Nombre requerido');
       return;
     }
-    const materiasPorCurso = {};
-    docenteCursos.forEach((cursoId) => {
-      const raw = docenteMateriasPorCurso[cursoId];
-      if (!raw) return;
-      const materias = parseMateriasTexto(raw);
-      if (materias.length > 0) {
-        materiasPorCurso[cursoId] = materias;
-      }
-    });
-
     const payload = {
       nombre,
       email,
-      cursoIds: docenteCursos,
-      materiasPorCurso,
-      schoolId: docenteColegioId || user?.schoolId
+      cursoIds: selectedCursoIds,
+      schoolId: docenteColegioId || user?.schoolId,
+      materiasPorCurso: buildMateriasPorCursoPayload(selectedCursoIds)
     };
-    if (docenteEditing) {
+    if (isEditingDocente) {
       if (password) payload.password = password;
     } else {
       payload.password = password;
@@ -1311,17 +1249,33 @@ export default function HomeScreen() {
 
     setSavingDocente(true);
     try {
-      if (docenteEditing) {
-        await updateDocente(docenteEditing.id, payload);
+      let savedDocente = null;
+      if (isEditingDocente) {
+        savedDocente = await updateDocente(editingDocenteId, payload);
       } else {
-        await createDocente(payload);
+        savedDocente = await createDocente(payload);
       }
       await loadDocentesActual(payload.schoolId);
-      setDocenteForm({ nombre: '', email: '', password: '' });
-      setDocenteCursos([]);
-      setDocenteMateriasPorCurso({});
-      setDocenteNuevaMateriaPorCurso({});
-      setDocenteEditing(null);
+      if (isEditingDocente) {
+        const cursosActualizados = (savedDocente?.cursos || []).map((curso) => curso.id);
+        const materiasDraft = buildDocenteMateriasDraft(savedDocente?.cursos || []);
+        setDocenteEditing(savedDocente || editingDocenteSnapshot);
+        setDocenteForm({
+          nombre: savedDocente?.nombre || nombre,
+          email: savedDocente?.email || email,
+          password: ''
+        });
+        setDocenteCursos(cursosActualizados.length ? cursosActualizados : selectedCursoIds);
+        syncDocenteMateriasWithCursos(cursosActualizados.length ? cursosActualizados : selectedCursoIds, materiasDraft);
+        showPeriodStatusModal('Docente actualizado');
+      } else {
+        setDocenteForm({ nombre: '', email: '', password: '' });
+        setDocenteCursos([]);
+        setDocenteMateriasState({});
+        setDocenteEditing(null);
+        showPeriodStatusModal('Docente creado');
+      }
+      return savedDocente;
     } catch (e) {
       const rawMessage = getApiErrorMessage(e, 'No se pudo guardar el docente');
       const message = String(rawMessage).toLowerCase().includes('validation')
@@ -1334,6 +1288,51 @@ export default function HomeScreen() {
     }
   };
 
+  const handleSaveDocenteMaterias = async () => {
+    await flushActiveInputBeforeDocenteSave();
+    if (!docenteEditing?.id) {
+      setDocenteError('Primero crea o selecciona un docente para guardar materias');
+      return;
+    }
+    const schoolId = Number(docenteColegioId || user?.schoolId);
+    if (!Number.isFinite(schoolId) || schoolId <= 0) {
+      setDocenteError('Selecciona un colegio valido antes de guardar materias');
+      return;
+    }
+
+    setDocenteError('');
+    setSavingDocenteMaterias(true);
+    try {
+      const updatedDocente = await updateDocente(docenteEditing.id, {
+        cursoIds: docenteCursos,
+        materiasPorCurso: buildMateriasPorCursoPayload(docenteCursos),
+        schoolId
+      });
+      await loadDocentesActual(schoolId);
+      const cursosActualizados = (updatedDocente?.cursos || []).map((curso) => curso.id);
+      const materiasDraft = buildDocenteMateriasDraft(updatedDocente?.cursos || []);
+      setDocenteEditing(updatedDocente || docenteEditing);
+      setDocenteCursos(cursosActualizados.length ? cursosActualizados : docenteCursos);
+      syncDocenteMateriasWithCursos(cursosActualizados.length ? cursosActualizados : docenteCursos, materiasDraft);
+      showPeriodStatusModal('Materias guardadas');
+    } catch (e) {
+      const message = getApiErrorMessage(e, 'No se pudieron guardar las materias');
+      setDocenteError(message);
+      Alert.alert('Error', message);
+    } finally {
+      setSavingDocenteMaterias(false);
+    }
+  };
+
+  const handleSaveDocenteMateriasAction = async () => {
+    if (savingDocente || savingDocenteMaterias) return;
+    if (!docenteEditing?.id) {
+      await handleSaveDocente();
+      return;
+    }
+    await handleSaveDocenteMaterias();
+  };
+
   const askDeleteDocente = (docente) => {
     setDeleteDocenteModal({ visible: true, docente });
   };
@@ -1344,6 +1343,13 @@ export default function HomeScreen() {
     setDocentesLoading(true);
     try {
       await deleteDocente(docente.id);
+      if (String(docenteEditing?.id) === String(docente.id)) {
+        setDocenteEditing(null);
+        setDocenteForm({ nombre: '', email: '', password: '' });
+        setDocenteCursos([]);
+        setDocenteMateriasState({});
+        setDocenteError('');
+      }
       await loadDocentesActual(docenteColegioId || user?.schoolId);
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudo eliminar el docente');
@@ -1357,8 +1363,9 @@ export default function HomeScreen() {
     setColegiosError('');
     try {
       const data = await getColegios();
-      setColegiosList(data || []);
-      const mapped = data.map(c => ({ id: c.id, nombre: c.nombre || `Colegio ${c.id}` }));
+      const normalized = (data || []).map(normalizeColegioItem);
+      setColegiosList(normalized);
+      const mapped = normalized.map(c => ({ id: c.id, nombre: c.nombre || `Colegio ${c.id}` }));
       const merged = [...mapped];
       if (preferId && !merged.some(o => String(o.id) === String(preferId))) {
         merged.push({ id: preferId, nombre: preferName || `Colegio ${preferId}` });
@@ -1498,168 +1505,180 @@ export default function HomeScreen() {
     return colegiosOptions.find(c => String(c.id) === String(id))?.nombre || `Colegio ${id}`;
   };
 
+  const sortCursosForDisplay = (items = []) => [...items].sort((a, b) => {
+    const aName = String(a?.nombre || '').trim();
+    const bName = String(b?.nombre || '').trim();
+    return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: 'base' });
+  });
+
   const colegioSeleccionadoNombre = resolveColegioNombre(colegioSeleccionado);
 
   return (
     <ScreenBackground contentStyle={styles.content}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <View style={styles.hero}>
-          <Image source={require('../assets/edusac-header.png')} style={styles.logo} resizeMode="contain" />
-        </View>
+        <View style={styles.mainColumn}>
+          <View style={styles.hero}>
+            <Image source={require('../assets/edusac-header.png')} style={styles.logo} resizeMode="contain" />
+          </View>
 
-      <View style={styles.infoCard}>
-        <View style={styles.infoAvatar}>
-          <Text style={styles.infoAvatarText}>{teacherInitial}</Text>
-        </View>
-        <View style={styles.infoBody}>
-            <View style={styles.infoHeader}>
-              <Text style={styles.infoLabelStrong}>Perfil de usuario</Text>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusPillText}>Activo</Text>
+          <View style={styles.infoCard}>
+            <View style={styles.infoAvatar}>
+              <Text style={styles.infoAvatarText}>{teacherInitial}</Text>
+            </View>
+            <View style={styles.infoBody}>
+              <View style={styles.infoHeader}>
+                <Text style={styles.infoLabelStrong}>Perfil de usuario</Text>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusPillText}>Activo</Text>
+                </View>
               </View>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Usuario</Text>
-              <Text style={styles.infoValue}>{user?.email || 'Sin correo'}</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Rol</Text>
-              <Text style={styles.infoValue}>{user?.rol || 'Sin rol'}</Text>
-            </View>
-            <View style={styles.infoDivider} />
-            <View style={styles.infoItem}>
-              <Text style={styles.infoLabel}>Colegio</Text>
-              <Text style={styles.infoValue}>{user?.schoolName || user?.schoolId || 'No asignado'}</Text>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Usuario</Text>
+                <Text style={styles.infoValue}>{user?.email || 'Sin correo'}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Rol</Text>
+                <Text style={styles.infoValue}>{user?.rol || 'Sin rol'}</Text>
+              </View>
+              {!isAdmin ? (
+                <>
+                  <View style={styles.infoDivider} />
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>Colegio</Text>
+                    <Text style={styles.infoValue}>{user?.schoolName || user?.schoolId || 'No asignado'}</Text>
+                  </View>
+                </>
+              ) : null}
             </View>
           </View>
-        </View>
 
-        <View style={styles.actionGrid}>
-          {isDocente ? (
-            <>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="qr-code-outline" size={18} color="#fff" />
-                  <Text style={styles.actionBtnText}>Escanear QR</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f59e0b' }]} onPress={() => navigation.navigate('QR', { scanMode: 'absent-only' })}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="scan-outline" size={18} color="#fff" />
-                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Escanear ausentes</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="people-outline" size={18} color="#fff" />
-                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Ver estudiantes</Text>
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]} onPress={openCreateEstudianteModal}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="person-add-outline" size={18} color="#fff" />
-                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Agregar estudiantes</Text>
-                </View>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              {!isAdmin && !isRectorCoordinador ? (
+          <View style={[styles.actionGrid, isRectorCoordinador && styles.actionGridRector]}>
+            {isDocente ? (
+              <>
                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
                   <View style={styles.btnRow}>
                     <Ionicons name="qr-code-outline" size={18} color="#fff" />
                     <Text style={styles.actionBtnText}>Escanear QR</Text>
                   </View>
                 </TouchableOpacity>
-              ) : null}
-              {canManageCourses ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f59e0b' }]} onPress={() => navigation.navigate('QR', { scanMode: 'absent-only' })}>
                   <View style={styles.btnRow}>
-                    <Ionicons name="book-outline" size={18} color="#fff" />
-                    <Text style={styles.actionBtnText}>Crear cursos</Text>
+                    <Ionicons name="scan-outline" size={18} color="#fff" />
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Escanear ausentes</Text>
                   </View>
                 </TouchableOpacity>
-              ) : null}
-              {!isAdmin && !isRectorCoordinador ? (
                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
                   <View style={styles.btnRow}>
                     <Ionicons name="people-outline" size={18} color="#fff" />
-                    <Text style={styles.actionBtnText}>Estudiantes</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Ver estudiantes</Text>
                   </View>
                 </TouchableOpacity>
-              ) : null}
-              {canManageCourses ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]} onPress={openCreateEstudianteModal}>
                   <View style={styles.btnRow}>
                     <Ionicons name="person-add-outline" size={18} color="#fff" />
-                    <Text style={styles.actionBtnText}>Crear docentes</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Agregar estudiantes</Text>
                   </View>
                 </TouchableOpacity>
-              ) : null}
-              {isRectorCoordinador ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0f766e' }]} onPress={openMateriaDocentesModal}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="library-outline" size={18} color="#fff" />
-                    <Text style={styles.actionBtnText}>Agregar materias</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : null}
-              {isAdmin ? (
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="business-outline" size={18} color="#111" />
-                    <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : null}
-              <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="bar-chart-outline" size={18} color="#fff" />
-                  <Text style={styles.actionBtnText}>Reportes</Text>
-                </View>
-              </TouchableOpacity>
-              {canManagePeriods ? (
-                <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="calendar-outline" size={18} color="#fff" />
-                    <Text style={styles.actionBtnText}>Activar periodos</Text>
-                  </View>
-                </TouchableOpacity>
-              ) : null}
-            </>
-          )}
-        </View>
-
-        {isDocente ? (
-          <View style={styles.dataBox}>
-            <View style={styles.courseActionsRow}>
-              <Text style={styles.dataTitle}>Mis cursos y materias</Text>
-              {docentePerfilLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
-            </View>
-            {docentePerfilError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{docentePerfilError}</Text> : null}
-            {!docentePerfilLoading && !docentePerfilError && docentePerfilCursos.length === 0 ? (
-              <Text style={styles.dataBullet}>No tienes materias asignadas</Text>
+              </>
             ) : (
-              docentePerfilCursos.map((curso) => (
-                <View key={`mis-materias-${curso.id}`} style={{ gap: 2, marginBottom: 6 }}>
-                  <Text style={styles.dataItem}>Curso: {curso.nombre || `Curso ${curso.id}`}</Text>
-                  {Array.isArray(curso.materias) && curso.materias.length > 0 ? (
-                    <Text style={styles.dataBullet}>Materias: {curso.materias.join(', ')}</Text>
-                  ) : (
-                    <Text style={styles.dataBullet}>Materias: sin asignar</Text>
-                  )}
-                </View>
-              ))
+              <>
+                {!isAdmin && !isRectorCoordinador ? (
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="qr-code-outline" size={18} color="#fff" />
+                      <Text style={styles.actionBtnText}>Escanear QR</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {canManageCourses ? (
+                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="book-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Gestionar cursos' : 'Crear cursos'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {!isAdmin && !isRectorCoordinador ? (
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="people-outline" size={18} color="#fff" />
+                      <Text style={styles.actionBtnText}>Estudiantes</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {canManageCourses ? (
+                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="person-add-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Gestionar docentes' : 'Crear docentes'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {isRectorCoordinador ? (
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, { backgroundColor: '#2563eb' }]} onPress={openDocentesModal}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="people-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Ver docentes</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {isAdmin ? (
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="business-outline" size={18} color="#111" />
+                      <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="bar-chart-outline" size={18} color="#fff" />
+                    <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Ver reportes' : 'Reportes'}</Text>
+                  </View>
+                </TouchableOpacity>
+                {canManagePeriods ? (
+                  <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="calendar-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Gestionar periodos' : 'Activar periodos'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+              </>
             )}
           </View>
-        ) : null}
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
-          <View style={styles.btnRow}>
-            <Ionicons name="log-out-outline" size={18} color="#fff" />
-            <Text style={styles.logoutText}>Cerrar sesion</Text>
-          </View>
-        </TouchableOpacity>
+          {isDocente ? (
+            <View style={styles.dataBox}>
+              <View style={styles.courseActionsRow}>
+                <Text style={styles.dataTitle}>Mis cursos y materias</Text>
+                {docentePerfilLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+              </View>
+              {docentePerfilError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{docentePerfilError}</Text> : null}
+              {!docentePerfilLoading && !docentePerfilError && docentePerfilCursos.length === 0 ? (
+                <Text style={styles.dataBullet}>No tienes materias asignadas</Text>
+              ) : (
+                docentePerfilCursos.map((curso) => (
+                  <View key={`mis-materias-${curso.id}`} style={{ gap: 2, marginBottom: 6 }}>
+                    <Text style={styles.dataItem}>Curso: {curso.nombre || `Curso ${curso.id}`}</Text>
+                    {Array.isArray(curso.materias) && curso.materias.length > 0 ? (
+                      <Text style={styles.dataBullet}>Materias: {curso.materias.join(', ')}</Text>
+                    ) : (
+                      <Text style={styles.dataBullet}>Materias: sin asignar</Text>
+                    )}
+                  </View>
+                ))
+              )}
+            </View>
+          ) : null}
+
+          <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
+            <View style={styles.btnRow}>
+              <Ionicons name="log-out-outline" size={18} color="#fff" />
+              <Text style={styles.logoutText}>Cerrar sesion</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       <Modal
@@ -1796,7 +1815,7 @@ export default function HomeScreen() {
 
       <Modal transparent animationType="slide" visible={periodModalVisible} onRequestClose={() => setPeriodModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.periodModalCard]}>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>{editingPeriodo ? 'Editar periodo' : 'Crear periodo'}</Text>
@@ -1955,7 +1974,7 @@ export default function HomeScreen() {
         onRequestClose={closeCursosModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.cursoModalCard]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Cursos</Text>
               <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
@@ -2083,7 +2102,7 @@ export default function HomeScreen() {
         onRequestClose={closeColegiosModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.colegioModalCard]}>
             <ScrollView
               ref={colegiosScrollRef}
               contentContainerStyle={styles.modalContent}
@@ -2242,6 +2261,16 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
+                  style={[styles.smallBtn, styles.outlineBtn, savingColegio && { opacity: 0.6 }]}
+                  onPress={openColegiosListModal}
+                  disabled={savingColegio}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="list-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>Mostrar colegios</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[styles.smallBtn, styles.createBtn, savingColegio && { opacity: 0.6 }]}
                   onPress={handleSaveColegio}
                   disabled={savingColegio}
@@ -2253,53 +2282,81 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
             </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
-            <View style={styles.dataBox}>
-              <View style={styles.courseActionsRow}>
-                <Text style={styles.dataTitle}>Colegios en el sistema</Text>
-                {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
-              </View>
-              {colegiosList.length === 0 && !colegiosLoading ? (
-                <Text style={styles.dataBullet}>- AÃºn no hay colegios registrados</Text>
-              ) : (
-                colegiosList.map((c) => {
-                  const cargoValue = (c?.rectorCargo || c?.rector?.cargo || 'rector').toLowerCase();
-                  const cargoLabel = cargoValue === 'coordinador' ? 'Coordinador' : 'Rector';
-                  return (
-                    <View key={c.id} style={[styles.courseRow, isEditingColegio && String(colegioEditing?.id) === String(c.id) && styles.courseRowActive]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.dataItem}>- {c.nombre || `Colegio ${c.id}`}</Text>
-                        {(c.codigoDane || c.codigo_dane) ? <Text style={styles.dataBullet}>Codigo DANE: {c.codigoDane || c.codigo_dane}</Text> : null}
-                        {(c.rectorNombre || c.rector_nombre || c.rectorApellido || c.rector_apellido) ? (
-                          <Text style={styles.dataBullet}>
-                            {cargoLabel}: {[c.rectorNombre || c.rector_nombre, c.rectorApellido || c.rector_apellido].filter(Boolean).join(' ')}
-                          </Text>
-                        ) : null}
-                        <Text style={styles.dataBullet}>Rol: {cargoLabel.toLowerCase()}</Text>
-                        {(c.rectorCorreo || c.rector_correo) ? <Text style={styles.dataBullet}>Correo {cargoLabel.toLowerCase()}: {c.rectorCorreo || c.rector_correo}</Text> : null}
-                        {(c.rectorTelefono || c.rector_telefono) ? <Text style={styles.dataBullet}>Telefono {cargoLabel.toLowerCase()}: {c.rectorTelefono || c.rector_telefono}</Text> : null}
-                        {(c.rectorCedula || c.rector_cedula) ? <Text style={styles.dataBullet}>Cedula {cargoLabel.toLowerCase()}: {c.rectorCedula || c.rector_cedula}</Text> : null}
-                        {c.direccion ? <Text style={styles.dataBullet}>DirecciÃ³n: {c.direccion}</Text> : null}
-                      </View>
-                    <View style={styles.courseRowActions}>
-                      <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditColegio(c)}>
-                        <View style={styles.btnRow}>
-                          <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Editar</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteColegio(c)}>
-                        <View style={styles.btnRow}>
-                          <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Eliminar</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-                })
-              )}
+      <Modal
+        transparent
+        animationType="slide"
+        visible={colegiosListModalVisible}
+        onRequestClose={closeColegiosListModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.colegioListModalCard]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.periodTitle}>Colegios en el sistema</Text>
+              <Pressable onPress={closeColegiosListModal} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
             </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.dataBox}>
+                <View style={styles.courseActionsRow}>
+                  <Text style={styles.dataTitle}>Colegios registrados</Text>
+                  {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+                </View>
+                {colegiosList.length === 0 && !colegiosLoading ? (
+                  <Text style={styles.dataBullet}>- Aun no hay colegios registrados</Text>
+                ) : (
+                  colegiosList.map((c) => {
+                    const colegio = normalizeColegioItem(c);
+                    const cargoValue = (colegio?.rectorCargo || 'rector').toLowerCase();
+                    const cargoLabel = cargoValue === 'coordinador' ? 'Coordinador' : 'Rector';
+                    const hasRectorData = Boolean(
+                      colegio?.rectorCargo
+                      || colegio?.rector?.cargo
+                      || colegio?.rectorNombre
+                      || colegio?.rectorApellido
+                      || colegio?.rectorCorreo
+                      || colegio?.rectorTelefono
+                      || colegio?.rectorCedula
+                      || colegio?.rectorTienePassword
+                    );
+                    return (
+                      <View key={colegio.id} style={[styles.courseRow, isEditingColegio && String(colegioEditing?.id) === String(colegio.id) && styles.courseRowActive]}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.dataItem}>- {colegio.nombre || `Colegio ${colegio.id}`}</Text>
+                          {colegio.codigoDane ? <Text style={styles.dataBullet}>Codigo DANE: {colegio.codigoDane}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Cargo directivo: {cargoLabel}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Nombre: {colegio.rectorNombre || 'No registrado'}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Apellido: {colegio.rectorApellido || 'No registrado'}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Correo: {colegio.rectorCorreo || 'No registrado'}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Telefono: {colegio.rectorTelefono || 'No registrado'}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Cedula: {colegio.rectorCedula || 'No registrado'}</Text> : null}
+                          {hasRectorData ? <Text style={styles.dataBullet}>Contrasena configurada: {colegio.rectorTienePassword ? 'Si' : 'No'}</Text> : null}
+                        </View>
+                        <View style={styles.courseRowActions}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditColegio(colegio)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Editar</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteColegio(colegio)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -2312,7 +2369,7 @@ export default function HomeScreen() {
         onRequestClose={closeDocenteCrudModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, styles.modalCardWide]}>
+          <View style={[styles.modalCard, styles.docenteCrudModalCard]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Gestionar docentes</Text>
               <Pressable onPress={closeDocenteCrudModal} style={styles.closeBtn}>
@@ -2323,44 +2380,6 @@ export default function HomeScreen() {
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             <View style={styles.courseForm}>
               <Text style={styles.fieldLabel}>{docenteEditing ? 'Editar docente' : 'Nuevo docente'}</Text>
-              <Text style={styles.fieldLabel}>Colegio</Text>
-              {colegiosOptions.length > 0 ? (
-                <TouchableOpacity
-                  style={[styles.selectBox, { marginBottom: 8 }]}
-                  onPress={() => setColegioPickerOpen(prev => !prev)}
-                  disabled={savingDocente || loadingCursos}
-                >
-                  <Text style={styles.selectText}>
-                    {colegiosLoading
-                      ? 'Cargando colegios...'
-                      : resolveColegioNombre(docenteColegioId || user?.schoolId)}
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.selectBox, { marginBottom: 8 }]}
-                  disabled
-                >
-                  <Text style={styles.selectText}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text>
-                </TouchableOpacity>
-              )}
-
-              {colegioPickerOpen && colegiosOptions.length > 0 ? (
-                <View style={styles.pickerList}>
-                  {colegiosOptions.map(c => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.pickerItem, String(docenteColegioId) === String(c.id) && styles.pickerItemActive]}
-                      onPress={async () => {
-                        setColegioPickerOpen(false);
-                        await changeDocenteColegio(c.id);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
 
               <TextInput
                 style={styles.courseInput}
@@ -2410,62 +2429,61 @@ export default function HomeScreen() {
                 )}
               </View>
 
-              <Text style={styles.fieldLabel}>Materias por curso</Text>
-              <View style={styles.dataBox}>
-                {docenteCursos.length === 0 ? (
-                  <Text style={styles.dataBullet}>Selecciona uno o mas cursos para habilitar materias.</Text>
-                ) : (
-                  docenteCursos
-                    .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso.id) === String(cursoId)))
-                    .filter(Boolean)
-                    .map((curso) => (
-                      <View key={`materias-${curso.id}`} style={{ gap: 6 }}>
-                        <Text style={styles.dataItem}>{curso.nombre || `Curso ${curso.id}`}</Text>
-                        <TextInput
-                          style={styles.courseInput}
-                          placeholder="Materias (ej: Matematicas, Fisica, Quimica)"
-                          placeholderTextColor="#9ca3af"
-                          value={docenteMateriasPorCurso[curso.id] || ''}
-                          onChangeText={(txt) => setDocenteMateriasPorCurso((prev) => ({ ...prev, [curso.id]: txt }))}
-                        />
-                        <View style={{ gap: 8 }}>
-                          <TextInput
-                            style={styles.courseInput}
-                            placeholder="Nueva materia"
-                            placeholderTextColor="#9ca3af"
-                            value={docenteNuevaMateriaPorCurso[curso.id] || ''}
-                            onChangeText={(txt) => setDocenteNuevaMateriaPorCurso((prev) => ({ ...prev, [curso.id]: txt }))}
-                          />
-                          <TouchableOpacity
-                            style={[styles.smallBtn, styles.createBtn, { alignSelf: 'flex-start' }]}
-                            onPress={() => agregarMateriaACurso(curso.id)}
-                          >
-                            <View style={styles.btnRow}>
-                              <Ionicons name="add-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Agregar materia</Text>
-                            </View>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
+              {docenteCursos.length > 0 ? (
+                <View style={styles.dataBox}>
+                  <View style={styles.courseActionsRow}>
+                    <Text style={styles.dataTitle}>Materias por curso</Text>
+                    <Text style={styles.dataBullet}>Separa varias materias con coma</Text>
+                  </View>
+                  {sortCursosForDisplay(
+                    docenteCursos.map((cursoId) => (
+                      docenteCursosDisponibles.find((curso) => String(curso.id) === String(cursoId))
+                      || docenteEditing?.cursos?.find((curso) => String(curso.id) === String(cursoId))
+                      || { id: cursoId, nombre: `Curso ${cursoId}` }
                     ))
-                )}
-              </View>
+                  ).map((curso) => (
+                    <View key={`docente-materia-${curso.id}`} style={styles.materiaCursoGroup}>
+                      <Text style={styles.docenteCursoChipTitle}>{curso.nombre || `Curso ${curso.id}`}</Text>
+                      <TextInput
+                        style={styles.courseInput}
+                        placeholder="Ej: Matematicas, Fisica, Quimica"
+                        placeholderTextColor="#9ca3af"
+                        value={docenteMateriasDraft?.[curso.id] || ''}
+                        onChangeText={(txt) => updateDocenteMateriaDraft(curso.id, txt)}
+                        onBlur={(e) => commitDocenteMateriaDraft(curso.id, e?.nativeEvent?.text ?? e?.target?.value)}
+                      />
+                    </View>
+                  ))}
+                  {!docenteEditing ? (
+                    <Text style={styles.dataBullet}>Las materias tambien se guardan cuando creas el docente.</Text>
+                  ) : null}
+                </View>
+              ) : null}
 
               {docenteError ? <Text style={[styles.errorText, { marginTop: 4 }]}>{docenteError}</Text> : null}
 
               <View style={styles.courseFormActions}>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.infoBtn, (docentesLoading || docenteEditing) && { opacity: 0.6 }]}
+                  onPress={openDocenteCrudListModal}
+                  disabled={docentesLoading || !!docenteEditing}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="people-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>{docentesLoading ? 'Cargando...' : 'Mostrar docentes'}</Text>
+                  </View>
+                </TouchableOpacity>
                 {docenteEditing ? (
                   <TouchableOpacity
-                    style={[styles.smallBtn, styles.outlineBtn, savingDocente && { opacity: 0.6 }]}
+                    style={[styles.smallBtn, styles.outlineBtn, (savingDocente || savingDocenteMaterias) && { opacity: 0.6 }]}
                     onPress={() => {
-                      if (savingDocente) return;
+                      if (savingDocente || savingDocenteMaterias) return;
                       setDocenteEditing(null);
                       setDocenteForm({ nombre: '', email: '', password: '' });
                       setDocenteCursos([]);
-                      setDocenteMateriasPorCurso({});
-                      setDocenteNuevaMateriaPorCurso({});
+                      setDocenteMateriasState({});
                     }}
-                    disabled={savingDocente}
+                    disabled={savingDocente || savingDocenteMaterias}
                   >
                     <View style={styles.btnRow}>
                       <Ionicons name="close-outline" size={14} color="#e5e7eb" />
@@ -2474,9 +2492,25 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
-                  style={[styles.smallBtn, styles.createBtn, savingDocente && { opacity: 0.6 }]}
+                  style={[styles.smallBtn, styles.updateBtn, (savingDocente || savingDocenteMaterias || docenteEditing) && { opacity: 0.6 }]}
+                  onPress={handleSaveDocenteMateriasAction}
+                  disabled={savingDocente || savingDocenteMaterias || !!docenteEditing}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="library-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>
+                      {savingDocenteMaterias
+                        ? 'Guardando materias...'
+                        : !docenteEditing
+                          ? 'Guardar materias y crear'
+                          : 'Guardar materias'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.createBtn, (savingDocente || savingDocenteMaterias) && { opacity: 0.6 }]}
                   onPress={handleSaveDocente}
-                  disabled={savingDocente}
+                  disabled={savingDocente || savingDocenteMaterias}
                 >
                   <View style={styles.btnRow}>
                     <Ionicons name="save-outline" size={14} color="#e5e7eb" />
@@ -2484,50 +2518,6 @@ export default function HomeScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
-            </View>
-
-            <View style={styles.dataBox}>
-              <View style={styles.courseActionsRow}>
-                <Text style={styles.dataTitle}>Docentes del colegio</Text>
-                {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
-              </View>
-              {docentes.length === 0 && !docentesLoading ? (
-                <Text style={styles.dataBullet}>- AÃºn no hay docentes</Text>
-              ) : (
-                docentes.map((d) => (
-                  <View key={d.id} style={styles.courseRow}>
-                    <View style={{ flex: 1, gap: 4 }}>
-                      <Text style={styles.dataItem}>- {d.nombre || d.email || `Docente ${d.id}`}</Text>
-                      {d.email ? <Text style={styles.dataBullet}>{d.email}</Text> : null}
-                      {d.cursos && d.cursos.length ? (
-                        <View style={{ marginTop: 4, gap: 2 }}>
-                          {d.cursos.map((c) => (
-                            <Text key={c.id} style={styles.dataBullet}>
-                              - {c.nombre}{Array.isArray(c.materias) && c.materias.length ? ` | Materias: ${c.materias.join(', ')}` : ''}
-                            </Text>
-                          ))}
-                        </View>
-                      ) : (
-                        <Text style={styles.dataBullet}>Sin cursos asignados</Text>
-                      )}
-                    </View>
-                    <View style={styles.courseRowActions}>
-                      <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditDocente(d)}>
-                        <View style={styles.btnRow}>
-                          <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Editar</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteDocente(d)}>
-                        <View style={styles.btnRow}>
-                          <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Eliminar</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))
-              )}
             </View>
             </ScrollView>
           </View>
@@ -2537,103 +2527,71 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="slide"
-        visible={materiaDocModalVisible}
-        onRequestClose={closeMateriaDocentesModal}
+        visible={docenteCrudListModalVisible}
+        onRequestClose={() => setDocenteCrudListModalVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, styles.modalCardWide]}>
+          <View style={[styles.modalCard, styles.docentesModalCard]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Agregar materias a docentes</Text>
-              <Pressable onPress={closeMateriaDocentesModal} style={styles.closeBtn}>
+              <Text style={styles.periodTitle}>Docentes del colegio</Text>
+              <Pressable onPress={() => setDocenteCrudListModalVisible(false)} style={styles.closeBtn}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.fieldLabel}>Colegio</Text>
-              <TouchableOpacity
-                style={styles.selectBoxFull}
-                onPress={() => setMateriaDocPickerOpen(prev => !prev)}
-                disabled={docentesLoading || colegiosLoading}
-              >
-                <Text style={styles.selectText}>{resolveColegioNombre(materiaDocColegioId || user?.schoolId)}</Text>
-              </TouchableOpacity>
-
-              {materiaDocPickerOpen && colegiosOptions.length > 0 ? (
-                <View style={styles.pickerList}>
-                  {colegiosOptions.map((c) => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.pickerItem, String(materiaDocColegioId) === String(c.id) && styles.pickerItemActive]}
-                      onPress={async () => {
-                        await changeMateriaDocColegio(c.id);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-
-              {docentesError ? <Text style={styles.errorText}>{docentesError}</Text> : null}
-
+              <Text style={styles.fieldLabel}>Colegio: <Text style={styles.dataValue}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text></Text>
               <View style={styles.dataBox}>
                 <View style={styles.courseActionsRow}>
-                  <Text style={styles.dataTitle}>Docentes y materias</Text>
+                  <Text style={styles.dataTitle}>Docentes del colegio</Text>
                   {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                 </View>
                 {docentes.length === 0 && !docentesLoading ? (
-                  <Text style={styles.dataBullet}>No hay docentes para este colegio</Text>
+                  <Text style={styles.dataBullet}>- Aun no hay docentes</Text>
                 ) : (
                   docentes.map((d) => (
-                    <View key={`materia-doc-${d.id}`} style={styles.periodItemRow}>
-                      <View style={{ flex: 1, gap: 8 }}>
-                        <View style={styles.courseInput}>
-                          <Text style={styles.dataItem}>Docente: {d.nombre || d.email || `Docente ${d.id}`}</Text>
+                    <View key={d.id} style={styles.docenteSummaryCard}>
+                      <View style={styles.docenteSummaryTopRow}>
+                        <View style={styles.docenteSummaryHeader}>
+                          <Text style={styles.docenteSummaryName}>{d.nombre || d.email || `Docente ${d.id}`}</Text>
+                          {d.email ? <Text style={styles.docenteSummaryEmail}>{d.email}</Text> : null}
                         </View>
-                        {d.email ? (
-                          <View style={styles.courseInput}>
-                            <Text style={styles.dataItem}>Correo: {d.email}</Text>
-                          </View>
-                        ) : null}
-
-                        {Array.isArray(d.cursos) && d.cursos.length > 0 ? (
-                          d.cursos.map((c) => (
-                            <View key={`${d.id}-${c.id}`} style={{ gap: 6 }}>
-                              <View style={styles.courseInput}>
-                                <Text style={styles.dataItem}>Curso: {c.nombre || `Curso ${c.id}`}</Text>
-                              </View>
-                              <TextInput
-                                style={styles.courseInput}
-                                placeholder="Materias (ej: Matematicas, Fisica)"
-                                placeholderTextColor="#9ca3af"
-                                value={materiasDraftPorDocente?.[d.id]?.[c.id] || ''}
-                                onChangeText={(txt) => setMateriasDraftPorDocente((prev) => ({
-                                  ...prev,
-                                  [d.id]: {
-                                    ...(prev[d.id] || {}),
-                                    [c.id]: txt
-                                  }
-                                }))}
-                              />
+                        <View style={styles.docenteSummaryActions}>
+                          <TouchableOpacity
+                            style={[styles.smallBtn, styles.updateBtn]}
+                            onPress={() => {
+                              setDocenteCrudListModalVisible(false);
+                              startEditDocente(d);
+                            }}
+                          >
+                            <View style={styles.btnRow}>
+                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Editar</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteDocente(d)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <View style={styles.docenteCursoList}>
+                        {d.cursos && d.cursos.length ? (
+                          sortCursosForDisplay(d.cursos).map((c) => (
+                            <View key={c.id} style={styles.docenteCursoChip}>
+                              <Text style={styles.docenteCursoChipTitle}>{c.nombre || `Curso ${c.id}`}</Text>
+                              <Text style={styles.docenteCursoChipMeta}>
+                                {Array.isArray(c.materias) && c.materias.length ? `Materias: ${c.materias.join(', ')}` : 'Sin materias asignadas'}
+                              </Text>
                             </View>
                           ))
                         ) : (
-                          <Text style={styles.dataBullet}>Sin cursos asignados</Text>
+                          <View style={styles.docenteCursoChipEmpty}>
+                            <Text style={styles.docenteCursoChipMeta}>Sin cursos asignados</Text>
+                          </View>
                         )}
-
-                        {Array.isArray(d.cursos) && d.cursos.length > 0 ? (
-                          <TouchableOpacity
-                            style={[styles.smallBtn, styles.createBtn, savingMateriasDocenteId === d.id && { opacity: 0.6 }]}
-                            onPress={() => guardarMateriasDocente(d)}
-                            disabled={savingMateriasDocenteId === d.id}
-                          >
-                            <View style={styles.btnRow}>
-                              <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>{savingMateriasDocenteId === d.id ? 'Guardando...' : 'Guardar materias'}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        ) : null}
                       </View>
                     </View>
                   ))
@@ -2935,7 +2893,7 @@ export default function HomeScreen() {
         onRequestClose={closeDocentesModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.docentesModalCard]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Docentes del colegio</Text>
               <Pressable onPress={closeDocentesModal} style={styles.closeBtn}>
@@ -2988,20 +2946,27 @@ export default function HomeScreen() {
                   <Text style={styles.dataBullet}>- Sin docentes para este colegio</Text>
                 ) : (
                   docentes.map((d) => (
-                    <View key={d.id} style={styles.courseRow}>
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Text style={styles.dataItem}>- {d.nombre || d.email || `Docente ${d.id}`}</Text>
-                        {d.email ? <Text style={styles.dataBullet}>Email: {d.email}</Text> : null}
+                    <View key={d.id} style={styles.docenteSummaryCard}>
+                      <View style={styles.docenteSummaryHeader}>
+                        <Text style={styles.docenteSummaryName}>{d.nombre || d.email || `Docente ${d.id}`}</Text>
+                        {d.email ? <Text style={styles.docenteSummaryEmail}>{d.email}</Text> : null}
+                      </View>
+                      <View style={styles.docenteCursoList}>
                         {d.cursos && d.cursos.length > 0 ? (
-                          <View style={{ marginTop: 4, gap: 2 }}>
-                            {d.cursos.map((c) => (
-                              <Text key={c.id} style={styles.dataBullet}>
-                                - {c.nombre}{c.grado ? ` (Grado: ${c.grado})` : ''}{Array.isArray(c.materias) && c.materias.length ? ` | Materias: ${c.materias.join(', ')}` : ''}
+                          sortCursosForDisplay(d.cursos).map((c) => (
+                            <View key={c.id} style={styles.docenteCursoChip}>
+                              <Text style={styles.docenteCursoChipTitle}>
+                                {c.nombre}{c.grado ? ` ${c.grado}` : ''}
                               </Text>
-                            ))}
-                          </View>
+                              <Text style={styles.docenteCursoChipMeta}>
+                                {Array.isArray(c.materias) && c.materias.length ? `Materias: ${c.materias.join(', ')}` : 'Sin materias asignadas'}
+                              </Text>
+                            </View>
+                          ))
                         ) : (
-                          <Text style={styles.dataBullet}>Sin cursos asignados</Text>
+                          <View style={styles.docenteCursoChipEmpty}>
+                            <Text style={styles.docenteCursoChipMeta}>Sin cursos asignados</Text>
+                          </View>
                         )}
                       </View>
                     </View>
@@ -3020,7 +2985,7 @@ export default function HomeScreen() {
         onRequestClose={() => setQuickModal(null)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.quickInfoModalCard]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>{quickModal?.title || ''}</Text>
               <Pressable onPress={() => setQuickModal(null)} style={styles.closeBtn}>
@@ -3230,25 +3195,28 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   content: { flex: 1 },
-  scroll: { padding: 20, paddingBottom: 28, alignItems: 'stretch', gap: 16 },
-  hero: { width: '100%', aspectRatio: 1, maxHeight: 260, borderRadius: 18, overflow: 'hidden', backgroundColor: '#111827', marginTop: 0, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.28, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12, elevation: 5, alignItems: 'center', justifyContent: 'center' },
+  scroll: { flexGrow: 1, padding: 20, paddingBottom: 28 },
+  mainColumn: { width: '100%', alignSelf: 'stretch', gap: 16 },
+  hero: { width: '100%', height: 170, borderRadius: 18, overflow: 'hidden', backgroundColor: '#111827', marginTop: 0, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.28, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12, elevation: 5, alignItems: 'center', justifyContent: 'center' },
   logo: { width: '100%', height: '100%' },
-  infoCard: { flexDirection: 'row', alignItems: 'center', width: '100%', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, padding: 16, gap: 14, borderWidth: 1, borderColor: 'rgba(56,189,248,0.4)', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 6 }, shadowRadius: 10, elevation: 6, marginTop: -16 },
-  infoAvatar: { width: 54, height: 54, borderRadius: 16, backgroundColor: 'rgba(56,189,248,0.18)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.6)', alignItems: 'center', justifyContent: 'center' },
-  infoAvatarText: { color: '#e0f2fe', fontWeight: '900', fontSize: 22 },
-  infoBody: { flex: 1, gap: 12 },
+  infoCard: { flexDirection: 'row', alignItems: 'center', width: '100%', alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderWidth: 1, borderColor: 'rgba(56,189,248,0.4)', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 6 }, shadowRadius: 10, elevation: 6, marginTop: -12 },
+  infoAvatar: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(56,189,248,0.18)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.6)', alignItems: 'center', justifyContent: 'center' },
+  infoAvatarText: { color: '#e0f2fe', fontWeight: '900', fontSize: 18 },
+  infoBody: { flex: 1, gap: 6 },
   infoHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   infoLabelStrong: { color: '#e0f2fe', fontWeight: '800', fontSize: 13, letterSpacing: 0.4 },
-  statusPill: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: 'rgba(34,197,94,0.18)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)' },
-  statusPillText: { color: '#bbf7d0', fontWeight: '700', fontSize: 12 },
-  infoItem: { gap: 6 },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, backgroundColor: 'rgba(34,197,94,0.18)', borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)' },
+  statusPillText: { color: '#bbf7d0', fontWeight: '700', fontSize: 11 },
+  infoItem: { gap: 2 },
   infoDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
-  infoLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 12, letterSpacing: 0.5, textTransform: 'uppercase' },
-  infoValue: { color: '#fff', fontWeight: '800', fontSize: 17, letterSpacing: 0.2 },
-  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 0 },
+  infoLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 11, letterSpacing: 0.4, textTransform: 'uppercase' },
+  infoValue: { color: '#fff', fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
+  actionGrid: { width: '100%', alignSelf: 'stretch', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, columnGap: 10, marginTop: 0 },
+  actionGridRector: { gap: 12 },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  actionBtn: { flexBasis: '48%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
-  actionBtnFull: { flexBasis: '100%' },
+  actionBtn: { width: '48.8%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
+  actionBtnFull: { width: '100%' },
+  actionBtnRector: { width: '48.8%' },
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   actionBtnTextCompact: { fontSize: 13, flexShrink: 1, textAlign: 'center' },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
@@ -3270,6 +3238,13 @@ const styles = StyleSheet.create({
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%', width: '100%', alignSelf: 'center' },
   modalCardWide: { maxHeight: '92%' },
+  periodModalCard: { maxWidth: 920, maxHeight: '84%' },
+  cursoModalCard: { maxWidth: 760, maxHeight: '84%' },
+  docenteCrudModalCard: { maxWidth: 760, maxHeight: '84%' },
+  docentesModalCard: { maxWidth: 760, maxHeight: '82%' },
+  quickInfoModalCard: { maxWidth: 520, maxHeight: '76%' },
+  colegioModalCard: { maxWidth: 500, maxHeight: '74%' },
+  colegioListModalCard: { maxWidth: 760, maxHeight: '78%' },
   modalContent: { padding: 16, gap: 12 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10 },
@@ -3294,14 +3269,26 @@ const styles = StyleSheet.create({
   deleteBtn: { backgroundColor: 'rgba(239,68,68,0.18)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.5)' },
   smallBtnText: { color: '#e5e7eb', fontWeight: '700', fontSize: 12 },
   emptyText: { color: '#cbd5e1', textAlign: 'center', marginTop: 8 },
-  dataBox: { marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 4 },
+  dataBox: { width: '100%', alignSelf: 'stretch', marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 4 },
   dataTitle: { color: '#e5e7eb', fontWeight: '800', marginBottom: 2 },
   dataItem: { color: '#cbd5e1' },
   dataValue: { color: '#fff', fontWeight: '800' },
   dataBullet: { color: '#cbd5e1', fontSize: 12 },
+  docenteSummaryCard: { padding: 12, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', marginTop: 10, gap: 10 },
+  docenteSummaryTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
+  docenteSummaryHeader: { gap: 4 },
+  docenteSummaryActions: { flexDirection: 'row', gap: 8, alignSelf: 'flex-start' },
+  docenteSummaryName: { color: '#f8fafc', fontSize: 16, fontWeight: '800' },
+  docenteSummaryEmail: { color: '#94a3b8', fontSize: 13 },
+  docenteCursoList: { gap: 8 },
+  docenteCursoChip: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(30,41,59,0.9)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.2)', gap: 4 },
+  docenteCursoChipEmpty: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(30,41,59,0.5)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)' },
+  docenteCursoChipTitle: { color: '#e2e8f0', fontSize: 14, fontWeight: '700' },
+  docenteCursoChipMeta: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
   courseActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   courseForm: { marginBottom: 10, gap: 8 },
   courseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+  materiaCursoGroup: { gap: 6, marginTop: 8 },
   passwordInputWrap: { position: 'relative', justifyContent: 'center' },
   passwordInput: { paddingRight: 44 },
   passwordEyeBtn: {
@@ -3312,8 +3299,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  courseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
+  courseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
+  infoBtn: { backgroundColor: 'rgba(59,130,246,0.18)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.45)' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
   courseRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
   courseRowActive: { backgroundColor: 'rgba(56,189,248,0.08)', borderRadius: 10, paddingHorizontal: 8 },
@@ -3327,7 +3315,7 @@ const styles = StyleSheet.create({
   dropdownItemSelected: { backgroundColor: 'rgba(56,189,248,0.12)' },
   linkBtn: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.4)' },
   linkBtnText: { color: '#bfdbfe', fontWeight: '700', fontSize: 12 },
-  logoutBtn: { marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
+  logoutBtn: { width: '100%', alignSelf: 'stretch', marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
   logoutText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 }
 });
 

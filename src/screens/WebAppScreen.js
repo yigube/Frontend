@@ -30,28 +30,34 @@ export default function WebAppScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
-        <Text style={styles.brand}>Asistencia Web</Text>
-        <TouchableOpacity style={styles.logout} onPress={logout}>
-          <Text style={styles.logoutText}>Cerrar sesion</Text>
-        </TouchableOpacity>
+        <View style={styles.shellRow}>
+          <Text style={styles.brand}>Asistencia Web</Text>
+          <TouchableOpacity style={styles.logout} onPress={logout}>
+            <Text style={styles.logoutText}>Cerrar sesion</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.moduleBar}>
-        {MODULES.map((m) => (
-          <TouchableOpacity
-            key={m.key}
-            style={[styles.moduleBtn, active === m.key && styles.moduleBtnActive]}
-            onPress={() => setActive(m.key)}
-          >
-            <Text style={[styles.moduleText, active === m.key && styles.moduleTextActive]}>
-              {m.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <View style={styles.shellWrap}>
+          {MODULES.map((m) => (
+            <TouchableOpacity
+              key={m.key}
+              style={[styles.moduleBtn, active === m.key && styles.moduleBtnActive]}
+              onPress={() => setActive(m.key)}
+            >
+              <Text style={[styles.moduleText, active === m.key && styles.moduleTextActive]}>
+                {m.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       <View style={styles.content}>
-        <ModuleView active={active} />
+        <View style={styles.contentInner}>
+          <ModuleView active={active} />
+        </View>
       </View>
     </View>
   );
@@ -67,6 +73,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  shellRow: {
+    width: '100%',
+    maxWidth: 1180,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between'
@@ -87,12 +99,17 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   moduleBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
     padding: 12,
+    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.08)'
+  },
+  shellWrap: {
+    width: '100%',
+    maxWidth: 1180,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
   },
   moduleBtn: {
     paddingHorizontal: 12,
@@ -111,6 +128,12 @@ const styles = StyleSheet.create({
     color: '#fff'
   },
   content: {
-    flex: 1
+    flex: 1,
+    alignItems: 'center'
+  },
+  contentInner: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 1180
   }
 });

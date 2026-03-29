@@ -12,6 +12,6 @@ export default function ScreenBackground({ children, contentStyle }) {
 }
 
 const styles = StyleSheet.create({
-  background: { flex: 1, backgroundColor: '#0c0c0f' },
-  content: { flex: 1, padding: 16, gap: 10 }
+  background: { flex: 1, backgroundColor: '#0c0c0f', alignItems: 'center' },
+  content: { flex: 1, width: '100%', maxWidth: 1180, padding: 16, gap: 10 }
 });

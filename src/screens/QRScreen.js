@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { registrarAsistencia } from '../services/asistencias';
+import { getAusentesCurso, registrarAsistencia } from '../services/asistencias';
 import { getCursos } from '../services/cursos';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -19,7 +19,7 @@ const buildEstadoFlags = (estado) => ({
   ausente: estado === 'ausente'
 });
 
-export default function QRScreen() {
+export default function QRScreen({ route }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [cursoId, setCursoId] = useState(null);
@@ -29,6 +29,10 @@ export default function QRScreen() {
   const [pendingQr, setPendingQr] = useState('');
   const [estadoModalVisible, setEstadoModalVisible] = useState(false);
   const [savingEstado, setSavingEstado] = useState(false);
+  const [ausentesDelDia, setAusentesDelDia] = useState([]);
+  const [loadingAusentes, setLoadingAusentes] = useState(false);
+  const scanMode = route?.params?.scanMode === 'absent-only' ? 'absent-only' : 'all';
+  const absentOnlyMode = scanMode === 'absent-only';
 
   useEffect(() => {
     (async () => {
@@ -53,6 +57,35 @@ export default function QRScreen() {
     })();
   }, []);
 
+  const loadAusentesDelDia = async (cursoValue) => {
+    if (!absentOnlyMode || !cursoValue) {
+      setAusentesDelDia([]);
+      return;
+    }
+    setLoadingAusentes(true);
+    try {
+      const data = await getAusentesCurso({
+        cursoId: cursoValue,
+        fecha: getLocalDateISO()
+      });
+      setAusentesDelDia(Array.isArray(data?.ausentes) ? data.ausentes : []);
+    } catch (e) {
+      setAusentesDelDia([]);
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los ausentes del curso');
+    } finally {
+      setLoadingAusentes(false);
+    }
+  };
+
+  useEffect(() => {
+    const cursoValue = Number(cursoId);
+    if (!cursoValue || !absentOnlyMode) {
+      setAusentesDelDia([]);
+      return;
+    }
+    loadAusentesDelDia(cursoValue);
+  }, [cursoId, absentOnlyMode]);
+
   const onBarcodeScanned = async ({ data }) => {
     if (scanned) return;
     const cursoValue = Number(cursoId);
@@ -60,8 +93,19 @@ export default function QRScreen() {
       Alert.alert('Curso requerido', 'Selecciona un curso antes de escanear.');
       return;
     }
+    const qrValue = String(data || '');
+    if (absentOnlyMode) {
+      const allowScan = ausentesDelDia.some((item) => String(item.qr || '') === qrValue);
+      if (!allowScan) {
+        setScanned(true);
+        Alert.alert('QR no habilitado', 'Este estudiante no aparece como ausente para el curso y fecha actual.');
+        setTimeout(() => setScanned(false), 500);
+        return;
+      }
+    }
+
     setScanned(true);
-    setPendingQr(String(data || ''));
+    setPendingQr(qrValue);
     setEstadoModalVisible(true);
   };
 
@@ -88,6 +132,9 @@ export default function QRScreen() {
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || e.message);
     } finally {
+      if (absentOnlyMode) {
+        await loadAusentesDelDia(cursoValue);
+      }
       setSavingEstado(false);
       setPendingQr('');
       setTimeout(() => setScanned(false), 500);
@@ -109,6 +156,13 @@ export default function QRScreen() {
         onBarcodeScanned={onBarcodeScanned}
       />
       <View style={styles.overlay}>
+        {absentOnlyMode ? (
+          <View style={styles.modePill}>
+            <Text style={styles.modePillText}>
+              {loadingAusentes ? 'Cargando ausentes...' : `Solo ausentes: ${ausentesDelDia.length}`}
+            </Text>
+          </View>
+        ) : null}
         <Text style={styles.label}>Curso</Text>
         <Pressable style={styles.selectBox} onPress={() => setCursoPickerOpen((prev) => !prev)}>
           <Text style={styles.selectText}>
@@ -191,6 +245,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)'
   },
+  modePill: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(250,204,21,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.5)'
+  },
+  modePillText: { color: '#fde68a', fontWeight: '800', fontSize: 12 },
   label: { color: '#fff', fontWeight: '700', marginBottom: 6 },
   selectBox: {
     borderRadius: 10,
