@@ -70,6 +70,8 @@ export default function HomeScreen() {
   const [docentes, setDocentes] = useState([]);
   const [docentesLoading, setDocentesLoading] = useState(false);
   const [docentesError, setDocentesError] = useState('');
+  const [docentesSearchTerm, setDocentesSearchTerm] = useState('');
+  const [docentesSearchOpen, setDocentesSearchOpen] = useState(false);
   const [colegioSeleccionado, setColegioSeleccionado] = useState(null);
   const [colegiosOptions, setColegiosOptions] = useState([]);
   const [colegioPickerOpen, setColegioPickerOpen] = useState(false);
@@ -101,7 +103,6 @@ export default function HomeScreen() {
   const [docenteColegioId, setDocenteColegioId] = useState(null);
   const [docenteEditing, setDocenteEditing] = useState(null);
   const [savingDocente, setSavingDocente] = useState(false);
-  const [savingDocenteMaterias, setSavingDocenteMaterias] = useState(false);
   const [docenteError, setDocenteError] = useState('');
   const [docenteMateriasDraft, setDocenteMateriasDraft] = useState({});
   const [deleteDocenteModal, setDeleteDocenteModal] = useState({ visible: false, docente: null });
@@ -111,12 +112,35 @@ export default function HomeScreen() {
   const docenteCrudSchoolRef = useRef(null);
   const docenteMateriasDraftRef = useRef({});
   const colegiosScrollRef = useRef(null);
-  const createDefaultPeriodForm = () => {
-    const now = new Date();
+  const createDefaultPeriodForm = (periodList = periodos) => {
+    const getComparableDateKey = (value) => {
+      const text = String(value || '').trim();
+      const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (match) return Number(`${match[1]}${match[2]}${match[3]}`);
+      const parsed = new Date(text);
+      if (!Number.isFinite(parsed.getTime())) return 0;
+      const year = parsed.getUTCFullYear();
+      const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(parsed.getUTCDate()).padStart(2, '0');
+      return Number(`${year}${month}${day}`);
+    };
+    const safePeriodList = Array.isArray(periodList) ? periodList : [];
+    const latestPeriodo = safePeriodList.length > 0
+      ? safePeriodList.reduce((latest, current) => {
+          const latestEnd = getComparableDateKey(latest?.fechaFin);
+          const currentEnd = getComparableDateKey(current?.fechaFin);
+          return currentEnd > latestEnd ? current : latest;
+        }, safePeriodList[0])
+      : null;
+    const latestDateMatch = String(latestPeriodo?.fechaFin || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const now = latestDateMatch
+      ? new Date(Number(latestDateMatch[1]), Number(latestDateMatch[2]) - 1, Number(latestDateMatch[3]))
+      : new Date();
+    if (latestPeriodo?.fechaFin) now.setDate(now.getDate() + 1);
     const end = new Date(now);
     end.setDate(end.getDate() + 30);
     return {
-      nombre: `Periodo ${periodos.length + 1 || 1}`,
+      nombre: `Periodo ${safePeriodList.length + 1 || 1}`,
       startDay: now.getDate(),
       startMonth: now.getMonth() + 1,
       startYear: now.getFullYear(),
@@ -171,6 +195,11 @@ export default function HomeScreen() {
       rectorTienePassword: Boolean(colegio?.rectorTienePassword)
     };
   };
+  const normalizeSearchText = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 
   const clearPeriodStatusTimeout = () => {
     if (!periodStatusTimeoutRef.current) return;
@@ -188,13 +217,38 @@ export default function HomeScreen() {
   };
 
   const parseDateParts = (iso) => {
-    if (!iso) return { day: 1, month: 1, year: currentYear };
-    const [datePart] = iso.split('T');
-    const [year, month, day] = datePart.split('-').map(n => parseInt(n, 10));
+    if (!iso) return { day: 1, month: 1, year: currentYear, hour: 0, minute: 0, second: 0 };
+    const text = String(iso || '').trim();
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (match) {
+      const [, yearRaw, monthRaw, dayRaw, hourRaw = '00', minuteRaw = '00', secondRaw = '00'] = match;
+      const year = parseInt(yearRaw, 10);
+      const month = parseInt(monthRaw, 10);
+      const day = parseInt(dayRaw, 10);
+      const hour = parseInt(hourRaw, 10);
+      const minute = parseInt(minuteRaw, 10);
+      const second = parseInt(secondRaw, 10);
+      return {
+        day: Number.isFinite(day) ? day : 1,
+        month: Number.isFinite(month) ? month : 1,
+        year: Number.isFinite(year) ? year : currentYear,
+        hour: Number.isFinite(hour) ? hour : 0,
+        minute: Number.isFinite(minute) ? minute : 0,
+        second: Number.isFinite(second) ? second : 0
+      };
+    }
+
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) {
+      return { day: 1, month: 1, year: currentYear, hour: 0, minute: 0, second: 0 };
+    }
     return {
-      day: Number.isFinite(day) ? day : 1,
-      month: Number.isFinite(month) ? month : 1,
-      year: Number.isFinite(year) ? year : currentYear
+      day: parsed.getUTCDate(),
+      month: parsed.getUTCMonth() + 1,
+      year: parsed.getUTCFullYear(),
+      hour: parsed.getUTCHours(),
+      minute: parsed.getUTCMinutes(),
+      second: parsed.getUTCSeconds()
     };
   };
 
@@ -206,11 +260,103 @@ export default function HomeScreen() {
     return `${year}-${m}-${d}T${h}:${min}:00`;
   };
 
+  const formatPeriodDate = (iso) => {
+    const { day, month, year } = parseDateParts(iso);
+    const monthLabel = monthNames[month - 1] || '';
+    return `${day} de ${monthLabel} de ${year}`;
+  };
+
+  const formatPeriodTime = (iso) => {
+    const { hour, minute } = parseDateParts(iso);
+    const hour24 = Number.isFinite(hour) ? hour : 0;
+    const minuteValue = Number.isFinite(minute) ? minute : 0;
+    const meridiem = hour24 >= 12 ? 'p. m.' : 'a. m.';
+    const hour12 = hour24 % 12 || 12;
+    return `${String(hour12).padStart(2, '0')}:${String(minuteValue).padStart(2, '0')} ${meridiem}`;
+  };
+
+  const formatPeriodSummary = (fechaInicio, fechaFin) => `Del ${formatPeriodDate(fechaInicio)} al ${formatPeriodDate(fechaFin)}`;
+
+  const getPeriodDurationLabel = (fechaInicio, fechaFin) => {
+    const inicio = parseDateParts(fechaInicio);
+    const fin = parseDateParts(fechaFin);
+    const startDate = new Date(inicio.year, inicio.month - 1, inicio.day);
+    const endDate = new Date(fin.year, fin.month - 1, fin.day);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return '';
+    const diffDays = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+    const safeDays = diffDays > 0 ? diffDays : 1;
+    return `${safeDays} ${safeDays === 1 ? 'día' : 'días'}`;
+  };
+
+  const getPeriodoComparableValue = (value) => {
+    if (value instanceof Date) {
+      const year = value.getUTCFullYear();
+      const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(value.getUTCDate()).padStart(2, '0');
+      const hour = String(value.getUTCHours()).padStart(2, '0');
+      const minute = String(value.getUTCMinutes()).padStart(2, '0');
+      const second = String(value.getUTCSeconds()).padStart(2, '0');
+      return Number(`${year}${month}${day}${hour}${minute}${second}`);
+    }
+
+    const text = String(value || '').trim();
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (match) {
+      const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
+      return Number(`${year}${month}${day}${hour}${minute}${second}`);
+    }
+
+    const parsed = new Date(text);
+    if (!Number.isFinite(parsed.getTime())) return Number.NaN;
+    return getPeriodoComparableValue(parsed);
+  };
+
+  const getPeriodoRangeError = (fechaInicio, fechaFin) => {
+    const startValue = getPeriodoComparableValue(fechaInicio);
+    const endValue = getPeriodoComparableValue(fechaFin);
+    if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return 'Las fechas del periodo no son validas';
+    if (startValue >= endValue) return 'La fecha de inicio debe ser anterior a la fecha de fin';
+    return '';
+  };
+
+  const getPeriodoSequenceError = (fechaInicio, fechaFin) => {
+    const startValue = getPeriodoComparableValue(fechaInicio);
+    const endValue = getPeriodoComparableValue(fechaFin);
+    if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return '';
+
+    const otherPeriodos = (periodos || []).filter((item) => String(item?.id) !== String(editingPeriodo?.id || ''));
+    if (!otherPeriodos.length) return '';
+
+    const overlapping = otherPeriodos.find((item) => {
+      const itemStart = getPeriodoComparableValue(item?.fechaInicio);
+      const itemEnd = getPeriodoComparableValue(item?.fechaFin);
+      return startValue <= itemEnd && endValue >= itemStart;
+    });
+    if (overlapping) {
+      return `Las fechas se cruzan con ${overlapping.nombre}. Un periodo posterior debe iniciar despues de que termine el anterior`;
+    }
+
+    if (!editingPeriodo) {
+      const latestPeriodo = otherPeriodos.reduce((latest, current) => {
+        const latestEnd = getPeriodoComparableValue(latest?.fechaFin);
+        const currentEnd = getPeriodoComparableValue(current?.fechaFin);
+        return currentEnd > latestEnd ? current : latest;
+      }, otherPeriodos[0]);
+      const latestEnd = getPeriodoComparableValue(latestPeriodo?.fechaFin);
+      if (startValue <= latestEnd) {
+        return `El nuevo periodo debe iniciar despues de que termine ${latestPeriodo?.nombre || 'el ultimo periodo registrado'}`;
+      }
+    }
+
+    return '';
+  };
+
   const loadPeriodos = async () => {
     try {
       const data = await getPeriodos();
-      setPeriodos(data);
-      return data;
+      const ordered = sortPeriodos(data);
+      setPeriodos(ordered);
+      return ordered;
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los periodos');
       return [];
@@ -221,8 +367,8 @@ export default function HomeScreen() {
   useEffect(() => () => clearPeriodStatusTimeout(), []);
 
   const sortPeriodos = (list) => [...(list || [])].sort((a, b) => {
-    const aDate = new Date(a?.fechaInicio || 0).getTime();
-    const bDate = new Date(b?.fechaInicio || 0).getTime();
+    const aDate = getPeriodoComparableValue(a?.fechaInicio);
+    const bDate = getPeriodoComparableValue(b?.fechaInicio);
     if (aDate !== bDate) return aDate - bDate;
     return Number(a?.id || 0) - Number(b?.id || 0);
   });
@@ -244,8 +390,8 @@ export default function HomeScreen() {
       const fin = parseDateParts(periodo.fechaFin);
       setPeriodForm({
         nombre: periodo.nombre || '',
-        startDay: ini.day, startMonth: ini.month, startYear: ini.year, startHour: 0, startMinute: 0,
-        endDay: fin.day, endMonth: fin.month, endYear: fin.year, endHour: 23, endMinute: 59
+        startDay: ini.day, startMonth: ini.month, startYear: ini.year, startHour: ini.hour, startMinute: ini.minute,
+        endDay: fin.day, endMonth: fin.month, endYear: fin.year, endHour: fin.hour, endMinute: fin.minute
       });
       setEditingPeriodo(periodo);
     } else {
@@ -267,19 +413,33 @@ export default function HomeScreen() {
       }),
       activo: true
     };
+    const rangeError = getPeriodoRangeError(payload.fechaInicio, payload.fechaFin);
+    if (rangeError) {
+      setPeriodFeedback({ type: 'error', message: rangeError });
+      Alert.alert('Error', rangeError);
+      return;
+    }
+    const sequenceError = getPeriodoSequenceError(payload.fechaInicio, payload.fechaFin);
+    if (sequenceError) {
+      setPeriodFeedback({ type: 'error', message: sequenceError });
+      Alert.alert('Error', sequenceError);
+      return;
+    }
     setPeriodFeedback({ type: '', message: '' });
     setSavingPeriodo(true);
     try {
       if (editingPeriodo) {
         await updatePeriodo(editingPeriodo.id, payload);
+        const loaded = await loadPeriodos();
         showPeriodStatusModal('Periodo actualizado');
         setEditingPeriodo(null);
-        setPeriodForm(createDefaultPeriodForm());
+        setPeriodForm(createDefaultPeriodForm(loaded));
       } else {
         await createPeriodo(payload);
+        const loaded = await loadPeriodos();
         showPeriodStatusModal('Periodo creado');
+        setPeriodForm(createDefaultPeriodForm(loaded));
       }
-      await loadPeriodos();
     } catch (e) {
       setPeriodFeedback({ type: 'error', message: e?.response?.data?.error || 'No se pudo guardar el periodo' });
       Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el periodo');
@@ -300,43 +460,8 @@ export default function HomeScreen() {
       const loaded = await loadPeriodos();
       const normalizedCount = await normalizePeriodosNames(loaded);
       const finalList = normalizedCount > 0 ? await loadPeriodos() : loaded;
-      const ordered = sortPeriodos(finalList);
-      const first = ordered[0];
       setEditingPeriodo(null);
-      if (first) {
-        const ini = parseDateParts(first.fechaInicio);
-        const fin = parseDateParts(first.fechaFin);
-        setPeriodForm({
-          nombre: `Periodo ${ordered.length + 1}`,
-          startDay: ini.day,
-          startMonth: ini.month,
-          startYear: ini.year,
-          startHour: 0,
-          startMinute: 0,
-          endDay: fin.day,
-          endMonth: fin.month,
-          endYear: fin.year,
-          endHour: 23,
-          endMinute: 59
-        });
-      } else {
-        const now = new Date();
-        const end = new Date(now);
-        end.setDate(end.getDate() + 30);
-        setPeriodForm({
-          nombre: 'Periodo 1',
-          startDay: now.getDate(),
-          startMonth: now.getMonth() + 1,
-          startYear: now.getFullYear(),
-          startHour: 0,
-          startMinute: 0,
-          endDay: end.getDate(),
-          endMonth: end.getMonth() + 1,
-          endYear: end.getFullYear(),
-          endHour: 23,
-          endMinute: 59
-        });
-      }
+      setPeriodForm(createDefaultPeriodForm(finalList));
     } catch (e) {
       Alert.alert('Error', getApiErrorMessage(e, 'No se pudo eliminar'));
     }
@@ -371,8 +496,9 @@ export default function HomeScreen() {
   const loadCursosAsignados = async (schoolIdParam = null) => {
     const params = schoolIdParam ? { schoolId: schoolIdParam } : {};
     const cursos = await getCursos(params);
-    setCursosAsignados(cursos);
-    return cursos;
+    const ordered = sortCursosForDisplay(cursos);
+    setCursosAsignados(ordered);
+    return ordered;
   };
 
   const openCursosModal = async () => {
@@ -1058,6 +1184,24 @@ export default function HomeScreen() {
     docenteCrudSchoolRef.current = null;
   };
 
+  const returnToDocenteCrudListModal = async (schoolIdParam = null) => {
+    const targetSchoolId = Number(schoolIdParam || docenteColegioId || user?.schoolId);
+    if (Number.isFinite(targetSchoolId) && targetSchoolId > 0) {
+      await loadDocentesActual(targetSchoolId);
+      setDocenteColegioId(targetSchoolId);
+      docenteCrudSchoolRef.current = targetSchoolId;
+    }
+    setDocenteCrudModalVisible(false);
+    setDocenteCrudListModalVisible(true);
+    setDocenteEditing(null);
+    setDocenteForm({ nombre: '', email: '', password: '' });
+    setDocenteCursos([]);
+    docenteMateriasDraftRef.current = {};
+    setDocenteMateriasDraft({});
+    setDocenteCursosDisponibles([]);
+    setDocenteError('');
+  };
+
   const openDocenteCrudListModal = async () => {
     const targetSchoolId = Number(docenteColegioId || user?.schoolId);
     if (Number.isFinite(targetSchoolId) && targetSchoolId > 0) {
@@ -1081,9 +1225,10 @@ export default function HomeScreen() {
         cursos = await getCursosDisponiblesDocente({ schoolId: parsedSchoolId });
       }
       if (Number(docenteCrudSchoolRef.current) !== targetSchoolId) return [];
+      const orderedCursos = sortCursosForDisplay(cursos || []);
       setDocenteError('');
-      setDocenteCursosDisponibles(cursos || []);
-      return cursos || [];
+      setDocenteCursosDisponibles(orderedCursos);
+      return orderedCursos;
     } catch (e) {
       if (Number(docenteCrudSchoolRef.current) === targetSchoolId) {
         setDocenteCursosDisponibles([]);
@@ -1104,6 +1249,15 @@ export default function HomeScreen() {
     docenteMateriasDraftRef.current = nextValue;
     setDocenteMateriasDraft(nextValue);
   };
+
+  const docenteNombreRegex = /^[A-Za-zÁÉÍÓÚáéíóúÑñÜü]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñÜü]+)*$/;
+  const sanitizeDocenteNombreInput = (value = '') => String(value || '')
+    .replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñÜü\s]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^\s+/g, '');
+  const normalizeDocenteEmailInput = (value = '') => String(value || '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 
   const buildDocenteMateriasDraft = (cursos = []) => {
     const nextValue = {};
@@ -1153,10 +1307,7 @@ export default function HomeScreen() {
       .map((id) => Number(id))
       .filter((id) => Number.isInteger(id) && id > 0)
       .forEach((cursoId) => {
-        const materias = parseMateriasTexto(docenteMateriasDraftRef.current?.[cursoId]);
-        if (materias.length > 0) {
-          payload[cursoId] = materias;
-        }
+        payload[cursoId] = parseMateriasTexto(docenteMateriasDraftRef.current?.[cursoId]);
       });
     return payload;
   };
@@ -1207,10 +1358,9 @@ export default function HomeScreen() {
     await flushActiveInputBeforeDocenteSave();
     const selectedCursoIds = [...docenteCursos];
     const nombreInput = docenteForm.nombre.trim();
-    const email = docenteForm.email.trim();
+    const email = normalizeDocenteEmailInput(docenteForm.email);
     const password = docenteForm.password;
-    const nombreInferido = email.includes('@') ? email.split('@')[0] : '';
-    const nombre = nombreInput || nombreInferido;
+    const nombre = nombreInput;
 
     setDocenteError('');
 
@@ -1232,6 +1382,11 @@ export default function HomeScreen() {
 
     if (!nombre) {
       setDocenteError('Nombre requerido');
+      return;
+    }
+
+    if (!docenteNombreRegex.test(nombre)) {
+      setDocenteError('El nombre solo puede contener letras y espacios');
       return;
     }
     const payload = {
@@ -1260,14 +1415,10 @@ export default function HomeScreen() {
         const cursosActualizados = (savedDocente?.cursos || []).map((curso) => curso.id);
         const materiasDraft = buildDocenteMateriasDraft(savedDocente?.cursos || []);
         setDocenteEditing(savedDocente || editingDocenteSnapshot);
-        setDocenteForm({
-          nombre: savedDocente?.nombre || nombre,
-          email: savedDocente?.email || email,
-          password: ''
-        });
         setDocenteCursos(cursosActualizados.length ? cursosActualizados : selectedCursoIds);
         syncDocenteMateriasWithCursos(cursosActualizados.length ? cursosActualizados : selectedCursoIds, materiasDraft);
         showPeriodStatusModal('Docente actualizado');
+        await returnToDocenteCrudListModal(payload.schoolId);
       } else {
         setDocenteForm({ nombre: '', email: '', password: '' });
         setDocenteCursos([]);
@@ -1286,51 +1437,6 @@ export default function HomeScreen() {
     } finally {
       setSavingDocente(false);
     }
-  };
-
-  const handleSaveDocenteMaterias = async () => {
-    await flushActiveInputBeforeDocenteSave();
-    if (!docenteEditing?.id) {
-      setDocenteError('Primero crea o selecciona un docente para guardar materias');
-      return;
-    }
-    const schoolId = Number(docenteColegioId || user?.schoolId);
-    if (!Number.isFinite(schoolId) || schoolId <= 0) {
-      setDocenteError('Selecciona un colegio valido antes de guardar materias');
-      return;
-    }
-
-    setDocenteError('');
-    setSavingDocenteMaterias(true);
-    try {
-      const updatedDocente = await updateDocente(docenteEditing.id, {
-        cursoIds: docenteCursos,
-        materiasPorCurso: buildMateriasPorCursoPayload(docenteCursos),
-        schoolId
-      });
-      await loadDocentesActual(schoolId);
-      const cursosActualizados = (updatedDocente?.cursos || []).map((curso) => curso.id);
-      const materiasDraft = buildDocenteMateriasDraft(updatedDocente?.cursos || []);
-      setDocenteEditing(updatedDocente || docenteEditing);
-      setDocenteCursos(cursosActualizados.length ? cursosActualizados : docenteCursos);
-      syncDocenteMateriasWithCursos(cursosActualizados.length ? cursosActualizados : docenteCursos, materiasDraft);
-      showPeriodStatusModal('Materias guardadas');
-    } catch (e) {
-      const message = getApiErrorMessage(e, 'No se pudieron guardar las materias');
-      setDocenteError(message);
-      Alert.alert('Error', message);
-    } finally {
-      setSavingDocenteMaterias(false);
-    }
-  };
-
-  const handleSaveDocenteMateriasAction = async () => {
-    if (savingDocente || savingDocenteMaterias) return;
-    if (!docenteEditing?.id) {
-      await handleSaveDocente();
-      return;
-    }
-    await handleSaveDocenteMaterias();
   };
 
   const askDeleteDocente = (docente) => {
@@ -1397,6 +1503,8 @@ export default function HomeScreen() {
       setDocentesError('Selecciona un colegio primero');
       return;
     }
+    setDocentesSearchTerm('');
+    setDocentesSearchOpen(false);
     setDocentesLoading(true);
     setDocentesError('');
     try {
@@ -1422,6 +1530,8 @@ export default function HomeScreen() {
     setDocentesModalVisible(true);
     setColegioPickerOpen(false);
     setDocentesError('');
+    setDocentesSearchTerm('');
+    setDocentesSearchOpen(false);
     const defaultSchool = user?.schoolId || colegioSeleccionado || '';
     const options = await loadColegios({ preferId: defaultSchool, preferName: user?.schoolName });
     const selectedId = defaultSchool || (options && options[0]?.id) || null;
@@ -1433,6 +1543,8 @@ export default function HomeScreen() {
     setDocentesModalVisible(false);
     setColegioPickerOpen(false);
     setDocentesError('');
+    setDocentesSearchTerm('');
+    setDocentesSearchOpen(false);
     setColegioSeleccionado(null);
     setColegiosOptions([]);
   };
@@ -1499,6 +1611,13 @@ export default function HomeScreen() {
   const estudianteCreateCursoNombre = estudianteCreateCursoId
     ? (cursosAsignados.find(c => c.id === estudianteCreateCursoId)?.nombre || 'Curso sin nombre')
     : 'Selecciona curso';
+  const docentesSearchNormalized = normalizeSearchText(docentesSearchTerm);
+  const docentesFiltrados = docentesSearchNormalized
+    ? docentes.filter((docente) => normalizeSearchText(docente?.nombre || '').includes(docentesSearchNormalized))
+    : docentes;
+  const docentesSearchSuggestions = docentesSearchNormalized
+    ? docentesFiltrados.slice(0, 6)
+    : [];
 
   const resolveColegioNombre = (id) => {
     if (!id) return 'Selecciona colegio';
@@ -1630,17 +1749,33 @@ export default function HomeScreen() {
                     </View>
                   </TouchableOpacity>
                 ) : null}
+                {isRectorCoordinador && canManagePeriods ? (
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="calendar-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Gestionar periodos</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
                 <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
                   <View style={styles.btnRow}>
                     <Ionicons name="bar-chart-outline" size={18} color="#fff" />
                     <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Ver reportes' : 'Reportes'}</Text>
                   </View>
                 </TouchableOpacity>
-                {canManagePeriods ? (
-                  <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+                {isRectorCoordinador ? (
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="log-out-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Cerrar sesion</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {!isRectorCoordinador && canManagePeriods ? (
+                  <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
                     <View style={styles.btnRow}>
                       <Ionicons name="calendar-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Gestionar periodos' : 'Activar periodos'}</Text>
+                      <Text style={styles.actionBtnText}>Activar periodos</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
@@ -1672,12 +1807,14 @@ export default function HomeScreen() {
             </View>
           ) : null}
 
-          <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
-            <View style={styles.btnRow}>
-              <Ionicons name="log-out-outline" size={18} color="#fff" />
-              <Text style={styles.logoutText}>Cerrar sesion</Text>
-            </View>
-          </TouchableOpacity>
+          {!isRectorCoordinador ? (
+            <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
+              <View style={styles.btnRow}>
+                <Ionicons name="log-out-outline" size={18} color="#fff" />
+                <Text style={styles.logoutText}>Cerrar sesion</Text>
+              </View>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </ScrollView>
 
@@ -1688,7 +1825,7 @@ export default function HomeScreen() {
         onRequestClose={closeCreateEstudianteModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.sharedActionModalCard]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Agregar estudiante</Text>
               <Pressable onPress={closeCreateEstudianteModal} style={styles.closeBtn}>
@@ -1816,7 +1953,7 @@ export default function HomeScreen() {
       <Modal transparent animationType="slide" visible={periodModalVisible} onRequestClose={() => setPeriodModalVisible(false)}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.periodModalCard]}>
-            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={[styles.modalContent, styles.periodModalContent]} showsVerticalScrollIndicator={false}>
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>{editingPeriodo ? 'Editar periodo' : 'Crear periodo'}</Text>
                 <Pressable onPress={() => setPeriodModalVisible(false)} style={styles.closeBtn}>
@@ -1923,10 +2060,10 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <TouchableOpacity style={[styles.periodBtn, savingPeriodo && { opacity: 0.6 }]} onPress={handleSavePeriod} disabled={savingPeriodo}>
+              <TouchableOpacity style={[styles.periodBtn, styles.periodSaveBtn, savingPeriodo && { opacity: 0.6 }]} onPress={handleSavePeriod} disabled={savingPeriodo}>
                 <View style={styles.btnRow}>
-                  <Ionicons name="save-outline" size={16} color="#fff" />
-                  <Text style={styles.periodBtnText}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
+                  <Ionicons name="save-outline" size={14} color="#fff" />
+                  <Text style={[styles.periodBtnText, styles.periodSaveBtnText]}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
                 </View>
               </TouchableOpacity>
               {periodFeedback.type === 'error' && periodFeedback.message ? (
@@ -1939,25 +2076,44 @@ export default function HomeScreen() {
                 <Text style={styles.periodTitle}>Lista</Text>
               </View>
               {periodos.map(p => (
-                <View key={p.id} style={styles.periodItemRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.periodName}>{p.nombre}</Text>
-                    <Text style={styles.periodRange}>{p.fechaInicio} - {p.fechaFin}</Text>
-                    {p.actualizado ? <Text style={styles.periodMeta}>Actualizado: {p.actualizado}</Text> : null}
-                  </View>
-                  <View style={styles.periodActions}>
-                    <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openPeriodModal(p)}>
-                      <View style={styles.btnRow}>
-                        <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                        <Text style={styles.smallBtnText}>Editar</Text>
+                <View key={p.id} style={[styles.periodItemRow, styles.periodCard]}>
+                  <View style={styles.periodContent}>
+                    <View style={styles.periodHeadingRow}>
+                      <Text style={styles.periodName}>{p.nombre}</Text>
+                    </View>
+                    <Text style={styles.periodRange}>{formatPeriodSummary(p.fechaInicio, p.fechaFin)}</Text>
+                    <View style={styles.periodDateGrid}>
+                      <View style={styles.periodDateCard}>
+                        <Text style={styles.periodDateLabel}>Inicio</Text>
+                        <Text style={styles.periodDateValue}>{formatPeriodDate(p.fechaInicio)}</Text>
+                        <Text style={styles.periodDateTime}>Hora: {formatPeriodTime(p.fechaInicio)}</Text>
                       </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeletePeriod(p.id)}>
-                      <View style={styles.btnRow}>
-                        <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                        <Text style={styles.smallBtnText}>Eliminar</Text>
+                      <View style={styles.periodDateCard}>
+                        <Text style={styles.periodDateLabel}>Fin</Text>
+                        <Text style={styles.periodDateValue}>{formatPeriodDate(p.fechaFin)}</Text>
+                        <Text style={styles.periodDateTime}>Hora: {formatPeriodTime(p.fechaFin)}</Text>
                       </View>
-                    </TouchableOpacity>
+                    </View>
+                    <View style={styles.periodFooterRow}>
+                      <View style={styles.periodDurationChip}>
+                        <Text style={styles.periodDurationText}>{getPeriodDurationLabel(p.fechaInicio, p.fechaFin)}</Text>
+                      </View>
+                      <View style={styles.periodActions}>
+                        <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openPeriodModal(p)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Editar</Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeletePeriod(p.id)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Eliminar</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    {p.actualizado ? <Text style={styles.periodMeta}>Actualizado: {formatPeriodDate(p.actualizado)}</Text> : null}
                   </View>
                 </View>
               ))}
@@ -1975,122 +2131,128 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.cursoModalCard]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Cursos</Text>
-              <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
-              </Pressable>
-            </View>
-
-            {canManageCourses ? (
-              <View style={styles.courseActionsRow}>
-                <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openCursoForm()}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="add-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>Nuevo</Text>
-                  </View>
-                </TouchableOpacity>
-                {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+            <ScrollView
+              contentContainerStyle={[styles.modalContent, styles.cursoModalContent]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.periodTitle}>Cursos</Text>
+                <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                </Pressable>
               </View>
-            ) : null}
 
-            {canManageCourses ? (
-              <View style={{ marginBottom: 10 }}>
-                <Text style={styles.fieldLabel}>Colegio</Text>
-                <TouchableOpacity
-                  style={[styles.selectBoxFull, { marginTop: 6 }]}
-                  onPress={() => setCursoCrudPickerOpen(prev => !prev)}
-                  disabled={loadingCursos || colegiosLoading}
-                >
-                  <Text style={styles.selectText}>{resolveColegioNombre(cursoCrudColegioId || user?.schoolId)}</Text>
-                </TouchableOpacity>
-                {cursoCrudPickerOpen && colegiosOptions.length > 0 ? (
-                  <View style={styles.pickerList}>
-                    {colegiosOptions.map(c => (
-                      <TouchableOpacity
-                        key={c.id}
-                        style={[styles.pickerItem, String(cursoCrudColegioId) === String(c.id) && styles.pickerItemActive]}
-                        onPress={async () => {
-                          await changeCursoCrudColegio(c.id);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-
-            {canManageCourses && cursoFormVisible ? (
-              <View style={styles.courseForm}>
-                <Text style={styles.fieldLabel}>{cursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
-                <TextInput
-                  style={styles.courseInput}
-                  placeholder="Nombre del curso"
-                  placeholderTextColor="#9ca3af"
-                  value={cursoNombre}
-                  editable={!savingCurso}
-                  onChangeText={setCursoNombre}
-                />
-                <View style={styles.courseFormActions}>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.outlineBtn, savingCurso && { opacity: 0.6 }]}
-                    onPress={() => { if (!savingCurso) { setCursoFormVisible(false); setCursoEditing(null); setCursoNombre(''); } }}
-                    disabled={savingCurso}
-                  >
+              {canManageCourses ? (
+                <View style={styles.courseActionsRow}>
+                  <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openCursoForm()}>
                     <View style={styles.btnRow}>
-                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>Cancelar</Text>
+                      <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Nuevo</Text>
                     </View>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
-                    onPress={handleSaveCurso}
-                    disabled={savingCurso}
-                  >
-                    <View style={styles.btnRow}>
-                      <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
-                    </View>
-                  </TouchableOpacity>
+                  {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                 </View>
-              </View>
-            ) : null}
+              ) : null}
 
-            <View style={styles.dataBox}>
-              <Text style={styles.dataTitle}>Lista</Text>
-              {loadingCursos ? (
-                <Text style={styles.dataBullet}>Cargando cursos...</Text>
-              ) : cursosAsignados.length === 0 ? (
-                <Text style={styles.dataBullet}>- No hay cursos</Text>
-              ) : (
-                cursosAsignados.map((c) => (
-                  <View key={c.id} style={styles.courseRow}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.dataItem}>- {c.nombre}</Text>
-                      {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
+              {canManageCourses ? (
+                <View style={{ marginBottom: 10 }}>
+                  <Text style={styles.fieldLabel}>Colegio</Text>
+                  <TouchableOpacity
+                    style={[styles.selectBoxFull, { marginTop: 6 }]}
+                    onPress={() => setCursoCrudPickerOpen(prev => !prev)}
+                    disabled={loadingCursos || colegiosLoading}
+                  >
+                    <Text style={styles.selectText}>{resolveColegioNombre(cursoCrudColegioId || user?.schoolId)}</Text>
+                  </TouchableOpacity>
+                  {cursoCrudPickerOpen && colegiosOptions.length > 0 ? (
+                    <View style={styles.pickerList}>
+                      {colegiosOptions.map(c => (
+                        <TouchableOpacity
+                          key={c.id}
+                          style={[styles.pickerItem, String(cursoCrudColegioId) === String(c.id) && styles.pickerItemActive]}
+                          onPress={async () => {
+                            await changeCursoCrudColegio(c.id);
+                          }}
+                        >
+                          <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    {canManageCourses ? (
-                    <View style={styles.courseRowActions}>
-                      <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openCursoForm(c)}>
-                        <View style={styles.btnRow}>
-                          <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Editar</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
-                        <View style={styles.btnRow}>
-                          <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Eliminar</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                    ) : null}
+                  ) : null}
+                </View>
+              ) : null}
+
+              {canManageCourses && cursoFormVisible ? (
+                <View style={styles.courseForm}>
+                  <Text style={styles.fieldLabel}>{cursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
+                  <TextInput
+                    style={styles.courseInput}
+                    placeholder="Nombre del curso"
+                    placeholderTextColor="#9ca3af"
+                    value={cursoNombre}
+                    editable={!savingCurso}
+                    onChangeText={setCursoNombre}
+                  />
+                  <View style={styles.courseFormActions}>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.outlineBtn, savingCurso && { opacity: 0.6 }]}
+                      onPress={() => { if (!savingCurso) { setCursoFormVisible(false); setCursoEditing(null); setCursoNombre(''); } }}
+                      disabled={savingCurso}
+                    >
+                      <View style={styles.btnRow}>
+                        <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                        <Text style={styles.smallBtnText}>Cancelar</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
+                      onPress={handleSaveCurso}
+                      disabled={savingCurso}
+                    >
+                      <View style={styles.btnRow}>
+                        <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                        <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
+                      </View>
+                    </TouchableOpacity>
                   </View>
-                ))
-              )}
-            </View>
+                </View>
+              ) : null}
+
+              <View style={styles.dataBox}>
+                <Text style={styles.dataTitle}>Lista</Text>
+                {loadingCursos ? (
+                  <Text style={styles.dataBullet}>Cargando cursos...</Text>
+                ) : cursosAsignados.length === 0 ? (
+                  <Text style={styles.dataBullet}>- No hay cursos</Text>
+                ) : (
+                  sortCursosForDisplay(cursosAsignados).map((c) => (
+                    <View key={c.id} style={[styles.courseRow, styles.courseCardRow]}>
+                      <View style={styles.courseRowContent}>
+                        <Text style={styles.courseRowTitle}>{c.nombre}</Text>
+                        {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
+                      </View>
+                      {canManageCourses ? (
+                        <View style={styles.courseRowActions}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.courseActionBtn, styles.updateBtn]} onPress={() => openCursoForm(c)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Editar</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.smallBtn, styles.courseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
+                      ) : null}
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2386,7 +2548,7 @@ export default function HomeScreen() {
                 placeholder="Nombre completo"
                 placeholderTextColor="#9ca3af"
                 value={docenteForm.nombre}
-                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, nombre: txt }))}
+                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, nombre: sanitizeDocenteNombreInput(txt) }))}
               />
               <TextInput
                 style={styles.courseInput}
@@ -2395,11 +2557,11 @@ export default function HomeScreen() {
                 autoCapitalize="none"
                 keyboardType="email-address"
                 value={docenteForm.email}
-                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, email: txt }))}
+                onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, email: normalizeDocenteEmailInput(txt) }))}
               />
               <TextInput
                 style={styles.courseInput}
-                placeholder={docenteEditing ? 'Nueva contraseÃ±a (opcional)' : 'ContraseÃ±a'}
+                placeholder={docenteEditing ? 'Nueva contraseña (opcional)' : 'Contraseña'}
                 placeholderTextColor="#9ca3af"
                 secureTextEntry
                 value={docenteForm.password}
@@ -2413,7 +2575,7 @@ export default function HomeScreen() {
                 ) : docenteCursosDisponibles.length === 0 ? (
                   <Text style={styles.dataBullet}>No hay cursos para asignar</Text>
                 ) : (
-                  docenteCursosDisponibles.map(c => {
+                  sortCursosForDisplay(docenteCursosDisponibles).map(c => {
                     const checked = docenteCursos.includes(c.id);
                     return (
                       <Pressable
@@ -2455,7 +2617,7 @@ export default function HomeScreen() {
                     </View>
                   ))}
                   {!docenteEditing ? (
-                    <Text style={styles.dataBullet}>Las materias tambien se guardan cuando creas el docente.</Text>
+                    <Text style={styles.dataBullet}>Las materias se guardan cuando creas o actualizas el docente.</Text>
                   ) : null}
                 </View>
               ) : null}
@@ -2475,15 +2637,15 @@ export default function HomeScreen() {
                 </TouchableOpacity>
                 {docenteEditing ? (
                   <TouchableOpacity
-                    style={[styles.smallBtn, styles.outlineBtn, (savingDocente || savingDocenteMaterias) && { opacity: 0.6 }]}
+                    style={[styles.smallBtn, styles.outlineBtn, savingDocente && { opacity: 0.6 }]}
                     onPress={() => {
-                      if (savingDocente || savingDocenteMaterias) return;
+                      if (savingDocente) return;
                       setDocenteEditing(null);
                       setDocenteForm({ nombre: '', email: '', password: '' });
                       setDocenteCursos([]);
                       setDocenteMateriasState({});
                     }}
-                    disabled={savingDocente || savingDocenteMaterias}
+                    disabled={savingDocente}
                   >
                     <View style={styles.btnRow}>
                       <Ionicons name="close-outline" size={14} color="#e5e7eb" />
@@ -2492,25 +2654,9 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ) : null}
                 <TouchableOpacity
-                  style={[styles.smallBtn, styles.updateBtn, (savingDocente || savingDocenteMaterias || docenteEditing) && { opacity: 0.6 }]}
-                  onPress={handleSaveDocenteMateriasAction}
-                  disabled={savingDocente || savingDocenteMaterias || !!docenteEditing}
-                >
-                  <View style={styles.btnRow}>
-                    <Ionicons name="library-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>
-                      {savingDocenteMaterias
-                        ? 'Guardando materias...'
-                        : !docenteEditing
-                          ? 'Guardar materias y crear'
-                          : 'Guardar materias'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.smallBtn, styles.createBtn, (savingDocente || savingDocenteMaterias) && { opacity: 0.6 }]}
+                  style={[styles.smallBtn, styles.createBtn, savingDocente && { opacity: 0.6 }]}
                   onPress={handleSaveDocente}
-                  disabled={savingDocente || savingDocenteMaterias}
+                  disabled={savingDocente}
                 >
                   <View style={styles.btnRow}>
                     <Ionicons name="save-outline" size={14} color="#e5e7eb" />
@@ -2715,7 +2861,7 @@ export default function HomeScreen() {
         onRequestClose={closeEstudiantesModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, styles.sharedActionModalCard]}>
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Estudiantes por curso</Text>
               <Pressable onPress={closeEstudiantesModal} style={styles.closeBtn}>
@@ -2894,86 +3040,143 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.docentesModalCard]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Docentes del colegio</Text>
-              <Pressable onPress={closeDocentesModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
-              </Pressable>
-            </View>
-
-            <Text style={styles.fieldLabel}>Colegio: <Text style={styles.dataValue}>{colegioSeleccionadoNombre}</Text></Text>
-            <View style={styles.dataBox}>
-              <Text style={styles.fieldLabel}>Selecciona colegio</Text>
-              {colegiosOptions.length > 0 ? (
-                <TouchableOpacity
-                  style={[styles.selectBox, { marginBottom: 8 }]}
-                  onPress={() => setColegioPickerOpen(prev => !prev)}
-                  disabled={docentesLoading || colegiosLoading}
-                >
-                  <Text style={styles.selectText}>
-                    {colegiosLoading
-                      ? 'Cargando colegios...'
-                      : colegioSeleccionadoNombre}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {colegioPickerOpen && colegiosOptions.length > 0 ? (
-                <View style={styles.pickerList}>
-                  {colegiosOptions.map(c => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.pickerItem, String(colegioSeleccionado) === String(c.id) && styles.pickerItemActive]}
-                      onPress={async () => {
-                        setColegioPickerOpen(false);
-                        setColegioSeleccionado(c.id);
-                        await loadDocentesColegio(c.id);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-
-              {docentesError ? <Text style={styles.errorText}>{docentesError}</Text> : null}
-
-              <View style={{ marginTop: 6 }}>
-                <Text style={styles.dataTitle}>Docentes y cursos</Text>
-                {docentesLoading ? (
-                  <Text style={styles.dataBullet}>Cargando docentes...</Text>
-                ) : docentes.length === 0 ? (
-                  <Text style={styles.dataBullet}>- Sin docentes para este colegio</Text>
-                ) : (
-                  docentes.map((d) => (
-                    <View key={d.id} style={styles.docenteSummaryCard}>
-                      <View style={styles.docenteSummaryHeader}>
-                        <Text style={styles.docenteSummaryName}>{d.nombre || d.email || `Docente ${d.id}`}</Text>
-                        {d.email ? <Text style={styles.docenteSummaryEmail}>{d.email}</Text> : null}
-                      </View>
-                      <View style={styles.docenteCursoList}>
-                        {d.cursos && d.cursos.length > 0 ? (
-                          sortCursosForDisplay(d.cursos).map((c) => (
-                            <View key={c.id} style={styles.docenteCursoChip}>
-                              <Text style={styles.docenteCursoChipTitle}>
-                                {c.nombre}{c.grado ? ` ${c.grado}` : ''}
-                              </Text>
-                              <Text style={styles.docenteCursoChipMeta}>
-                                {Array.isArray(c.materias) && c.materias.length ? `Materias: ${c.materias.join(', ')}` : 'Sin materias asignadas'}
-                              </Text>
-                            </View>
-                          ))
-                        ) : (
-                          <View style={styles.docenteCursoChipEmpty}>
-                            <Text style={styles.docenteCursoChipMeta}>Sin cursos asignados</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  ))
-                )}
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.periodTitle}>Docentes del colegio</Text>
+                <Pressable onPress={closeDocentesModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                </Pressable>
               </View>
-            </View>
+
+              <Text style={styles.fieldLabel}>Colegio: <Text style={styles.dataValue}>{colegioSeleccionadoNombre}</Text></Text>
+              <View style={styles.dataBox}>
+                <Text style={styles.fieldLabel}>Selecciona colegio</Text>
+                {colegiosOptions.length > 0 ? (
+                  <TouchableOpacity
+                    style={[styles.selectBox, { marginBottom: 8 }]}
+                    onPress={() => setColegioPickerOpen(prev => !prev)}
+                    disabled={docentesLoading || colegiosLoading}
+                  >
+                    <Text style={styles.selectText}>
+                      {colegiosLoading
+                        ? 'Cargando colegios...'
+                        : colegioSeleccionadoNombre}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {colegioPickerOpen && colegiosOptions.length > 0 ? (
+                  <View style={styles.pickerList}>
+                    {colegiosOptions.map(c => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.pickerItem, String(colegioSeleccionado) === String(c.id) && styles.pickerItemActive]}
+                        onPress={async () => {
+                          setColegioPickerOpen(false);
+                          setColegioSeleccionado(c.id);
+                          await loadDocentesColegio(c.id);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+
+                {docentesError ? <Text style={styles.errorText}>{docentesError}</Text> : null}
+
+                <View style={styles.docentesSearchBox}>
+                  <Text style={styles.fieldLabel}>Buscar docente</Text>
+                  <View style={styles.docentesSearchInputWrap}>
+                    <Ionicons name="search-outline" size={16} color="#94a3b8" />
+                    <TextInput
+                      style={styles.docentesSearchInput}
+                      placeholder="Escribe nombre o apellido"
+                      placeholderTextColor="#94a3b8"
+                      value={docentesSearchTerm}
+                      onFocus={() => setDocentesSearchOpen(true)}
+                      onChangeText={(text) => {
+                        setDocentesSearchTerm(text);
+                        setDocentesSearchOpen(Boolean(text.trim()));
+                      }}
+                    />
+                    {docentesSearchTerm ? (
+                      <Pressable
+                        onPress={() => {
+                          setDocentesSearchTerm('');
+                          setDocentesSearchOpen(false);
+                        }}
+                        style={styles.docentesSearchClearBtn}
+                      >
+                        <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                      </Pressable>
+                    ) : null}
+                  </View>
+
+                  {docentesSearchOpen && docentesSearchNormalized ? (
+                    <View style={styles.docentesSearchSuggestions}>
+                      {docentesSearchSuggestions.length > 0 ? (
+                        docentesSearchSuggestions.map((docente) => (
+                          <TouchableOpacity
+                            key={`suggestion-${docente.id}`}
+                            style={styles.docentesSearchSuggestionItem}
+                            onPress={() => {
+                              setDocentesSearchTerm(docente?.nombre || '');
+                              setDocentesSearchOpen(false);
+                            }}
+                          >
+                            <Text style={styles.docentesSearchSuggestionName}>{docente?.nombre || `Docente ${docente?.id}`}</Text>
+                            {docente?.email ? (
+                              <Text style={styles.docentesSearchSuggestionMeta}>{docente.email}</Text>
+                            ) : null}
+                          </TouchableOpacity>
+                        ))
+                      ) : (
+                        <Text style={styles.docentesSearchEmpty}>No hay coincidencias</Text>
+                      )}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.docentesOverviewSection}>
+                  <Text style={styles.dataTitle}>Docentes y cursos</Text>
+                  {docentesLoading ? (
+                    <Text style={styles.dataBullet}>Cargando docentes...</Text>
+                  ) : docentes.length === 0 ? (
+                    <Text style={styles.dataBullet}>- Sin docentes para este colegio</Text>
+                  ) : docentesFiltrados.length === 0 ? (
+                    <Text style={styles.dataBullet}>- No hay docentes que coincidan con la busqueda</Text>
+                  ) : (
+                    docentesFiltrados.map((d) => (
+                      <View key={d.id} style={styles.docenteSummaryCard}>
+                        <View style={styles.docenteSummaryHeader}>
+                          <Text style={styles.docenteSummaryName}>{d.nombre || d.email || `Docente ${d.id}`}</Text>
+                          {d.email ? <Text style={styles.docenteSummaryEmail}>{d.email}</Text> : null}
+                        </View>
+                        <View style={styles.docenteCursoList}>
+                          {d.cursos && d.cursos.length > 0 ? (
+                            sortCursosForDisplay(d.cursos).map((c) => (
+                              <View key={c.id} style={styles.docenteCursoChip}>
+                                <Text style={styles.docenteCursoChipTitle}>
+                                  {c.nombre}{c.grado ? ` ${c.grado}` : ''}
+                                </Text>
+                                <Text style={styles.docenteCursoChipMeta}>
+                                  {Array.isArray(c.materias) && c.materias.length ? `Materias: ${c.materias.join(', ')}` : 'Sin materias asignadas'}
+                                </Text>
+                              </View>
+                            ))
+                          ) : (
+                            <View style={styles.docenteCursoChipEmpty}>
+                              <Text style={styles.docenteCursoChipMeta}>Sin cursos asignados</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    ))
+                  )}
+                </View>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -3000,7 +3203,7 @@ export default function HomeScreen() {
               <Text style={styles.dataItem}>Colegio: <Text style={styles.dataValue}>{user?.schoolName || user?.schoolId || 'No asignado'}</Text></Text>
               <Text style={styles.dataItem}>Periodos activos: <Text style={styles.dataValue}>{periodos.length}</Text></Text>
               {periodos.slice(0, 3).map(p => (
-                <Text key={p.id} style={styles.dataBullet}>- {p.nombre}: {p.fechaInicio} -> {p.fechaFin}</Text>
+                <Text key={p.id} style={styles.dataBullet}>- {p.nombre}: {formatPeriodSummary(p.fechaInicio, p.fechaFin)}</Text>
               ))}
               {periodos.length === 0 ? <Text style={styles.dataBullet}>- Sin periodos cargados</Text> : null}
             </View>
@@ -3193,6 +3396,13 @@ export default function HomeScreen() {
   );
 }
 
+const SHARED_ACTION_MODAL = {
+  width: Platform.OS === 'web' ? '32%' : '92%',
+  maxWidth: 500,
+  maxHeight: '76%',
+  alignSelf: 'center'
+};
+
 const styles = StyleSheet.create({
   content: { flex: 1 },
   scroll: { flexGrow: 1, padding: 20, paddingBottom: 28 },
@@ -3219,8 +3429,11 @@ const styles = StyleSheet.create({
   actionBtnRector: { width: '48.8%' },
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   actionBtnTextCompact: { fontSize: 13, flexShrink: 1, textAlign: 'center' },
+  logoutActionBtn: { backgroundColor: '#ef4444' },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  periodSaveBtn: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, minWidth: 168, borderRadius: 12, marginTop: 8 },
+  periodSaveBtnText: { fontSize: 13.5 },
   feedbackSuccess: { color: '#bbf7d0', fontWeight: '700', fontSize: 13, marginTop: 6 },
   feedbackError: { color: '#fecaca', fontWeight: '700', fontSize: 13, marginTop: 6 },
   statusModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 20 },
@@ -3237,15 +3450,18 @@ const styles = StyleSheet.create({
   deleteModalConfirmText: { color: '#fff', fontWeight: '900' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
   modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%', width: '100%', alignSelf: 'center' },
-  modalCardWide: { maxHeight: '92%' },
-  periodModalCard: { maxWidth: 920, maxHeight: '84%' },
-  cursoModalCard: { maxWidth: 760, maxHeight: '84%' },
-  docenteCrudModalCard: { maxWidth: 760, maxHeight: '84%' },
-  docentesModalCard: { maxWidth: 760, maxHeight: '82%' },
-  quickInfoModalCard: { maxWidth: 520, maxHeight: '76%' },
-  colegioModalCard: { maxWidth: 500, maxHeight: '74%' },
-  colegioListModalCard: { maxWidth: 760, maxHeight: '78%' },
+  sharedActionModalCard: { ...SHARED_ACTION_MODAL },
+  modalCardWide: { ...SHARED_ACTION_MODAL },
+  periodModalCard: { ...SHARED_ACTION_MODAL },
+  cursoModalCard: { ...SHARED_ACTION_MODAL },
+  docenteCrudModalCard: { ...SHARED_ACTION_MODAL, marginTop: -12 },
+  docentesModalCard: { ...SHARED_ACTION_MODAL },
+  quickInfoModalCard: { ...SHARED_ACTION_MODAL },
+  colegioModalCard: { ...SHARED_ACTION_MODAL },
+  colegioListModalCard: { ...SHARED_ACTION_MODAL },
   modalContent: { padding: 16, gap: 12 },
+  periodModalContent: { padding: 14, gap: 10 },
+  cursoModalContent: { padding: 14, gap: 10 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10 },
   closeBtnText: { color: '#e5e7eb', fontWeight: '700' },
@@ -3260,10 +3476,21 @@ const styles = StyleSheet.create({
   stepperText: { color: '#e5e7eb', fontWeight: '800', fontSize: 16 },
   periodTitle: { color: '#e5e7eb', fontWeight: '800', fontSize: 14, marginBottom: 4 },
   periodItemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
-  periodName: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  periodRange: { color: '#cbd5e1', fontSize: 12, marginTop: 2 },
+  periodCard: { padding: 14, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.16)', marginTop: 8 },
+  periodContent: { flex: 1, gap: 8 },
+  periodHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  periodName: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  periodRange: { color: '#cbd5e1', fontSize: 12.5, lineHeight: 18 },
+  periodDateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  periodDateCard: { minWidth: 150, flexGrow: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(30,41,59,0.9)', borderWidth: 1, borderColor: 'rgba(99,102,241,0.22)' },
+  periodDateLabel: { color: '#94a3b8', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  periodDateValue: { color: '#f8fafc', fontSize: 13, fontWeight: '800', marginTop: 4 },
+  periodDateTime: { color: '#cbd5e1', fontSize: 11.5, fontWeight: '700', marginTop: 4 },
+  periodFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  periodDurationChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(99,102,241,0.16)', borderWidth: 1, borderColor: 'rgba(129,140,248,0.3)' },
+  periodDurationText: { color: '#c7d2fe', fontSize: 11, fontWeight: '900' },
   periodMeta: { color: '#a5f3fc', fontSize: 12, marginTop: 2 },
-  periodActions: { flexDirection: 'row', gap: 8 },
+  periodActions: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', flexWrap: 'wrap', justifyContent: 'flex-end' },
   smallBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   updateBtn: { backgroundColor: 'rgba(56,189,248,0.2)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.5)' },
   deleteBtn: { backgroundColor: 'rgba(239,68,68,0.18)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.5)' },
@@ -3274,6 +3501,37 @@ const styles = StyleSheet.create({
   dataItem: { color: '#cbd5e1' },
   dataValue: { color: '#fff', fontWeight: '800' },
   dataBullet: { color: '#cbd5e1', fontSize: 12 },
+  docentesSearchBox: { marginTop: 10, gap: 6 },
+  docentesSearchInputWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.04)'
+  },
+  docentesSearchInput: { flex: 1, color: '#fff', paddingVertical: 10 },
+  docentesSearchClearBtn: { padding: 2 },
+  docentesSearchSuggestions: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(15,23,42,0.96)',
+    overflow: 'hidden'
+  },
+  docentesSearchSuggestionItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.06)'
+  },
+  docentesSearchSuggestionName: { color: '#f8fafc', fontWeight: '700', fontSize: 13.5 },
+  docentesSearchSuggestionMeta: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
+  docentesSearchEmpty: { color: '#94a3b8', fontSize: 12.5, paddingHorizontal: 12, paddingVertical: 10 },
+  docentesOverviewSection: { marginTop: 6, width: '100%', alignSelf: 'stretch' },
   docenteSummaryCard: { padding: 12, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', marginTop: 10, gap: 10 },
   docenteSummaryTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   docenteSummaryHeader: { gap: 4 },
@@ -3303,9 +3561,13 @@ const styles = StyleSheet.create({
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
   infoBtn: { backgroundColor: 'rgba(59,130,246,0.18)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.45)' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
-  courseRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  courseRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  courseCardRow: { paddingHorizontal: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.38)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.14)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.14)', marginBottom: 6 },
+  courseRowContent: { flex: 1, minWidth: 0, gap: 2, paddingRight: 2 },
+  courseRowTitle: { color: '#f8fafc', fontSize: 15, fontWeight: '800' },
   courseRowActive: { backgroundColor: 'rgba(56,189,248,0.08)', borderRadius: 10, paddingHorizontal: 8 },
-  courseRowActions: { flexDirection: 'row', gap: 8 },
+  courseRowActions: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignSelf: 'center' },
+  courseActionBtn: { paddingHorizontal: 8, paddingVertical: 7 },
   pickerList: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: 8 },
   pickerItem: { paddingHorizontal: 12, paddingVertical: 10 },
   pickerItemActive: { backgroundColor: 'rgba(16,185,129,0.18)' },

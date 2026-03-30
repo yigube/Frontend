@@ -1,7 +1,7 @@
 import { api } from './api';
 
-export async function getPeriodos() {
-  const { data } = await api.get('/periodos');
+export async function getPeriodos(params = {}) {
+  const { data } = await api.get('/periodos', { params });
   return data;
 }
 
