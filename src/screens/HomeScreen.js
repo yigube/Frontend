@@ -1845,6 +1845,10 @@ export default function HomeScreen() {
   const mobileLongLabelTextStyle = (isRectorCoordinador || isAdmin) && isMobileApp ? styles.actionBtnTextMobileStacked : null;
   const mobileGridLogoutRowStyle = isDocente ? mobileDocenteRowStyle : mobileLongLabelRowStyle;
   const mobileGridLogoutTextStyle = isDocente ? mobileDocenteTextStyle : mobileLongLabelTextStyle;
+  const mobileColegioControlsRowStyle = isMobileApp ? styles.colegioControlsRowMobile : null;
+  const mobileColegioControlBtnStyle = isMobileApp ? styles.colegioControlBtnMobile : null;
+  const mobileColegioControlRowStyle = isMobileApp ? styles.colegioControlBtnRowMobile : null;
+  const mobileColegioControlTextStyle = isMobileApp ? styles.colegioControlBtnTextMobile : null;
   const showMobileGridLogout = isMobileApp && !isRectorCoordinador;
   const docenteMateriasAsignadasTotal = docentePerfilCursos.reduce(
     (total, curso) => total + (Array.isArray(curso?.materias) ? curso.materias.length : 0),
@@ -2166,7 +2170,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Agregar estudiante</Text>
               <Pressable onPress={closeCreateEstudianteModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -2329,7 +2333,7 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>{editingPeriodo ? 'Editar periodo' : 'Crear periodo'}</Text>
                 <Pressable onPress={() => setPeriodModalVisible(false)} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
@@ -2511,7 +2515,7 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>Cursos</Text>
                 <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
@@ -2646,7 +2650,7 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>Colegios</Text>
                 <Pressable onPress={closeColegiosModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
@@ -2744,33 +2748,71 @@ export default function HomeScreen() {
                 <Text style={styles.dataBullet}>Este usuario directivo ya tiene contrasena configurada. Escribe una nueva solo si deseas cambiarla.</Text>
               ) : null}
               <Text style={styles.fieldLabel}>Cargo del directivo</Text>
-              <View style={styles.inlineRow}>
-                <TouchableOpacity
-                  style={[styles.smallBtn, styles.outlineBtn, rectorCargo === 'rector' && styles.pickerItemActive, savingColegio && { opacity: 0.6 }]}
-                  onPress={() => setRectorCargo('rector')}
-                  disabled={savingColegio}
-                >
-                  <View style={styles.btnRow}>
-                    <Ionicons name="school-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>Rector</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.smallBtn, styles.outlineBtn, rectorCargo === 'coordinador' && styles.pickerItemActive, savingColegio && { opacity: 0.6 }]}
-                  onPress={() => setRectorCargo('coordinador')}
-                  disabled={savingColegio}
-                >
-                  <View style={styles.btnRow}>
-                    <Ionicons name="people-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>Coordinador</Text>
-                  </View>
-                </TouchableOpacity>
+              <View style={styles.colegioControlsGrid}>
+                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallBtn,
+                      styles.colegioControlGridBtn,
+                      styles.colegioRoleBtn,
+                      mobileColegioControlBtnStyle,
+                      rectorCargo === 'rector' && styles.colegioRoleBtnActive,
+                      savingColegio && { opacity: 0.6 }
+                    ]}
+                    onPress={() => setRectorCargo('rector')}
+                    disabled={savingColegio}
+                  >
+                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                      <Ionicons name="school-outline" size={14} color="#e5e7eb" />
+                      <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Rector</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.smallBtn,
+                      styles.colegioControlGridBtn,
+                      styles.colegioRoleBtn,
+                      mobileColegioControlBtnStyle,
+                      rectorCargo === 'coordinador' && styles.colegioRoleBtnActive,
+                      savingColegio && { opacity: 0.6 }
+                    ]}
+                    onPress={() => setRectorCargo('coordinador')}
+                    disabled={savingColegio}
+                  >
+                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                      <Ionicons name="people-outline" size={14} color="#e5e7eb" />
+                      <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Coordinador</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioListBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
+                    onPress={openColegiosListModal}
+                    disabled={savingColegio}
+                  >
+                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                      <Ionicons name="list-outline" size={14} color="#e5e7eb" />
+                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Mostrar colegios</Text>
+                    </View>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioSaveBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
+                    onPress={handleSaveColegio}
+                    disabled={savingColegio}
+                  >
+                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                      <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>{savingColegio ? 'Guardando...' : isEditingColegio ? 'Guardar cambios' : 'Crear'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               </View>
               {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
-              <View style={styles.courseFormActions}>
-                {isEditingColegio ? (
+              {isEditingColegio ? (
+                <View style={[styles.courseFormActions, styles.colegioCancelActions]}>
                   <TouchableOpacity
-                    style={[styles.smallBtn, styles.outlineBtn, savingColegio && { opacity: 0.6 }]}
+                    style={[styles.smallBtn, styles.colegioCancelBtn, savingColegio && { opacity: 0.6 }]}
                     onPress={() => {
                       if (savingColegio) return;
                       setColegioEditing(null);
@@ -2790,31 +2832,11 @@ export default function HomeScreen() {
                   >
                     <View style={styles.btnRow}>
                       <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>Cancelar edicion</Text>
+                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText]}>Cancelar edicion</Text>
                     </View>
                   </TouchableOpacity>
-                ) : null}
-                <TouchableOpacity
-                  style={[styles.smallBtn, styles.outlineBtn, savingColegio && { opacity: 0.6 }]}
-                  onPress={openColegiosListModal}
-                  disabled={savingColegio}
-                >
-                  <View style={styles.btnRow}>
-                    <Ionicons name="list-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>Mostrar colegios</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.smallBtn, styles.createBtn, savingColegio && { opacity: 0.6 }]}
-                  onPress={handleSaveColegio}
-                  disabled={savingColegio}
-                >
-                  <View style={styles.btnRow}>
-                    <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>{savingColegio ? 'Guardando...' : isEditingColegio ? 'Guardar cambios' : 'Crear'}</Text>
-                  </View>
-                </TouchableOpacity>
-              </View>
+                </View>
+              ) : null}
             </View>
             </ScrollView>
           </View>
@@ -2832,13 +2854,13 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Colegios en el sistema</Text>
               <Pressable onPress={closeColegiosListModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <View style={styles.dataBox}>
-                <View style={styles.courseActionsRow}>
+              <View style={[styles.dataBox, styles.colegiosRegisteredBox]}>
+                <View style={styles.colegiosRegisteredHeader}>
                   <Text style={styles.dataTitle}>Colegios registrados</Text>
                   {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                 </View>
@@ -2860,32 +2882,85 @@ export default function HomeScreen() {
                       || colegio?.rectorTienePassword
                     );
                     return (
-                      <View key={colegio.id} style={[styles.courseRow, isEditingColegio && String(colegioEditing?.id) === String(colegio.id) && styles.courseRowActive]}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.dataItem}>- {colegio.nombre || `Colegio ${colegio.id}`}</Text>
-                          {colegio.codigoDane ? <Text style={styles.dataBullet}>Codigo DANE: {colegio.codigoDane}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Cargo directivo: {cargoLabel}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Nombre: {colegio.rectorNombre || 'No registrado'}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Apellido: {colegio.rectorApellido || 'No registrado'}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Correo: {colegio.rectorCorreo || 'No registrado'}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Telefono: {colegio.rectorTelefono || 'No registrado'}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Cedula: {colegio.rectorCedula || 'No registrado'}</Text> : null}
-                          {hasRectorData ? <Text style={styles.dataBullet}>Contrasena configurada: {colegio.rectorTienePassword ? 'Si' : 'No'}</Text> : null}
+                      <View
+                        key={colegio.id}
+                        style={[
+                          styles.colegioRegisteredCard,
+                          isEditingColegio && String(colegioEditing?.id) === String(colegio.id) && styles.colegioRegisteredCardActive
+                        ]}
+                      >
+                        <View style={styles.colegioRegisteredTopRow}>
+                          <View style={styles.colegioRegisteredTitleWrap}>
+                            <Text style={styles.colegioRegisteredEyebrow}>Colegio</Text>
+                            <Text style={styles.colegioRegisteredName}>{colegio.nombre || `Colegio ${colegio.id}`}</Text>
+                            <View style={styles.colegioRegisteredMetaWrap}>
+                              {colegio.codigoDane ? (
+                                <View style={styles.colegioRegisteredMetaChip}>
+                                  <Ionicons name="id-card-outline" size={12} color="#bfdbfe" />
+                                  <Text style={styles.colegioRegisteredMetaChipText}>DANE {colegio.codigoDane}</Text>
+                                </View>
+                              ) : null}
+                              {hasRectorData ? (
+                                <View style={[styles.colegioRegisteredMetaChip, styles.colegioRegisteredRoleChip]}>
+                                  <Ionicons name="person-outline" size={12} color="#bbf7d0" />
+                                  <Text style={[styles.colegioRegisteredMetaChipText, styles.colegioRegisteredRoleChipText]}>{cargoLabel}</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                          </View>
                         </View>
-                        <View style={styles.courseRowActions}>
-                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditColegio(colegio)}>
-                            <View style={styles.btnRow}>
+
+                        <View style={styles.colegioRegisteredActions}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn, styles.colegioRegisteredActionBtn]} onPress={() => startEditColegio(colegio)}>
+                            <View style={[styles.btnRow, styles.colegioRegisteredActionBtnRow]}>
                               <Ionicons name="create-outline" size={14} color="#e5e7eb" />
                               <Text style={styles.smallBtnText}>Editar</Text>
                             </View>
                           </TouchableOpacity>
-                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteColegio(colegio)}>
-                            <View style={styles.btnRow}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn, styles.colegioRegisteredActionBtn]} onPress={() => askDeleteColegio(colegio)}>
+                            <View style={[styles.btnRow, styles.colegioRegisteredActionBtnRow]}>
                               <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
                               <Text style={styles.smallBtnText}>Eliminar</Text>
                             </View>
                           </TouchableOpacity>
                         </View>
+
+                        {hasRectorData ? (
+                          <View style={styles.colegioRegisteredDirectivoBox}>
+                            <Text style={styles.colegioRegisteredDirectivoTitle}>Datos del directivo</Text>
+                            <View style={styles.colegioRegisteredInfoGrid}>
+                              <View style={styles.colegioRegisteredInfoItem}>
+                                <Text style={styles.colegioRegisteredInfoLabel}>Nombre</Text>
+                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorNombre || 'No registrado'}</Text>
+                              </View>
+                              <View style={styles.colegioRegisteredInfoItem}>
+                                <Text style={styles.colegioRegisteredInfoLabel}>Apellido</Text>
+                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorApellido || 'No registrado'}</Text>
+                              </View>
+                              <View style={styles.colegioRegisteredInfoItem}>
+                                <Text style={styles.colegioRegisteredInfoLabel}>Correo</Text>
+                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorCorreo || 'No registrado'}</Text>
+                              </View>
+                              <View style={styles.colegioRegisteredInfoItem}>
+                                <Text style={styles.colegioRegisteredInfoLabel}>Telefono</Text>
+                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorTelefono || 'No registrado'}</Text>
+                              </View>
+                              <View style={styles.colegioRegisteredInfoItem}>
+                                <Text style={styles.colegioRegisteredInfoLabel}>Cedula</Text>
+                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorCedula || 'No registrado'}</Text>
+                              </View>
+                              <View style={styles.colegioRegisteredInfoItem}>
+                                <Text style={styles.colegioRegisteredInfoLabel}>Contrasena</Text>
+                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorTienePassword ? 'Configurada' : 'Pendiente'}</Text>
+                              </View>
+                            </View>
+                          </View>
+                        ) : (
+                          <View style={styles.colegioRegisteredEmptyBox}>
+                            <Ionicons name="information-circle-outline" size={14} color="#93c5fd" />
+                            <Text style={styles.colegioRegisteredEmptyText}>Sin datos directivos registrados</Text>
+                          </View>
+                        )}
                       </View>
                     );
                   })
@@ -2907,7 +2982,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Gestionar docentes</Text>
               <Pressable onPress={closeDocenteCrudModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
@@ -3053,7 +3128,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Docentes del colegio</Text>
               <Pressable onPress={() => setDocenteCrudListModalVisible(false)} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
@@ -3131,7 +3206,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Asignar cursos a docentes</Text>
               <Pressable onPress={closeCursosModalDocente} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
@@ -3237,7 +3312,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>Estudiantes por curso</Text>
               <Pressable onPress={closeEstudiantesModal} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
@@ -3544,7 +3619,7 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>Docentes del colegio</Text>
                 <Pressable onPress={closeDocentesModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
@@ -3693,7 +3768,7 @@ export default function HomeScreen() {
               <View style={styles.modalHeader}>
                 <Text style={styles.periodTitle}>Reporte de inasistencia</Text>
                 <Pressable onPress={closeReportesModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
@@ -3857,6 +3932,15 @@ export default function HomeScreen() {
                             <Text style={styles.reportListMeta}>
                               {student.estadoActual ? `Estado: ${student.estadoActual}` : 'Sin registro de asistencia'}
                             </Text>
+                            {Array.isArray(student.materias) && student.materias.length > 0 ? (
+                              <Text style={styles.reportListMeta}>
+                                Materias: {student.materias.map((item) => (
+                                  item?.materia
+                                    ? `${item.materia}${item?.estadoActual ? ` (${item.estadoActual})` : ''}`
+                                    : (item?.estadoActual ? `Sin materia (${item.estadoActual})` : 'Sin materia')
+                                )).join(', ')}
+                              </Text>
+                            ) : null}
                           </View>
                         ))
                       ) : (
@@ -3919,7 +4003,7 @@ export default function HomeScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.periodTitle}>{quickModal?.title || ''}</Text>
               <Pressable onPress={() => setQuickModal(null)} style={styles.closeBtn}>
-                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <Text style={styles.fieldLabel}>{quickModal?.desc || ''}</Text>
@@ -4197,11 +4281,20 @@ const styles = StyleSheet.create({
   periodModalContent: { padding: 14, gap: 10 },
   cursoModalContent: { padding: 14, gap: 10 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 10 },
-  closeBtnText: { color: '#e5e7eb', fontWeight: '700' },
+  closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(127,29,29,0.3)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(248,113,113,0.45)' },
+  closeBtnText: { color: '#fecaca', fontWeight: '700' },
   fieldLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
   input: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.04)' },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  colegioControlsGrid: { gap: 10 },
+  colegioControlsGridRow: { width: '100%', justifyContent: 'space-between', alignItems: 'stretch', columnGap: 10, rowGap: 10, flexWrap: 'nowrap' },
+  colegioControlGridBtn: { width: '48%', flexBasis: '48%', maxWidth: '48%', minWidth: 0, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, minHeight: 42 },
+  colegioControlGridBtnRow: { width: '100%', minWidth: 0, justifyContent: 'center' },
+  colegioControlGridBtnText: { flexShrink: 1, textAlign: 'center' },
+  colegioControlsRowMobile: { justifyContent: 'space-between', rowGap: 10, columnGap: 10, alignItems: 'stretch' },
+  colegioControlBtnMobile: { width: '48%', flexBasis: '48%', maxWidth: '48%', minWidth: 0, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8 },
+  colegioControlBtnRowMobile: { width: '100%', minWidth: 0, justifyContent: 'center' },
+  colegioControlBtnTextMobile: { flexShrink: 1, textAlign: 'center', fontSize: 11.5 },
   selectBox: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 64, alignItems: 'center' },
   selectBoxFull: { paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.05)', minWidth: 64 },
   selectText: { color: '#e5e7eb', fontWeight: '800' },
@@ -4419,6 +4512,155 @@ const styles = StyleSheet.create({
   reportListTitle: { color: '#e2e8f0', fontSize: 13.5, fontWeight: '700' },
   reportListMeta: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
   docentesOverviewSection: { marginTop: 6, width: '100%', alignSelf: 'stretch' },
+  colegiosRegisteredBox: {
+    gap: 10,
+    padding: 14,
+    backgroundColor: 'rgba(15,23,42,0.6)',
+    borderColor: 'rgba(96,165,250,0.16)'
+  },
+  colegiosRegisteredHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginBottom: 2
+  },
+  colegioRegisteredCard: {
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.18)',
+    gap: 12
+  },
+  colegioRegisteredCardActive: {
+    backgroundColor: 'rgba(37,99,235,0.14)',
+    borderColor: 'rgba(96,165,250,0.4)'
+  },
+  colegioRegisteredTopRow: {
+    gap: 8
+  },
+  colegioRegisteredTitleWrap: {
+    width: '100%',
+    gap: 6
+  },
+  colegioRegisteredActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    flexWrap: 'nowrap',
+    gap: 8
+  },
+  colegioRegisteredActionBtn: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8
+  },
+  colegioRegisteredActionBtnRow: {
+    width: '100%',
+    justifyContent: 'center'
+  },
+  colegioRegisteredEyebrow: {
+    color: '#93c5fd',
+    fontSize: 11,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.7
+  },
+  colegioRegisteredName: {
+    color: '#f8fafc',
+    fontSize: 17,
+    fontWeight: '900'
+  },
+  colegioRegisteredMetaWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  colegioRegisteredMetaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(37,99,235,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.28)'
+  },
+  colegioRegisteredRoleChip: {
+    backgroundColor: 'rgba(34,197,94,0.14)',
+    borderColor: 'rgba(74,222,128,0.28)'
+  },
+  colegioRegisteredMetaChipText: {
+    color: '#dbeafe',
+    fontSize: 11.5,
+    fontWeight: '800'
+  },
+  colegioRegisteredRoleChipText: {
+    color: '#dcfce7'
+  },
+  colegioRegisteredDirectivoBox: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30,41,59,0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.14)',
+    gap: 10
+  },
+  colegioRegisteredDirectivoTitle: {
+    color: '#e2e8f0',
+    fontSize: 13,
+    fontWeight: '800'
+  },
+  colegioRegisteredInfoGrid: {
+    gap: 8
+  },
+  colegioRegisteredInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.14)',
+    gap: 6
+  },
+  colegioRegisteredInfoLabel: {
+    color: '#93c5fd',
+    fontSize: 10.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5
+  },
+  colegioRegisteredInfoValue: {
+    color: '#f8fafc',
+    fontSize: 12.5,
+    fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right'
+  },
+  colegioRegisteredEmptyBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30,41,59,0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.14)'
+  },
+  colegioRegisteredEmptyText: {
+    color: '#cbd5e1',
+    fontSize: 12.5,
+    fontWeight: '600'
+  },
   docenteSummaryCard: { padding: 12, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', marginTop: 10, gap: 10 },
   docenteSummaryTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
   docenteSummaryHeader: { gap: 4 },
@@ -4471,6 +4713,61 @@ const styles = StyleSheet.create({
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
   infoBtn: { backgroundColor: 'rgba(59,130,246,0.18)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.45)' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
+  colegioRoleBtn: {
+    backgroundColor: 'rgba(30,41,59,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.22)',
+    shadowColor: '#020617',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 2
+  },
+  colegioRoleBtnActive: {
+    backgroundColor: 'rgba(37,99,235,0.28)',
+    borderColor: 'rgba(96,165,250,0.65)',
+    shadowColor: '#2563eb',
+    shadowOpacity: 0.22
+  },
+  colegioRoleBtnText: {
+    color: '#f8fafc'
+  },
+  colegioListBtn: {
+    backgroundColor: 'rgba(8,47,73,0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.55)',
+    shadowColor: '#0ea5e9',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
+  },
+  colegioSaveBtn: {
+    backgroundColor: '#0f9f6e',
+    borderWidth: 1,
+    borderColor: '#34d399',
+    shadowColor: '#10b981',
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
+    elevation: 4
+  },
+  colegioCancelBtn: {
+    backgroundColor: 'rgba(127,29,29,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.5)',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 3
+  },
+  colegioCancelActions: {
+    justifyContent: 'center'
+  },
+  colegioActionBtnText: {
+    color: '#f8fafc'
+  },
   courseRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
   courseCardRow: { paddingHorizontal: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.38)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.14)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.14)', marginBottom: 6 },
   courseRowContent: { flex: 1, minWidth: 0, gap: 2, paddingRight: 2 },

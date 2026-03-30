@@ -9,6 +9,7 @@ export default function ReportesWebScreen() {
   const [downloading, setDownloading] = useState(false);
   const [cursoId, setCursoId] = useState('');
   const [periodoId, setPeriodoId] = useState('');
+  const [materia, setMateria] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -34,7 +35,7 @@ export default function ReportesWebScreen() {
     try {
       setDownloading(true);
       const res = await api.get('/reportes/asistencias.csv', {
-        params: { cursoId, periodoId },
+        params: { cursoId, periodoId, ...(materia.trim() ? { materia: materia.trim() } : {}) },
         responseType: 'blob'
       });
       const blobUrl = URL.createObjectURL(res.data);
@@ -80,6 +81,13 @@ export default function ReportesWebScreen() {
           keyboardType="numeric"
           style={styles.input}
           placeholder="Ej: 1"
+        />
+        <Text style={styles.label}>Materia (opcional)</Text>
+        <TextInput
+          value={materia}
+          onChangeText={setMateria}
+          style={styles.input}
+          placeholder="Ej: Etica"
         />
         <TouchableOpacity style={[styles.button, downloading && { opacity: 0.7 }]} onPress={descargar} disabled={downloading}>
           <Text style={styles.buttonText}>{downloading ? 'Descargando...' : 'Descargar'}</Text>

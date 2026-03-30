@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } fro
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { getAusentesCurso, registrarAsistencia } from '../services/asistencias';
 import { getCursos } from '../services/cursos';
+import { getDocentes } from '../services/docentes';
+import { useAuth } from '../store/useAuth';
 import { Ionicons } from '@expo/vector-icons';
 
 const getLocalDateISO = () => {
@@ -20,6 +22,7 @@ const formatTimeLabel = (value) => {
   }
   return parsed.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 };
+const normalizeMateriaOption = (value = '') => String(value || '').trim().toLowerCase();
 
 const buildEstadoFlags = (estado) => ({
   presente: estado === 'presente' || estado === 'tarde',
@@ -29,20 +32,48 @@ const buildEstadoFlags = (estado) => ({
 });
 
 export default function QRScreen({ route, navigation }) {
+  const user = useAuth((state) => state.user);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [cursoId, setCursoId] = useState(null);
   const [cursos, setCursos] = useState([]);
+  const [docentePerfilCursos, setDocentePerfilCursos] = useState([]);
   const [loadingCursos, setLoadingCursos] = useState(false);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
+  const [materiaSeleccionada, setMateriaSeleccionada] = useState('');
+  const [materiaPickerOpen, setMateriaPickerOpen] = useState(false);
   const [pendingQr, setPendingQr] = useState('');
   const [estadoModalVisible, setEstadoModalVisible] = useState(false);
   const [savingEstado, setSavingEstado] = useState(false);
   const [ausentesDelDia, setAusentesDelDia] = useState([]);
   const [loadingAusentes, setLoadingAusentes] = useState(false);
-  const [autoAusenteModal, setAutoAusenteModal] = useState({ visible: false, cursoNombre: '', fecha: '', hora: '' });
+  const [autoAusenteModal, setAutoAusenteModal] = useState({
+    visible: false,
+    cursoNombre: '',
+    materiaNombre: '',
+    fecha: '',
+    hora: ''
+  });
   const scanMode = route?.params?.scanMode === 'absent-only' ? 'absent-only' : 'all';
   const absentOnlyMode = scanMode === 'absent-only';
+
+  const getMateriasDisponiblesByCurso = (cursoValue) => {
+    const curso = (docentePerfilCursos || []).find((item) => String(item?.id) === String(cursoValue));
+    const uniques = [];
+    const seen = new Set();
+    (Array.isArray(curso?.materias) ? curso.materias : [])
+      .map((materia) => String(materia || '').trim())
+      .filter(Boolean)
+      .forEach((materia) => {
+        const key = normalizeMateriaOption(materia);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        uniques.push(materia);
+      });
+    return uniques.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  };
+
+  const materiasDisponibles = getMateriasDisponiblesByCurso(cursoId);
 
   useEffect(() => {
     (async () => {
@@ -56,28 +87,53 @@ export default function QRScreen({ route, navigation }) {
     (async () => {
       setLoadingCursos(true);
       try {
-        const data = await getCursos();
-        setCursos(data);
-        if (data.length > 0) setCursoId(data[0].id);
+        const [cursosData, docentesData] = await Promise.all([
+          getCursos(),
+          user?.schoolId ? getDocentes({ schoolId: user.schoolId }) : Promise.resolve([])
+        ]);
+        const safeCursos = Array.isArray(cursosData) ? cursosData : [];
+        setCursos(safeCursos);
+
+        const docentes = Array.isArray(docentesData) ? docentesData : [];
+        const currentDocente = docentes.find((docente) => String(docente?.id) === String(user?.id))
+          || docentes.find((docente) => String(docente?.email || '').toLowerCase() === String(user?.email || '').toLowerCase())
+          || null;
+        setDocentePerfilCursos(Array.isArray(currentDocente?.cursos) ? currentDocente.cursos : []);
+
+        if (safeCursos.length > 0) setCursoId(safeCursos[0].id);
       } catch (e) {
         Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
       } finally {
         setLoadingCursos(false);
       }
     })();
-  }, []);
+  }, [user?.email, user?.id, user?.schoolId]);
 
-  const loadAusentesDelDia = async (cursoValue) => {
+  useEffect(() => {
+    const disponibles = getMateriasDisponiblesByCurso(cursoId);
+    setMateriaSeleccionada((prev) => {
+      if (prev && disponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(prev))) {
+        return prev;
+      }
+      return disponibles[0] || '';
+    });
+    setMateriaPickerOpen(false);
+  }, [absentOnlyMode, cursoId, docentePerfilCursos]);
+
+  const loadAusentesDelDia = async (cursoValue, materiaValue = materiaSeleccionada) => {
     if (!absentOnlyMode || !cursoValue) {
       setAusentesDelDia([]);
       return;
     }
     setLoadingAusentes(true);
     try {
-      const data = await getAusentesCurso({
+      const params = {
         cursoId: cursoValue,
         fecha: getLocalDateISO()
-      });
+      };
+      const materiaNormalizada = String(materiaValue || '').trim();
+      if (materiaNormalizada) params.materia = materiaNormalizada;
+      const data = await getAusentesCurso(params);
       setAusentesDelDia(Array.isArray(data?.ausentes) ? data.ausentes : []);
     } catch (e) {
       setAusentesDelDia([]);
@@ -93,8 +149,13 @@ export default function QRScreen({ route, navigation }) {
       setAusentesDelDia([]);
       return;
     }
-    loadAusentesDelDia(cursoValue);
-  }, [cursoId, absentOnlyMode]);
+    const disponibles = getMateriasDisponiblesByCurso(cursoValue);
+    if (disponibles.length > 0 && !String(materiaSeleccionada || '').trim()) {
+      setAusentesDelDia([]);
+      return;
+    }
+    loadAusentesDelDia(cursoValue, materiaSeleccionada);
+  }, [cursoId, absentOnlyMode, materiaSeleccionada, docentePerfilCursos]);
 
   const resetScanState = () => {
     setPendingQr('');
@@ -102,13 +163,14 @@ export default function QRScreen({ route, navigation }) {
   };
 
   const closeAutoAusenteModal = () => {
-    setAutoAusenteModal({ visible: false, cursoNombre: '', fecha: '', hora: '' });
+    setAutoAusenteModal({ visible: false, cursoNombre: '', materiaNombre: '', fecha: '', hora: '' });
     navigation.navigate('Inicio');
   };
 
   const registrarConEstado = async (estado, qrValueOverride = pendingQr, options = {}) => {
-    const { returnHome = false } = options;
+      const { returnHome = false } = options;
     const cursoValue = Number(cursoId);
+    const materiaValue = String((options?.materia ?? materiaSeleccionada) || '').trim();
     if (!cursoValue || !qrValueOverride) {
       setEstadoModalVisible(false);
       resetScanState();
@@ -125,6 +187,7 @@ export default function QRScreen({ route, navigation }) {
         cursoId: cursoValue,
         fecha: getLocalDateISO(),
         estado,
+        ...(materiaValue ? { materia: materiaValue } : {}),
         ...flags
       });
 
@@ -132,6 +195,7 @@ export default function QRScreen({ route, navigation }) {
         setAutoAusenteModal({
           visible: true,
           cursoNombre: cursos.find((c) => String(c.id) === String(cursoValue))?.nombre || `Curso ${cursoValue}`,
+          materiaNombre: response?.registro?.materia?.nombre || materiaValue || '',
           fecha: getLocalDateISO(),
           hora: formatTimeLabel(
             response?.registro?.horaRegistro
@@ -143,7 +207,10 @@ export default function QRScreen({ route, navigation }) {
           )
         });
       } else {
-        Alert.alert('Asistencia registrada', `QR: ${qrValueOverride}\nEstado: ${estado}`);
+        Alert.alert(
+          'Asistencia registrada',
+          `QR: ${qrValueOverride}\nEstado: ${estado}${materiaValue ? `\nMateria: ${materiaValue}` : ''}`
+        );
       }
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || e.message);
@@ -165,6 +232,10 @@ export default function QRScreen({ route, navigation }) {
     }
 
     const qrValue = String(data || '');
+    if (materiasDisponibles.length > 0 && !String(materiaSeleccionada || '').trim()) {
+      Alert.alert('Materia requerida', 'Selecciona una materia antes de escanear.');
+      return;
+    }
     if (absentOnlyMode) {
       const allowScan = ausentesDelDia.some((item) => String(item.qr || '') === qrValue);
       if (!allowScan) {
@@ -175,7 +246,10 @@ export default function QRScreen({ route, navigation }) {
       }
 
       setScanned(true);
-      await registrarConEstado('ausente', qrValue, { returnHome: true });
+      await registrarConEstado('ausente', qrValue, {
+        returnHome: true,
+        materia: materiaSeleccionada
+      });
       return;
     }
 
@@ -210,7 +284,10 @@ export default function QRScreen({ route, navigation }) {
         ) : null}
 
         <Text style={styles.label}>Curso</Text>
-        <Pressable style={styles.selectBox} onPress={() => setCursoPickerOpen((prev) => !prev)}>
+        <Pressable style={styles.selectBox} onPress={() => {
+          setCursoPickerOpen((prev) => !prev);
+          setMateriaPickerOpen(false);
+        }}>
           <Text style={styles.selectText}>
             {loadingCursos
               ? 'Cargando cursos...'
@@ -231,6 +308,7 @@ export default function QRScreen({ route, navigation }) {
                   onPress={() => {
                     setCursoId(c.id);
                     setCursoPickerOpen(false);
+                    setMateriaPickerOpen(false);
                   }}
                 >
                   <Text style={styles.dropdownText}>{c.nombre}</Text>
@@ -238,6 +316,89 @@ export default function QRScreen({ route, navigation }) {
               ))
             )}
           </View>
+        ) : null}
+
+        {absentOnlyMode ? (
+          <>
+            <Text style={[styles.label, styles.secondaryLabel]}>Materia</Text>
+            <Pressable
+              style={[styles.selectBox, materiasDisponibles.length === 0 && styles.selectBoxDisabled]}
+              onPress={() => {
+                if (materiasDisponibles.length === 0) return;
+                setMateriaPickerOpen((prev) => !prev);
+                setCursoPickerOpen(false);
+              }}
+            >
+              <Text style={styles.selectText}>
+                {materiasDisponibles.length === 0
+                  ? 'No hay materias configuradas'
+                  : (materiaSeleccionada || 'Selecciona una materia')}
+              </Text>
+              <Ionicons
+                name={materiaPickerOpen ? 'chevron-up-outline' : 'chevron-down-outline'}
+                size={16}
+                color="#e5e7eb"
+              />
+            </Pressable>
+
+            {materiaPickerOpen ? (
+              <View style={styles.dropdownList}>
+                {materiasDisponibles.map((materia) => (
+                  <Pressable
+                    key={materia}
+                    style={[
+                      styles.dropdownItem,
+                      normalizeMateriaOption(materiaSeleccionada) === normalizeMateriaOption(materia) && styles.dropdownItemActive
+                    ]}
+                    onPress={() => {
+                      setMateriaSeleccionada(materia);
+                      setMateriaPickerOpen(false);
+                    }}
+                  >
+                    <Text style={styles.dropdownText}>{materia}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </>
+        ) : materiasDisponibles.length > 0 ? (
+          <>
+            <Text style={[styles.label, styles.secondaryLabel]}>Materia</Text>
+            <Pressable
+              style={styles.selectBox}
+              onPress={() => {
+                setMateriaPickerOpen((prev) => !prev);
+                setCursoPickerOpen(false);
+              }}
+            >
+              <Text style={styles.selectText}>{materiaSeleccionada || 'Selecciona una materia'}</Text>
+              <Ionicons
+                name={materiaPickerOpen ? 'chevron-up-outline' : 'chevron-down-outline'}
+                size={16}
+                color="#e5e7eb"
+              />
+            </Pressable>
+
+            {materiaPickerOpen ? (
+              <View style={styles.dropdownList}>
+                {materiasDisponibles.map((materia) => (
+                  <Pressable
+                    key={materia}
+                    style={[
+                      styles.dropdownItem,
+                      normalizeMateriaOption(materiaSeleccionada) === normalizeMateriaOption(materia) && styles.dropdownItemActive
+                    ]}
+                    onPress={() => {
+                      setMateriaSeleccionada(materia);
+                      setMateriaPickerOpen(false);
+                    }}
+                  >
+                    <Text style={styles.dropdownText}>{materia}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </>
         ) : null}
       </View>
 
@@ -252,7 +413,7 @@ export default function QRScreen({ route, navigation }) {
                 <TouchableOpacity
                   key={estado}
                   style={[styles.estadoBtn, savingEstado && { opacity: 0.6 }]}
-                  onPress={() => registrarConEstado(estado)}
+                  onPress={() => registrarConEstado(estado, pendingQr, { materia: materiaSeleccionada })}
                   disabled={savingEstado}
                 >
                   <Text style={styles.estadoText}>{savingEstado ? 'Guardando...' : estado}</Text>
@@ -289,6 +450,12 @@ export default function QRScreen({ route, navigation }) {
             <View style={styles.successMetaCard}>
               <Text style={styles.successMetaLabel}>Curso</Text>
               <Text style={styles.successMetaValue}>{autoAusenteModal.cursoNombre || 'Sin curso'}</Text>
+              {autoAusenteModal.materiaNombre ? (
+                <>
+                  <Text style={styles.successMetaLabel}>Materia</Text>
+                  <Text style={styles.successMetaValue}>{autoAusenteModal.materiaNombre}</Text>
+                </>
+              ) : null}
               <Text style={styles.successMetaLabel}>Fecha</Text>
               <Text style={styles.successMetaValue}>{autoAusenteModal.fecha || 'Sin fecha'}</Text>
               <Text style={styles.successMetaLabel}>Hora</Text>
@@ -335,6 +502,7 @@ const styles = StyleSheet.create({
   },
   modePillText: { color: '#fde68a', fontWeight: '800', fontSize: 12 },
   label: { color: '#fff', fontWeight: '700', marginBottom: 6 },
+  secondaryLabel: { marginTop: 10 },
   selectBox: {
     borderRadius: 10,
     borderWidth: 1,
@@ -346,6 +514,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8
+  },
+  selectBoxDisabled: {
+    opacity: 0.65
   },
   selectText: { color: '#fff', fontWeight: '700', flexShrink: 1 },
   dropdownList: {
