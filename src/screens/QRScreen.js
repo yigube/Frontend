@@ -12,6 +12,15 @@ const getLocalDateISO = () => {
   const d = String(now.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 };
+
+const formatTimeLabel = (value) => {
+  const parsed = value ? new Date(value) : new Date();
+  if (Number.isNaN(parsed.getTime())) {
+    return new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  }
+  return parsed.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+};
+
 const buildEstadoFlags = (estado) => ({
   presente: estado === 'presente' || estado === 'tarde',
   tarde: estado === 'tarde',
@@ -19,7 +28,7 @@ const buildEstadoFlags = (estado) => ({
   ausente: estado === 'ausente'
 });
 
-export default function QRScreen({ route }) {
+export default function QRScreen({ route, navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [cursoId, setCursoId] = useState(null);
@@ -31,6 +40,7 @@ export default function QRScreen({ route }) {
   const [savingEstado, setSavingEstado] = useState(false);
   const [ausentesDelDia, setAusentesDelDia] = useState([]);
   const [loadingAusentes, setLoadingAusentes] = useState(false);
+  const [autoAusenteModal, setAutoAusenteModal] = useState({ visible: false, cursoNombre: '', fecha: '', hora: '' });
   const scanMode = route?.params?.scanMode === 'absent-only' ? 'absent-only' : 'all';
   const absentOnlyMode = scanMode === 'absent-only';
 
@@ -40,7 +50,7 @@ export default function QRScreen({ route }) {
         await requestPermission();
       }
     })();
-  }, [permission]);
+  }, [permission, requestPermission]);
 
   useEffect(() => {
     (async () => {
@@ -86,6 +96,66 @@ export default function QRScreen({ route }) {
     loadAusentesDelDia(cursoValue);
   }, [cursoId, absentOnlyMode]);
 
+  const resetScanState = () => {
+    setPendingQr('');
+    setTimeout(() => setScanned(false), 500);
+  };
+
+  const closeAutoAusenteModal = () => {
+    setAutoAusenteModal({ visible: false, cursoNombre: '', fecha: '', hora: '' });
+    navigation.navigate('Inicio');
+  };
+
+  const registrarConEstado = async (estado, qrValueOverride = pendingQr, options = {}) => {
+    const { returnHome = false } = options;
+    const cursoValue = Number(cursoId);
+    if (!cursoValue || !qrValueOverride) {
+      setEstadoModalVisible(false);
+      resetScanState();
+      setScanned(false);
+      return;
+    }
+
+    setEstadoModalVisible(false);
+    setSavingEstado(true);
+    try {
+      const flags = buildEstadoFlags(estado);
+      const response = await registrarAsistencia({
+        qr: qrValueOverride,
+        cursoId: cursoValue,
+        fecha: getLocalDateISO(),
+        estado,
+        ...flags
+      });
+
+      if (returnHome) {
+        setAutoAusenteModal({
+          visible: true,
+          cursoNombre: cursos.find((c) => String(c.id) === String(cursoValue))?.nombre || `Curso ${cursoValue}`,
+          fecha: getLocalDateISO(),
+          hora: formatTimeLabel(
+            response?.registro?.horaRegistro
+            || response?.registro?.hora_registro
+            || response?.registro?.updatedAt
+            || response?.registro?.createdAt
+            || response?.registro?.updated_at
+            || response?.registro?.created_at
+          )
+        });
+      } else {
+        Alert.alert('Asistencia registrada', `QR: ${qrValueOverride}\nEstado: ${estado}`);
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || e.message);
+    } finally {
+      if (absentOnlyMode) {
+        await loadAusentesDelDia(cursoValue);
+      }
+      setSavingEstado(false);
+      resetScanState();
+    }
+  };
+
   const onBarcodeScanned = async ({ data }) => {
     if (scanned) return;
     const cursoValue = Number(cursoId);
@@ -93,6 +163,7 @@ export default function QRScreen({ route }) {
       Alert.alert('Curso requerido', 'Selecciona un curso antes de escanear.');
       return;
     }
+
     const qrValue = String(data || '');
     if (absentOnlyMode) {
       const allowScan = ausentesDelDia.some((item) => String(item.qr || '') === qrValue);
@@ -102,6 +173,10 @@ export default function QRScreen({ route }) {
         setTimeout(() => setScanned(false), 500);
         return;
       }
+
+      setScanned(true);
+      await registrarConEstado('ausente', qrValue, { returnHome: true });
+      return;
     }
 
     setScanned(true);
@@ -109,43 +184,12 @@ export default function QRScreen({ route }) {
     setEstadoModalVisible(true);
   };
 
-  const registrarConEstado = async (estado) => {
-    const cursoValue = Number(cursoId);
-    if (!cursoValue || !pendingQr) {
-      setEstadoModalVisible(false);
-      setPendingQr('');
-      setScanned(false);
-      return;
-    }
-    setEstadoModalVisible(false);
-    setSavingEstado(true);
-    try {
-      const flags = buildEstadoFlags(estado);
-      await registrarAsistencia({
-        qr: pendingQr,
-        cursoId: cursoValue,
-        fecha: getLocalDateISO(),
-        estado,
-        ...flags
-      });
-      Alert.alert('Asistencia registrada', `QR: ${pendingQr}\nEstado: ${estado}`);
-    } catch (e) {
-      Alert.alert('Error', e?.response?.data?.error || e.message);
-    } finally {
-      if (absentOnlyMode) {
-        await loadAusentesDelDia(cursoValue);
-      }
-      setSavingEstado(false);
-      setPendingQr('');
-      setTimeout(() => setScanned(false), 500);
-    }
-  };
-
   if (!permission) {
-    return <View style={styles.center}><Text>Solicitando permisos de cámara...</Text></View>;
+    return <View style={styles.center}><Text>Solicitando permisos de camara...</Text></View>;
   }
+
   if (!permission.granted) {
-    return <View style={styles.center}><Text>Permiso de cámara denegado.</Text></View>;
+    return <View style={styles.center}><Text>Permiso de camara denegado.</Text></View>;
   }
 
   return (
@@ -155,6 +199,7 @@ export default function QRScreen({ route }) {
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
         onBarcodeScanned={onBarcodeScanned}
       />
+
       <View style={styles.overlay}>
         {absentOnlyMode ? (
           <View style={styles.modePill}>
@@ -163,6 +208,7 @@ export default function QRScreen({ route }) {
             </Text>
           </View>
         ) : null}
+
         <Text style={styles.label}>Curso</Text>
         <Pressable style={styles.selectBox} onPress={() => setCursoPickerOpen((prev) => !prev)}>
           <Text style={styles.selectText}>
@@ -225,6 +271,38 @@ export default function QRScreen({ route }) {
             >
               <Text style={styles.cancelText}>Cancelar</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent visible={autoAusenteModal.visible} onRequestClose={closeAutoAusenteModal} animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.successModalCard}>
+            <View style={styles.successIconWrap}>
+              <Ionicons name="checkmark-done-outline" size={28} color="#86efac" />
+            </View>
+            <Text style={styles.successTitle}>Falla registrada</Text>
+            <Text style={styles.successText}>
+              La inasistencia se registró correctamente y el estudiante quedó marcado como ausente.
+            </Text>
+
+            <View style={styles.successMetaCard}>
+              <Text style={styles.successMetaLabel}>Curso</Text>
+              <Text style={styles.successMetaValue}>{autoAusenteModal.cursoNombre || 'Sin curso'}</Text>
+              <Text style={styles.successMetaLabel}>Fecha</Text>
+              <Text style={styles.successMetaValue}>{autoAusenteModal.fecha || 'Sin fecha'}</Text>
+              <Text style={styles.successMetaLabel}>Hora</Text>
+              <Text style={styles.successMetaValue}>{autoAusenteModal.hora || 'Sin hora'}</Text>
+            </View>
+
+            <Text style={styles.successHint}>Al cerrar este mensaje volverás al menú principal.</Text>
+
+            <TouchableOpacity style={styles.successBtn} onPress={closeAutoAusenteModal}>
+              <View style={styles.btnRow}>
+                <Ionicons name="home-outline" size={16} color="#fff" />
+                <Text style={styles.successBtnText}>Volver al menu</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -300,6 +378,52 @@ const styles = StyleSheet.create({
   },
   modalTitle: { color: '#fff', fontWeight: '800', fontSize: 16 },
   modalSub: { color: '#cbd5e1', marginTop: 4, marginBottom: 10 },
+  successModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 18,
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.35)',
+    padding: 18,
+    alignItems: 'center',
+    gap: 10
+  },
+  successIconWrap: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34,197,94,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.35)'
+  },
+  successTitle: { color: '#f0fdf4', fontWeight: '900', fontSize: 20, textAlign: 'center' },
+  successText: { color: '#d1fae5', fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  successMetaCard: {
+    width: '100%',
+    borderRadius: 14,
+    padding: 12,
+    backgroundColor: 'rgba(15,23,42,0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+    gap: 4
+  },
+  successMetaLabel: { color: '#86efac', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  successMetaValue: { color: '#f8fafc', fontSize: 14, fontWeight: '800', marginBottom: 4 },
+  successHint: { color: '#94a3b8', fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  successBtn: {
+    marginTop: 4,
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#16a34a',
+    borderWidth: 1,
+    borderColor: '#22c55e'
+  },
+  successBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   estadoGrid: { gap: 8 },
   estadoBtn: {
     borderRadius: 10,

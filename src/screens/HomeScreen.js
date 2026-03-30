@@ -9,6 +9,9 @@ import { getCursos, getCursosPorColegio, createCurso, updateCurso, deleteCurso }
 import { getEstudiantes, createEstudiante, createEstudiantesLote, updateEstudiante, deleteEstudiante } from '../services/estudiantes';
 import { getDocentes, getCursosDisponiblesDocente, createDocente, updateDocente, deleteDocente } from '../services/docentes';
 import { getColegios, createColegio, updateColegio, deleteColegio } from '../services/colegios';
+import { getReporteInasistenciaCurso } from '../services/reportes';
+
+const ALL_MATERIAS_OPTION = '__all_materias__';
 
 export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
@@ -16,6 +19,7 @@ export default function HomeScreen() {
   const isAdmin = user?.rol === 'admin';
   const isDocente = user?.rol === 'docente';
   const isRectorCoordinador = ['rector', 'coordinador'].includes(user?.rol);
+  const isMobileApp = Platform.OS !== 'web';
   const canManageCourses = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const canManagePeriods = ['admin', 'rector', 'coordinador'].includes(user?.rol);
   const navigation = useNavigation();
@@ -53,18 +57,21 @@ export default function HomeScreen() {
   const [estudiantesError, setEstudiantesError] = useState('');
   const [cursoSeleccionado, setCursoSeleccionado] = useState(null);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
+  const [estudianteMateriaFiltro, setEstudianteMateriaFiltro] = useState(ALL_MATERIAS_OPTION);
+  const [estudianteMateriaPickerOpen, setEstudianteMateriaPickerOpen] = useState(false);
   const [estudiantesColegioId, setEstudiantesColegioId] = useState(null);
   const [estudiantesColegioPickerOpen, setEstudiantesColegioPickerOpen] = useState(false);
   const [estudianteCreateModalVisible, setEstudianteCreateModalVisible] = useState(false);
   const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
   const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
   const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+  const [estudianteCreateMaterias, setEstudianteCreateMaterias] = useState([]);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [uploadedStudents, setUploadedStudents] = useState([]);
   const [estudianteCreateError, setEstudianteCreateError] = useState('');
   const [savingEstudiante, setSavingEstudiante] = useState(false);
   const [estudianteEditing, setEstudianteEditing] = useState(null);
-  const [estudianteEditForm, setEstudianteEditForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+  const [estudianteEditForm, setEstudianteEditForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
   const [savingEstudianteEdit, setSavingEstudianteEdit] = useState(false);
   const [docentesModalVisible, setDocentesModalVisible] = useState(false);
   const [docentes, setDocentes] = useState([]);
@@ -76,6 +83,18 @@ export default function HomeScreen() {
   const [colegiosOptions, setColegiosOptions] = useState([]);
   const [colegioPickerOpen, setColegioPickerOpen] = useState(false);
   const [colegiosLoading, setColegiosLoading] = useState(false);
+  const [reportesModalVisible, setReportesModalVisible] = useState(false);
+  const [reportesCursos, setReportesCursos] = useState([]);
+  const [reportesCursoId, setReportesCursoId] = useState(null);
+  const [reportesCursoPickerOpen, setReportesCursoPickerOpen] = useState(false);
+  const [reportesMes, setReportesMes] = useState(new Date().getMonth() + 1);
+  const [reportesMesPickerOpen, setReportesMesPickerOpen] = useState(false);
+  const [reportesDia, setReportesDia] = useState(new Date().getDate());
+  const [reportesDiaPickerOpen, setReportesDiaPickerOpen] = useState(false);
+  const [reportesLoading, setReportesLoading] = useState(false);
+  const [reportesBootLoading, setReportesBootLoading] = useState(false);
+  const [reportesError, setReportesError] = useState('');
+  const [reportesDetalle, setReportesDetalle] = useState(null);
   const [colegiosModalVisible, setColegiosModalVisible] = useState(false);
   const [colegiosListModalVisible, setColegiosListModalVisible] = useState(false);
   const [colegiosList, setColegiosList] = useState([]);
@@ -163,6 +182,15 @@ export default function HomeScreen() {
   const hours = Array.from({ length: 24 }, (_, i) => i);
   const minutes = Array.from({ length: 60 }, (_, i) => i);
   const monthNames = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const pad2 = (value) => String(value).padStart(2, '0');
+  const getDaysInMonth = (year, month) => new Date(year, month, 0).getDate();
+  const reportMonthOptions = months.map((month) => ({
+    value: month,
+    label: `${monthNames[month - 1]} ${currentYear}`
+  }));
+  const reportDayOptions = Array.from({ length: getDaysInMonth(currentYear, reportesMes) }, (_, index) => index + 1);
+  const reportMonthKey = `${currentYear}-${pad2(reportesMes)}`;
+  const reportSelectedDate = `${reportMonthKey}-${pad2(reportesDia)}`;
   const getApiErrorMessage = (e, fallback) => {
     const apiError = e?.response?.data?.error;
     if (apiError) return apiError;
@@ -493,6 +521,81 @@ export default function HomeScreen() {
     setQuickModal(map[key] || null);
   };
 
+  const loadCursosReporteInasistencia = async () => {
+    const schoolId = Number(user?.schoolId);
+    if (!schoolId) {
+      setReportesCursos([]);
+      setReportesCursoId(null);
+      return [];
+    }
+
+    const cursos = await getCursos({ schoolId });
+    const ordered = sortCursosForDisplay(cursos);
+    setReportesCursos(ordered);
+    setReportesCursoId((prev) => {
+      const hasPrev = ordered.some((curso) => String(curso.id) === String(prev));
+      return hasPrev ? prev : (ordered[0]?.id || null);
+    });
+    return ordered;
+  };
+
+  const openReportesModal = async () => {
+    setReportesModalVisible(true);
+    setReportesCursoPickerOpen(false);
+    setReportesMesPickerOpen(false);
+    setReportesDiaPickerOpen(false);
+    setReportesError('');
+    setReportesDetalle(null);
+    setReportesBootLoading(true);
+    try {
+      await loadCursosReporteInasistencia();
+    } catch (e) {
+      setReportesError(getApiErrorMessage(e, 'No se pudieron cargar los cursos'));
+    } finally {
+      setReportesBootLoading(false);
+    }
+  };
+
+  const closeReportesModal = () => {
+    setReportesModalVisible(false);
+    setReportesCursoPickerOpen(false);
+    setReportesMesPickerOpen(false);
+    setReportesDiaPickerOpen(false);
+    setReportesLoading(false);
+    setReportesError('');
+    setReportesDetalle(null);
+  };
+
+  useEffect(() => {
+    const maxDay = getDaysInMonth(currentYear, reportesMes);
+    if (reportesDia > maxDay) {
+      setReportesDia(maxDay);
+    }
+  }, [currentYear, reportesDia, reportesMes]);
+
+  const handleGenerateInasistenciaReport = async () => {
+    if (!reportesCursoId) {
+      return Alert.alert('Curso requerido', 'Selecciona un curso para generar el reporte');
+    }
+
+    setReportesLoading(true);
+    setReportesError('');
+    try {
+      const data = await getReporteInasistenciaCurso({
+        cursoId: reportesCursoId,
+        mes: reportMonthKey,
+        fecha: reportSelectedDate
+      });
+      setReportesDetalle(data);
+    } catch (e) {
+      const message = getApiErrorMessage(e, 'No se pudo generar el reporte');
+      setReportesError(message);
+      setReportesDetalle(null);
+    } finally {
+      setReportesLoading(false);
+    }
+  };
+
   const loadCursosAsignados = async (schoolIdParam = null) => {
     const params = schoolIdParam ? { schoolId: schoolIdParam } : {};
     const cursos = await getCursos(params);
@@ -565,9 +668,22 @@ export default function HomeScreen() {
     }
   };
 
+  const selectCursoEstudiantes = async (cursoId) => {
+    setCursoSeleccionado(cursoId);
+    setCursoPickerOpen(false);
+    setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
+    setEstudianteMateriaPickerOpen(false);
+    setEstudiantesColegioPickerOpen(false);
+    setEstudianteEditing(null);
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+    await loadEstudiantesPorCurso(cursoId);
+  };
+
   const openEstudiantesModal = async () => {
     setEstudiantesModalVisible(true);
     setCursoPickerOpen(false);
+    setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
+    setEstudianteMateriaPickerOpen(false);
     setEstudiantesColegioPickerOpen(false);
     setEstudiantesError('');
     try {
@@ -581,6 +697,11 @@ export default function HomeScreen() {
       const cursos = await loadCursosAsignados(selectedSchoolId);
       const firstId = (cursos && cursos[0]?.id) || null;
       setCursoSeleccionado(firstId);
+      if (!firstId) {
+        setEstudiantes([]);
+        setEstudiantesError('No tienes cursos asignados para consultar estudiantes');
+        return;
+      }
       await loadEstudiantesPorCurso(firstId);
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos/estudiantes');
@@ -592,13 +713,15 @@ export default function HomeScreen() {
   const closeEstudiantesModal = () => {
     setEstudiantesModalVisible(false);
     setCursoPickerOpen(false);
+    setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
+    setEstudianteMateriaPickerOpen(false);
     setEstudiantesColegioPickerOpen(false);
     setEstudiantesColegioId(null);
     setCursoSeleccionado(null);
     setEstudiantes([]);
     setEstudiantesError('');
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
   };
 
   const changeEstudiantesColegio = async (newSchoolId) => {
@@ -607,13 +730,20 @@ export default function HomeScreen() {
     setEstudiantesColegioId(parsedSchoolId);
     setEstudiantesColegioPickerOpen(false);
     setCursoPickerOpen(false);
+    setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
+    setEstudianteMateriaPickerOpen(false);
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
     setLoadingCursos(true);
     try {
       const cursos = await loadCursosAsignados(parsedSchoolId);
       const firstId = (cursos && cursos[0]?.id) || null;
       setCursoSeleccionado(firstId);
+      if (!firstId) {
+        setEstudiantes([]);
+        setEstudiantesError('No hay cursos asignados en este colegio');
+        return;
+      }
       await loadEstudiantesPorCurso(firstId);
     } finally {
       setLoadingCursos(false);
@@ -626,13 +756,27 @@ export default function HomeScreen() {
       nombres: estudiante?.nombres || '',
       apellidos: estudiante?.apellidos || '',
       qr: estudiante?.qr || '',
-      codigoEstudiante: estudiante?.codigoEstudiante || ''
+      codigoEstudiante: estudiante?.codigoEstudiante || '',
+      materias: Array.isArray(estudiante?.materias) ? estudiante.materias : []
     });
   };
 
   const cancelEditEstudiante = () => {
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+  };
+
+  const toggleEstudianteEditMateria = (materiaNombre) => {
+    const normalizedMateria = normalizeMateriaOption(materiaNombre);
+    if (!normalizedMateria) return;
+    setEstudianteEditForm((prev) => {
+      const current = Array.isArray(prev.materias) ? prev.materias : [];
+      const exists = current.some((item) => normalizeMateriaOption(item) === normalizedMateria);
+      const materias = exists
+        ? current.filter((item) => normalizeMateriaOption(item) !== normalizedMateria)
+        : [...current, materiaNombre];
+      return { ...prev, materias };
+    });
   };
 
   const handleUpdateEstudiante = async (id) => {
@@ -640,13 +784,18 @@ export default function HomeScreen() {
     const apellidos = (estudianteEditForm.apellidos || '').trim();
     const qr = (estudianteEditForm.qr || '').trim();
     const codigoEstudiante = (estudianteEditForm.codigoEstudiante || '').trim();
+    const materias = Array.from(new Set(
+      (Array.isArray(estudianteEditForm.materias) ? estudianteEditForm.materias : [])
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+    ));
     if (!nombres || !apellidos || !qr) {
       Alert.alert('Campos requeridos', 'Completa nombres, apellidos y QR');
       return;
     }
     setSavingEstudianteEdit(true);
     try {
-      await updateEstudiante(id, { nombres, apellidos, qr, codigoEstudiante });
+      await updateEstudiante(id, { nombres, apellidos, qr, codigoEstudiante, materias });
       await loadEstudiantesPorCurso(cursoSeleccionado);
       cancelEditEstudiante();
       Alert.alert('Listo', 'Estudiante actualizado');
@@ -702,18 +851,22 @@ export default function HomeScreen() {
     }).filter((row) => row.nombres && row.apellidos && row.qr);
   };
 
-  const openCreateEstudianteModal = async () => {
+  const openCreateEstudianteModal = async (preferredCursoId = null) => {
     setEstudianteCreateModalVisible(true);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
     setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteCreateMaterias([]);
     setSelectedCsvFile(null);
     setUploadedStudents([]);
     setLoadingCursos(true);
     try {
       const schoolId = user?.schoolId || null;
       const cursos = await loadCursosAsignados(schoolId);
-      setEstudianteCreateCursoId(cursos?.[0]?.id || null);
+      const preferredExists = cursos.some((curso) => String(curso.id) === String(preferredCursoId));
+      const nextCursoId = preferredExists ? preferredCursoId : (cursos?.[0]?.id || null);
+      setEstudianteCreateCursoId(nextCursoId);
+      setEstudianteCreateMaterias(getMateriasDisponiblesByCurso(nextCursoId));
     } catch (e) {
       setEstudianteCreateError(e?.response?.data?.error || 'No se pudieron cargar los cursos');
     } finally {
@@ -721,11 +874,31 @@ export default function HomeScreen() {
     }
   };
 
+  const changeEstudianteCreateCurso = (cursoId) => {
+    setEstudianteCreateCursoId(cursoId);
+    setEstudianteCreateCursoPickerOpen(false);
+    setEstudianteCreateMaterias(getMateriasDisponiblesByCurso(cursoId));
+  };
+
+  const toggleEstudianteCreateMateria = (materiaNombre) => {
+    const materia = String(materiaNombre || '').trim();
+    const materiaKey = normalizeMateriaOption(materia);
+    if (!materiaKey) return;
+    setEstudianteCreateMaterias((prev) => {
+      const exists = prev.some((item) => normalizeMateriaOption(item) === materiaKey);
+      if (exists) {
+        return prev.filter((item) => normalizeMateriaOption(item) !== materiaKey);
+      }
+      return [...prev, materia];
+    });
+  };
+
   const closeCreateEstudianteModal = () => {
     setEstudianteCreateModalVisible(false);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
     setEstudianteCreateCursoId(null);
+    setEstudianteCreateMaterias([]);
     setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
     setSelectedCsvFile(null);
     setUploadedStudents([]);
@@ -773,8 +946,15 @@ export default function HomeScreen() {
 
   const handleUploadCsv = async () => {
     const cursoId = Number(estudianteCreateCursoId);
+    const materiasSeleccionadas = estudianteCreateMaterias.filter((materia) => (
+      estudianteCreateMateriasDisponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia))
+    ));
     if (!Number.isFinite(cursoId) || cursoId <= 0) {
       setEstudianteCreateError('Selecciona un curso antes de subir el archivo');
+      return;
+    }
+    if (estudianteCreateMateriasDisponibles.length > 0 && materiasSeleccionadas.length === 0) {
+      setEstudianteCreateError('Selecciona al menos una materia del curso');
       return;
     }
     if (!selectedCsvFile?.content) {
@@ -789,7 +969,7 @@ export default function HomeScreen() {
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      const data = await createEstudiantesLote({ cursoId, estudiantes });
+      const data = await createEstudiantesLote({ cursoId, estudiantes, materias: materiasSeleccionadas });
       setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantes);
       Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
     } catch (e) {
@@ -805,6 +985,9 @@ export default function HomeScreen() {
     const qr = (estudianteCreateForm.qr || '').trim();
     const codigoEstudiante = (estudianteCreateForm.codigoEstudiante || '').trim();
     const cursoId = Number(estudianteCreateCursoId);
+    const materiasSeleccionadas = estudianteCreateMaterias.filter((materia) => (
+      estudianteCreateMateriasDisponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia))
+    ));
     if (!nombres || !apellidos || !qr) {
       setEstudianteCreateError('Completa nombres, apellidos y QR');
       return;
@@ -813,10 +996,14 @@ export default function HomeScreen() {
       setEstudianteCreateError('Selecciona un curso');
       return;
     }
+    if (estudianteCreateMateriasDisponibles.length > 0 && materiasSeleccionadas.length === 0) {
+      setEstudianteCreateError('Selecciona al menos una materia del curso');
+      return;
+    }
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId });
+      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId, materias: materiasSeleccionadas });
       Alert.alert('Listo', 'Estudiante agregado correctamente');
       closeCreateEstudianteModal();
     } catch (e) {
@@ -1034,6 +1221,29 @@ export default function HomeScreen() {
       return undefined;
     }, [isDocente, user?.id, user?.email, user?.schoolId])
   );
+
+  useEffect(() => {
+    if (!estudianteCreateModalVisible || !estudianteCreateCursoId) return;
+    const disponibles = getMateriasDisponiblesByCurso(estudianteCreateCursoId);
+    setEstudianteCreateMaterias((prev) => {
+      if (!disponibles.length) return [];
+      const next = prev.filter((materia) => disponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia)));
+      return next.length ? next : disponibles;
+    });
+  }, [docentePerfilCursos, estudianteCreateCursoId, estudianteCreateModalVisible]);
+
+  useEffect(() => {
+    if (!estudiantesModalVisible || estudianteMateriaFiltro === ALL_MATERIAS_OPTION) return;
+    const disponibles = cursoSeleccionado
+      ? getEstudianteMateriaOptionsByCurso(cursoSeleccionado, estudiantes)
+      : [];
+    const exists = disponibles.some(
+      (materia) => normalizeMateriaOption(materia) === normalizeMateriaOption(estudianteMateriaFiltro)
+    );
+    if (!exists) {
+      setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
+    }
+  }, [cursoSeleccionado, docentePerfilCursos, estudianteMateriaFiltro, estudiantes, estudiantesModalVisible]);
 
   const buildAsignacionesDocenteMap = (docs = []) => {
     const map = {};
@@ -1611,6 +1821,35 @@ export default function HomeScreen() {
   const estudianteCreateCursoNombre = estudianteCreateCursoId
     ? (cursosAsignados.find(c => c.id === estudianteCreateCursoId)?.nombre || 'Curso sin nombre')
     : 'Selecciona curso';
+  const estudianteCreateMateriasDisponibles = estudianteCreateCursoId
+    ? getMateriasDisponiblesByCurso(estudianteCreateCursoId)
+    : [];
+  const estudiantesMateriasDisponibles = cursoSeleccionado
+    ? getEstudianteMateriaOptionsByCurso(cursoSeleccionado, estudiantes)
+    : [];
+  const estudiantesFiltrados = estudianteMateriaFiltro !== ALL_MATERIAS_OPTION
+    ? estudiantes.filter((estudiante) => (
+      Array.isArray(estudiante?.materias)
+      && estudiante.materias.some((materia) => normalizeMateriaOption(materia) === normalizeMateriaOption(estudianteMateriaFiltro))
+    ))
+    : estudiantes;
+  const reportesCursoNombre = reportesCursoId
+    ? (reportesCursos.find((curso) => String(curso.id) === String(reportesCursoId))?.nombre || 'Curso sin nombre')
+    : 'Selecciona curso';
+  const mobileActionBtnStyle = isMobileApp ? styles.actionBtnMobile : null;
+  const mobileActionTextStyle = isMobileApp ? styles.actionBtnTextMobile : null;
+  const mobileBtnRowStyle = isMobileApp ? styles.btnRowMobile : null;
+  const mobileDocenteRowStyle = isDocente && isMobileApp ? styles.btnRowMobileStacked : null;
+  const mobileDocenteTextStyle = isDocente && isMobileApp ? styles.actionBtnTextMobileStacked : null;
+  const mobileLongLabelRowStyle = (isRectorCoordinador || isAdmin) && isMobileApp ? styles.btnRowMobileStacked : null;
+  const mobileLongLabelTextStyle = (isRectorCoordinador || isAdmin) && isMobileApp ? styles.actionBtnTextMobileStacked : null;
+  const mobileGridLogoutRowStyle = isDocente ? mobileDocenteRowStyle : mobileLongLabelRowStyle;
+  const mobileGridLogoutTextStyle = isDocente ? mobileDocenteTextStyle : mobileLongLabelTextStyle;
+  const showMobileGridLogout = isMobileApp && !isRectorCoordinador;
+  const docenteMateriasAsignadasTotal = docentePerfilCursos.reduce(
+    (total, curso) => total + (Array.isArray(curso?.materias) ? curso.materias.length : 0),
+    0
+  );
   const docentesSearchNormalized = normalizeSearchText(docentesSearchTerm);
   const docentesFiltrados = docentesSearchNormalized
     ? docentes.filter((docente) => normalizeSearchText(docente?.nombre || '').includes(docentesSearchNormalized))
@@ -1624,11 +1863,52 @@ export default function HomeScreen() {
     return colegiosOptions.find(c => String(c.id) === String(id))?.nombre || `Colegio ${id}`;
   };
 
-  const sortCursosForDisplay = (items = []) => [...items].sort((a, b) => {
-    const aName = String(a?.nombre || '').trim();
-    const bName = String(b?.nombre || '').trim();
-    return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: 'base' });
-  });
+  function sortCursosForDisplay(items = []) {
+    return [...items].sort((a, b) => {
+      const aName = String(a?.nombre || '').trim();
+      const bName = String(b?.nombre || '').trim();
+      return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }
+
+  function normalizeMateriaOption(value = '') {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function getMateriasDisponiblesByCurso(cursoId) {
+    const curso = (docentePerfilCursos || []).find((item) => String(item?.id) === String(cursoId));
+    const uniques = [];
+    const seen = new Set();
+    (Array.isArray(curso?.materias) ? curso.materias : [])
+      .map((materia) => String(materia || '').trim())
+      .filter(Boolean)
+      .forEach((materia) => {
+        const key = normalizeMateriaOption(materia);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        uniques.push(materia);
+      });
+    return uniques.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }
+
+  function getEstudianteMateriaOptionsByCurso(cursoId, estudianteList = []) {
+    const uniques = [];
+    const seen = new Set();
+    const pushMateria = (materia) => {
+      const value = String(materia || '').trim();
+      const key = normalizeMateriaOption(value);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      uniques.push(value);
+    };
+
+    getMateriasDisponiblesByCurso(cursoId).forEach(pushMateria);
+    (Array.isArray(estudianteList) ? estudianteList : []).forEach((estudiante) => {
+      (Array.isArray(estudiante?.materias) ? estudiante.materias : []).forEach(pushMateria);
+    });
+
+    return uniques.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }
 
   const colegioSeleccionadoNombre = resolveColegioNombre(colegioSeleccionado);
 
@@ -1671,143 +1951,200 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <View style={[styles.actionGrid, isRectorCoordinador && styles.actionGridRector]}>
+          <View style={[styles.actionGrid, isRectorCoordinador && styles.actionGridRector, isMobileApp && styles.actionGridMobile]}>
             {isDocente ? (
               <>
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
-                  <View style={styles.btnRow}>
+                <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
+                  <View style={[styles.btnRow, mobileBtnRowStyle, mobileDocenteRowStyle]}>
                     <Ionicons name="qr-code-outline" size={18} color="#fff" />
-                    <Text style={styles.actionBtnText}>Escanear QR</Text>
+                    <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileDocenteTextStyle]}>Escanear QR</Text>
                   </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#f59e0b' }]} onPress={() => navigation.navigate('QR', { scanMode: 'absent-only' })}>
-                  <View style={styles.btnRow}>
+                <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#f59e0b' }]} onPress={() => navigation.navigate('QR', { scanMode: 'absent-only' })}>
+                  <View style={[styles.btnRow, mobileBtnRowStyle, mobileDocenteRowStyle]}>
                     <Ionicons name="scan-outline" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Escanear ausentes</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Escanear ausentes</Text>
                   </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-                  <View style={styles.btnRow}>
+                <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+                  <View style={[styles.btnRow, mobileBtnRowStyle, mobileDocenteRowStyle]}>
                     <Ionicons name="people-outline" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Ver estudiantes</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#0ea5e9' }]} onPress={openCreateEstudianteModal}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="person-add-outline" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Agregar estudiantes</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Ver estudiantes</Text>
                   </View>
                 </TouchableOpacity>
               </>
             ) : (
               <>
                 {!isAdmin && !isRectorCoordinador ? (
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#22c55e' }]} onPress={() => navigation.navigate('QR', { scanMode: 'all' })}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle]}>
                       <Ionicons name="qr-code-outline" size={18} color="#fff" />
-                      <Text style={styles.actionBtnText}>Escanear QR</Text>
+                      <Text style={[styles.actionBtnText, mobileActionTextStyle]}>Escanear QR</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {canManageCourses ? (
-                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="book-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Gestionar cursos' : 'Crear cursos'}</Text>
+                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>{isRectorCoordinador ? 'Gestionar cursos' : 'Crear cursos'}</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {!isAdmin && !isRectorCoordinador ? (
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#a78bfa' }]} onPress={openEstudiantesModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle]}>
                       <Ionicons name="people-outline" size={18} color="#fff" />
-                      <Text style={styles.actionBtnText}>Estudiantes</Text>
+                      <Text style={[styles.actionBtnText, mobileActionTextStyle]}>Estudiantes</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {canManageCourses ? (
-                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#14b8a6' }]} onPress={openDocenteCrudModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="person-add-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Gestionar docentes' : 'Crear docentes'}</Text>
+                      <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>{isRectorCoordinador ? 'Gestionar docentes' : 'Crear docentes'}</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {isRectorCoordinador ? (
-                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, { backgroundColor: '#2563eb' }]} onPress={openDocentesModal}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#2563eb' }]} onPress={openDocentesModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="people-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Ver docentes</Text>
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Ver docentes</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {isAdmin ? (
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#facc15' }]} onPress={openColegiosModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="business-outline" size={18} color="#111" />
-                      <Text style={[styles.actionBtnText, { color: '#111' }]}>Crear colegios</Text>
+                      <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle, { color: '#111' }]}>Crear colegios</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {isRectorCoordinador && canManagePeriods ? (
-                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="calendar-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Gestionar periodos</Text>
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Gestionar periodos</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
-                <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, { backgroundColor: '#f97316' }]} onPress={() => openQuickModal('reportes')}>
-                  <View style={styles.btnRow}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#f97316' }]}
+                  onPress={isRectorCoordinador ? openReportesModal : () => openQuickModal('reportes')}
+                >
+                  <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                     <Ionicons name="bar-chart-outline" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact]}>{isRectorCoordinador ? 'Ver reportes' : 'Reportes'}</Text>
+                    <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>{isRectorCoordinador ? 'Ver reportes' : 'Reportes'}</Text>
                   </View>
                 </TouchableOpacity>
                 {isRectorCoordinador ? (
-                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="log-out-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact]}>Cerrar sesion</Text>
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
                 {!isRectorCoordinador && canManagePeriods ? (
-                  <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
-                    <View style={styles.btnRow}>
+                  <TouchableOpacity style={[styles.actionBtn, isAdmin && styles.actionBtnFull, mobileActionBtnStyle, { backgroundColor: '#7c3aed' }]} onPress={() => openPeriodModal()}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="calendar-outline" size={18} color="#fff" />
-                      <Text style={styles.actionBtnText}>Activar periodos</Text>
+                      <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Activar periodos</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
               </>
             )}
+            {showMobileGridLogout ? (
+              <TouchableOpacity style={[styles.actionBtn, styles.actionBtnMobile, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                <View style={[styles.btnRow, styles.btnRowMobile, mobileGridLogoutRowStyle]}>
+                  <Ionicons name="log-out-outline" size={18} color="#fff" />
+                  <Text style={[styles.actionBtnText, styles.actionBtnTextMobile, mobileGridLogoutTextStyle]}>Cerrar sesion</Text>
+                </View>
+              </TouchableOpacity>
+            ) : null}
           </View>
 
           {isDocente ? (
-            <View style={styles.dataBox}>
-              <View style={styles.courseActionsRow}>
-                <Text style={styles.dataTitle}>Mis cursos y materias</Text>
-                {docentePerfilLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+            <View style={styles.docentePerfilBox}>
+              <View style={styles.docentePerfilHeader}>
+                <View style={styles.docentePerfilTitleWrap}>
+                  <Text style={styles.docentePerfilEyebrow}>Panel docente</Text>
+                  <Text style={styles.docentePerfilTitle}>Mis cursos y materias</Text>
+                </View>
+                <View style={styles.docentePerfilBadge}>
+                  <Text style={styles.docentePerfilBadgeText}>
+                    {docentePerfilLoading ? 'Cargando...' : `${docentePerfilCursos.length} cursos`}
+                  </Text>
+                </View>
               </View>
-              {docentePerfilError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{docentePerfilError}</Text> : null}
+
+              {!docentePerfilLoading && !docentePerfilError ? (
+                <Text style={styles.docentePerfilSummary}>
+                  {docentePerfilCursos.length > 0
+                    ? `Tienes ${docentePerfilCursos.length} cursos y ${docenteMateriasAsignadasTotal} materias asignadas.`
+                    : 'Aun no tienes cursos o materias asignadas.'}
+                </Text>
+              ) : null}
+
+              {docentePerfilError ? <Text style={[styles.errorText, styles.docentePerfilError]}>{docentePerfilError}</Text> : null}
+
               {!docentePerfilLoading && !docentePerfilError && docentePerfilCursos.length === 0 ? (
-                <Text style={styles.dataBullet}>No tienes materias asignadas</Text>
+                <View style={styles.docenteMateriaEmptyCard}>
+                  <Ionicons name="school-outline" size={18} color="#93c5fd" />
+                  <Text style={styles.docenteMateriaEmptyText}>No tienes materias asignadas</Text>
+                </View>
               ) : (
-                docentePerfilCursos.map((curso) => (
-                  <View key={`mis-materias-${curso.id}`} style={{ gap: 2, marginBottom: 6 }}>
-                    <Text style={styles.dataItem}>Curso: {curso.nombre || `Curso ${curso.id}`}</Text>
-                    {Array.isArray(curso.materias) && curso.materias.length > 0 ? (
-                      <Text style={styles.dataBullet}>Materias: {curso.materias.join(', ')}</Text>
-                    ) : (
-                      <Text style={styles.dataBullet}>Materias: sin asignar</Text>
-                    )}
-                  </View>
-                ))
+                <View style={styles.docenteMateriaList}>
+                  {docentePerfilCursos.map((curso) => {
+                    const materias = Array.isArray(curso?.materias) ? curso.materias : [];
+                    return (
+                      <View key={`mis-materias-${curso.id}`} style={styles.docenteMateriaCard}>
+                        <View style={styles.docenteMateriaHeader}>
+                          <View style={styles.docenteMateriaTitleBlock}>
+                            <Text style={styles.docenteMateriaCourseLine}>
+                              <Text style={styles.docenteMateriaLabelInline}>Curso </Text>
+                              <Text style={styles.docenteMateriaCourse}>{curso.nombre || curso.id}</Text>
+                            </Text>
+                          </View>
+                          <View style={styles.docenteMateriaAside}>
+                            <View style={styles.docenteMateriaMetaRow}>
+                              <View style={styles.docenteMateriaNamesWrap}>
+                                {materias.length > 0 ? (
+                                  materias.map((materia, index) => (
+                                    <View key={`mis-materias-${curso.id}-${index}`} style={styles.docenteMateriaChip}>
+                                      <Text style={styles.docenteMateriaChipText}>{materia}</Text>
+                                    </View>
+                                  ))
+                                ) : (
+                                  <Text style={[styles.docenteMateriaEmptyHint, styles.docenteMateriaEmptyHintInline]}>Sin materias asignadas</Text>
+                                )}
+                              </View>
+                              <TouchableOpacity
+                                style={styles.docenteMateriaActionBtn}
+                                onPress={() => openCreateEstudianteModal(curso.id)}
+                                activeOpacity={0.85}
+                              >
+                                <View style={styles.btnRow}>
+                                  <Ionicons name="person-add-outline" size={13} color="#e0f2fe" />
+                                <Text style={styles.docenteMateriaActionText}>Agregar estudiantes</Text>
+                              </View>
+                            </TouchableOpacity>
+                          </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
               )}
             </View>
           ) : null}
 
-          {!isRectorCoordinador ? (
+          {!isRectorCoordinador && !showMobileGridLogout ? (
             <TouchableOpacity style={styles.logoutBtn} onPress={logout} activeOpacity={0.85}>
               <View style={styles.btnRow}>
                 <Ionicons name="log-out-outline" size={18} color="#fff" />
@@ -1850,10 +2187,7 @@ export default function HomeScreen() {
                       <TouchableOpacity
                         key={c.id}
                         style={[styles.dropdownItem, String(estudianteCreateCursoId) === String(c.id) && styles.dropdownItemSelected]}
-                        onPress={() => {
-                          setEstudianteCreateCursoId(c.id);
-                          setEstudianteCreateCursoPickerOpen(false);
-                        }}
+                        onPress={() => changeEstudianteCreateCurso(c.id)}
                       >
                         <Text style={styles.selectText}>{c.nombre || `Curso ${c.id}`}</Text>
                       </TouchableOpacity>
@@ -1861,6 +2195,44 @@ export default function HomeScreen() {
                   )}
                 </View>
               ) : null}
+
+              <Text style={styles.fieldLabel}>Materias del curso</Text>
+              <View style={styles.estudianteMateriaSelectorBox}>
+                {loadingCursos ? (
+                  <Text style={styles.dataBullet}>Cargando materias...</Text>
+                ) : estudianteCreateCursoId && estudianteCreateMateriasDisponibles.length > 0 ? (
+                  <>
+                    <Text style={styles.dataBullet}>Selecciona una o varias materias correspondientes a este curso.</Text>
+                    <View style={styles.estudianteMateriaChipWrap}>
+                      {estudianteCreateMateriasDisponibles.map((materia) => {
+                        const isSelected = estudianteCreateMaterias.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia));
+                        return (
+                          <TouchableOpacity
+                            key={`estudiante-materia-${estudianteCreateCursoId}-${materia}`}
+                            style={[
+                              styles.estudianteMateriaChip,
+                              isSelected && styles.estudianteMateriaChipActive
+                            ]}
+                            onPress={() => toggleEstudianteCreateMateria(materia)}
+                            disabled={savingEstudiante}
+                          >
+                            <Text
+                              style={[
+                                styles.estudianteMateriaChipText,
+                                isSelected && styles.estudianteMateriaChipTextActive
+                              ]}
+                            >
+                              {materia}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : (
+                  <Text style={styles.dataBullet}>No hay materias asignadas para el curso seleccionado.</Text>
+                )}
+              </View>
 
               <TextInput
                 style={styles.courseInput}
@@ -2868,80 +3240,169 @@ export default function HomeScreen() {
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <Text style={styles.fieldLabel}>Selecciona colegio</Text>
+              <Pressable
+                style={styles.selectBoxFull}
+                onPress={() => setEstudiantesColegioPickerOpen(prev => !prev)}
+              >
+                <Text style={styles.selectText}>
+                  {resolveColegioNombre(estudiantesColegioId)}
+                </Text>
+              </Pressable>
+              {estudiantesColegioPickerOpen ? (
+                <View style={styles.dropdownList}>
+                  {colegiosLoading ? <Text style={styles.dataBullet}>Cargando colegios...</Text> : null}
+                  {colegiosOptions.length === 0 ? (
+                    <Text style={styles.dataBullet}>No hay colegios disponibles</Text>
+                  ) : (
+                    colegiosOptions.map(c => (
+                      <Pressable
+                        key={c.id}
+                        style={[styles.dropdownItem, String(estudiantesColegioId) === String(c.id) && styles.dropdownItemSelected]}
+                        onPress={async () => {
+                          await changeEstudiantesColegio(c.id);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                      </Pressable>
+                    ))
+                  )}
+                </View>
+              ) : null}
 
-            <Text style={styles.fieldLabel}>Selecciona colegio</Text>
-            <Pressable
-              style={styles.selectBoxFull}
-              onPress={() => setEstudiantesColegioPickerOpen(prev => !prev)}
-            >
-              <Text style={styles.selectText}>
-                {resolveColegioNombre(estudiantesColegioId)}
-              </Text>
-            </Pressable>
-            {estudiantesColegioPickerOpen ? (
-              <View style={styles.dropdownList}>
-                {colegiosLoading ? <Text style={styles.dataBullet}>Cargando colegios...</Text> : null}
-                {colegiosOptions.length === 0 ? (
-                  <Text style={styles.dataBullet}>No hay colegios disponibles</Text>
+              <Text style={styles.fieldLabel}>Selecciona un curso</Text>
+              <Pressable style={styles.selectBoxFull} onPress={() => setCursoPickerOpen(prev => !prev)}>
+                <Text style={styles.selectText}>{cursoSeleccionadoNombre}</Text>
+              </Pressable>
+              {cursoPickerOpen ? (
+                <View style={styles.dropdownList}>
+                  {loadingCursos ? <Text style={styles.dataBullet}>Cargando cursos...</Text> : null}
+                  {cursosAsignados.length === 0 ? (
+                    <Text style={styles.dataBullet}>No tienes cursos asignados</Text>
+                  ) : (
+                    cursosAsignados.map(c => (
+                      <Pressable
+                        key={c.id}
+                        style={[styles.dropdownItem, cursoSeleccionado === c.id && styles.dropdownItemSelected]}
+                        onPress={() => selectCursoEstudiantes(c.id)}
+                      >
+                        <Text style={styles.dataItem}>{c.nombre}</Text>
+                      </Pressable>
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              <Text style={styles.fieldLabel}>Selecciona una materia</Text>
+              <Pressable
+                style={[styles.selectBoxFull, !estudiantesMateriasDisponibles.length && { opacity: 0.65 }]}
+                onPress={() => {
+                  if (!estudiantesMateriasDisponibles.length) return;
+                  setEstudianteMateriaPickerOpen((prev) => !prev);
+                }}
+              >
+                <Text style={styles.selectText}>
+                  {estudianteMateriaFiltro === ALL_MATERIAS_OPTION ? 'Todas las materias' : estudianteMateriaFiltro}
+                </Text>
+              </Pressable>
+              {estudianteMateriaPickerOpen ? (
+                <View style={styles.dropdownList}>
+                  <Pressable
+                    style={[styles.dropdownItem, estudianteMateriaFiltro === ALL_MATERIAS_OPTION && styles.dropdownItemSelected]}
+                    onPress={() => {
+                      setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
+                      setEstudianteMateriaPickerOpen(false);
+                    }}
+                  >
+                    <Text style={styles.dataItem}>Todas las materias</Text>
+                  </Pressable>
+                  {estudiantesMateriasDisponibles.length === 0 ? (
+                    <Text style={styles.dataBullet}>No hay materias configuradas para este curso</Text>
+                  ) : (
+                    estudiantesMateriasDisponibles.map((materia) => (
+                      <Pressable
+                        key={`estudiante-materia-${materia}`}
+                        style={[
+                          styles.dropdownItem,
+                          normalizeMateriaOption(estudianteMateriaFiltro) === normalizeMateriaOption(materia) && styles.dropdownItemSelected
+                        ]}
+                        onPress={() => {
+                          setEstudianteMateriaFiltro(materia);
+                          setEstudianteMateriaPickerOpen(false);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{materia}</Text>
+                      </Pressable>
+                    ))
+                  )}
+                </View>
+              ) : null}
+
+              <View style={styles.dataBox}>
+                <View style={styles.assignedCoursesHeader}>
+                  <Text style={styles.dataTitle}>Cursos asignados al docente</Text>
+                  <View style={styles.assignedCoursesBadge}>
+                    <Text style={styles.assignedCoursesBadgeText}>
+                      {loadingCursos ? '...' : `${cursosAsignados.length}`}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.dataBullet}>
+                  Solo se muestran los cursos que tienes asignados y desde aqui puedes cambiar rapido entre ellos.
+                </Text>
+                {loadingCursos ? (
+                  <Text style={styles.dataBullet}>Cargando cursos asignados...</Text>
+                ) : cursosAsignados.length === 0 ? (
+                  <Text style={styles.dataBullet}>No tienes cursos asignados en este momento.</Text>
                 ) : (
-                  colegiosOptions.map(c => (
-                    <Pressable
-                      key={c.id}
-                      style={[styles.dropdownItem, String(estudiantesColegioId) === String(c.id) && styles.dropdownItemSelected]}
-                      onPress={async () => {
-                        await changeEstudiantesColegio(c.id);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
-                    </Pressable>
-                  ))
+                  <View style={styles.assignedCoursesWrap}>
+                    {cursosAsignados.map((curso) => (
+                      <Pressable
+                        key={`curso-asignado-${curso.id}`}
+                        style={[
+                          styles.assignedCourseChip,
+                          String(cursoSeleccionado) === String(curso.id) && styles.assignedCourseChipActive
+                        ]}
+                        onPress={() => selectCursoEstudiantes(curso.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.assignedCourseChipText,
+                            String(cursoSeleccionado) === String(curso.id) && styles.assignedCourseChipTextActive
+                          ]}
+                        >
+                          {curso.nombre}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
                 )}
               </View>
-            ) : null}
 
-            <Text style={styles.fieldLabel}>Selecciona un curso</Text>
-            <Pressable style={styles.selectBoxFull} onPress={() => setCursoPickerOpen(prev => !prev)}>
-              <Text style={styles.selectText}>{cursoSeleccionadoNombre}</Text>
-            </Pressable>
-            {cursoPickerOpen ? (
-              <View style={styles.dropdownList}>
-                {loadingCursos ? <Text style={styles.dataBullet}>Cargando cursos...</Text> : null}
-                {cursosAsignados.length === 0 ? (
-                  <Text style={styles.dataBullet}>No tienes cursos asignados</Text>
+              <View style={styles.dataBox}>
+                <Text style={styles.dataTitle}>Estudiantes</Text>
+                <Text style={styles.dataBullet}>
+                  {estudianteMateriaFiltro === ALL_MATERIAS_OPTION
+                    ? 'Puedes ver todo el curso o filtrar por una materia especifica.'
+                    : `Mostrando estudiantes de la materia ${estudianteMateriaFiltro}.`}
+                </Text>
+                {estudiantesLoading ? (
+                  <Text style={styles.dataBullet}>Cargando estudiantes...</Text>
+                ) : estudiantesError ? (
+                  <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudiantesError}</Text>
+                ) : estudiantesFiltrados.length === 0 ? (
+                  <Text style={styles.dataBullet}>
+                    {estudianteMateriaFiltro === ALL_MATERIAS_OPTION
+                      ? 'No hay estudiantes asignados'
+                      : 'No hay estudiantes asignados a la materia seleccionada'}
+                  </Text>
                 ) : (
-                  cursosAsignados.map(c => (
-                    <Pressable
-                      key={c.id}
-                      style={[styles.dropdownItem, cursoSeleccionado === c.id && styles.dropdownItemSelected]}
-                      onPress={async () => {
-                        setCursoSeleccionado(c.id);
-                        setCursoPickerOpen(false);
-                        setEstudianteEditing(null);
-                        setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
-                        await loadEstudiantesPorCurso(c.id);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>{c.nombre}</Text>
-                    </Pressable>
-                  ))
-                )}
-              </View>
-            ) : null}
-
-            <View style={styles.dataBox}>
-              <Text style={styles.dataTitle}>Estudiantes</Text>
-              {estudiantesLoading ? (
-                <Text style={styles.dataBullet}>Cargando estudiantes...</Text>
-              ) : estudiantesError ? (
-                <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudiantesError}</Text>
-              ) : estudiantes.length === 0 ? (
-                <Text style={styles.dataBullet}>No hay estudiantes asignados</Text>
-              ) : (
-                estudiantes.map((e) => (
-                  <View key={e.id} style={styles.courseRow}>
-                    <View style={{ flex: 1 }}>
-                      {String(estudianteEditing) === String(e.id) ? (
-                        <View style={[styles.courseForm, { marginBottom: 0 }]}>
+                  estudiantesFiltrados.map((e) => (
+                    <View key={e.id} style={styles.courseRow}>
+                      <View style={{ flex: 1 }}>
+                        {String(estudianteEditing) === String(e.id) ? (
+                          <View style={[styles.courseForm, { marginBottom: 0 }]}>
                           <TextInput
                             style={styles.courseInput}
                             value={estudianteEditForm.nombres}
@@ -2974,60 +3435,99 @@ export default function HomeScreen() {
                             placeholderTextColor="#94a3b8"
                             editable={!savingEstudianteEdit}
                           />
-                        </View>
-                      ) : (
-                        <>
-                          <Text style={styles.dataItem}>- {e.nombre || `${e.nombres || ''} ${e.apellidos || ''}`.trim()}</Text>
-                          {e.codigoEstudiante ? <Text style={styles.dataBullet}>Codigo: {e.codigoEstudiante}</Text> : null}
-                          {e.qr ? <Text style={styles.dataBullet}>QR: {e.qr}</Text> : null}
-                        </>
-                      )}
+                          <Text style={[styles.dataBullet, { marginTop: 4, marginBottom: 8, fontWeight: '700' }]}>Materias del estudiante</Text>
+                          <View style={styles.estudianteMateriaSelectorBox}>
+                            {estudiantesMateriasDisponibles.length > 0 ? (
+                              <>
+                                <Text style={styles.dataBullet}>Selecciona una o varias materias correspondientes a este curso.</Text>
+                                <View style={styles.estudianteMateriaChipWrap}>
+                                  {estudiantesMateriasDisponibles.map((materia) => {
+                                    const isSelected = (Array.isArray(estudianteEditForm.materias) ? estudianteEditForm.materias : [])
+                                      .some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia));
+                                    return (
+                                      <Pressable
+                                        key={`estudiante-edit-materia-${e.id}-${materia}`}
+                                        style={[
+                                          styles.estudianteMateriaChip,
+                                          isSelected && styles.estudianteMateriaChipActive
+                                        ]}
+                                        onPress={() => toggleEstudianteEditMateria(materia)}
+                                      >
+                                        <Text
+                                          style={[
+                                            styles.estudianteMateriaChipText,
+                                            isSelected && styles.estudianteMateriaChipTextActive
+                                          ]}
+                                        >
+                                          {materia}
+                                        </Text>
+                                      </Pressable>
+                                    );
+                                  })}
+                                </View>
+                              </>
+                            ) : (
+                              <Text style={styles.dataBullet}>No hay materias configuradas para este curso.</Text>
+                            )}
+                          </View>
+                          </View>
+                        ) : (
+                          <>
+                            <Text style={styles.dataItem}>- {e.nombre || `${e.nombres || ''} ${e.apellidos || ''}`.trim()}</Text>
+                            {e.codigoEstudiante ? <Text style={styles.dataBullet}>Codigo: {e.codigoEstudiante}</Text> : null}
+                            {e.qr ? <Text style={styles.dataBullet}>QR: {e.qr}</Text> : null}
+                            {Array.isArray(e.materias) && e.materias.length ? (
+                              <Text style={styles.dataBullet}>Materias: {e.materias.join(', ')}</Text>
+                            ) : null}
+                          </>
+                        )}
+                      </View>
+                      <View style={styles.courseRowActions}>
+                        {String(estudianteEditing) === String(e.id) ? (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.smallBtn, styles.outlineBtn, savingEstudianteEdit && { opacity: 0.6 }]}
+                              onPress={cancelEditEstudiante}
+                              disabled={savingEstudianteEdit}
+                            >
+                              <View style={styles.btnRow}>
+                                <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                                <Text style={styles.smallBtnText}>Cancelar</Text>
+                              </View>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.smallBtn, styles.createBtn, savingEstudianteEdit && { opacity: 0.6 }]}
+                              onPress={() => handleUpdateEstudiante(e.id)}
+                              disabled={savingEstudianteEdit}
+                            >
+                              <View style={styles.btnRow}>
+                                <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                                <Text style={styles.smallBtnText}>{savingEstudianteEdit ? 'Guardando...' : 'Guardar'}</Text>
+                              </View>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <>
+                            <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditEstudiante(e)}>
+                              <View style={styles.btnRow}>
+                                <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                                <Text style={styles.smallBtnText}>Actualizar</Text>
+                              </View>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteEstudiante(e)}>
+                              <View style={styles.btnRow}>
+                                <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                                <Text style={styles.smallBtnText}>Eliminar</Text>
+                              </View>
+                            </TouchableOpacity>
+                          </>
+                        )}
+                      </View>
                     </View>
-                    <View style={styles.courseRowActions}>
-                      {String(estudianteEditing) === String(e.id) ? (
-                        <>
-                          <TouchableOpacity
-                            style={[styles.smallBtn, styles.outlineBtn, savingEstudianteEdit && { opacity: 0.6 }]}
-                            onPress={cancelEditEstudiante}
-                            disabled={savingEstudianteEdit}
-                          >
-                            <View style={styles.btnRow}>
-                              <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Cancelar</Text>
-                            </View>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.smallBtn, styles.createBtn, savingEstudianteEdit && { opacity: 0.6 }]}
-                            onPress={() => handleUpdateEstudiante(e.id)}
-                            disabled={savingEstudianteEdit}
-                          >
-                            <View style={styles.btnRow}>
-                              <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>{savingEstudianteEdit ? 'Guardando...' : 'Guardar'}</Text>
-                            </View>
-                          </TouchableOpacity>
-                        </>
-                      ) : (
-                        <>
-                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => startEditEstudiante(e)}>
-                            <View style={styles.btnRow}>
-                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Actualizar</Text>
-                            </View>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeleteEstudiante(e)}>
-                            <View style={styles.btnRow}>
-                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Eliminar</Text>
-                            </View>
-                          </TouchableOpacity>
-                        </>
-                      )}
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -3176,6 +3676,233 @@ export default function HomeScreen() {
                   )}
                 </View>
               </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={reportesModalVisible}
+        onRequestClose={closeReportesModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.reportesModalCard]}>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.periodTitle}>Reporte de inasistencia</Text>
+                <Pressable onPress={closeReportesModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#e5e7eb" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                </Pressable>
+              </View>
+
+              <Text style={styles.fieldLabel}>Colegio: <Text style={styles.dataValue}>{user?.schoolName || user?.schoolId || 'No asignado'}</Text></Text>
+
+              <View style={styles.dataBox}>
+                <Text style={styles.dataTitle}>Filtros</Text>
+
+                <View style={styles.reportFieldGroup}>
+                  <Text style={styles.fieldLabel}>Curso</Text>
+                  <TouchableOpacity
+                    style={styles.selectBoxFull}
+                    onPress={() => {
+                      setReportesCursoPickerOpen((prev) => !prev);
+                      setReportesMesPickerOpen(false);
+                      setReportesDiaPickerOpen(false);
+                    }}
+                    disabled={reportesBootLoading || reportesLoading}
+                  >
+                    <Text style={styles.selectText}>{reportesCursoNombre}</Text>
+                  </TouchableOpacity>
+                  {reportesCursoPickerOpen ? (
+                    <View style={styles.pickerList}>
+                      {reportesCursos.length > 0 ? (
+                        reportesCursos.map((curso) => (
+                          <TouchableOpacity
+                            key={`reporte-curso-${curso.id}`}
+                            style={[styles.pickerItem, String(reportesCursoId) === String(curso.id) && styles.pickerItemActive]}
+                            onPress={() => {
+                              setReportesCursoId(curso.id);
+                              setReportesCursoPickerOpen(false);
+                            }}
+                          >
+                            <Text style={styles.dataItem}>{curso.nombre || `Curso ${curso.id}`}</Text>
+                          </TouchableOpacity>
+                        ))
+                      ) : (
+                        <Text style={[styles.dataBullet, styles.reportPickerEmpty]}>No hay cursos disponibles</Text>
+                      )}
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.reportFiltersGrid}>
+                  <View style={styles.reportFieldColumn}>
+                    <Text style={styles.fieldLabel}>Mes</Text>
+                    <TouchableOpacity
+                      style={styles.selectBoxFull}
+                      onPress={() => {
+                        setReportesMesPickerOpen((prev) => !prev);
+                        setReportesCursoPickerOpen(false);
+                        setReportesDiaPickerOpen(false);
+                      }}
+                      disabled={reportesLoading}
+                    >
+                      <Text style={styles.selectText}>{monthNames[reportesMes - 1]} {currentYear}</Text>
+                    </TouchableOpacity>
+                    {reportesMesPickerOpen ? (
+                      <View style={styles.pickerList}>
+                        {reportMonthOptions.map((option) => (
+                          <TouchableOpacity
+                            key={`reporte-mes-${option.value}`}
+                            style={[styles.pickerItem, reportesMes === option.value && styles.pickerItemActive]}
+                            onPress={() => {
+                              setReportesMes(option.value);
+                              setReportesMesPickerOpen(false);
+                            }}
+                          >
+                            <Text style={styles.dataItem}>{option.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.reportFieldColumn}>
+                    <Text style={styles.fieldLabel}>Dia</Text>
+                    <TouchableOpacity
+                      style={styles.selectBoxFull}
+                      onPress={() => {
+                        setReportesDiaPickerOpen((prev) => !prev);
+                        setReportesCursoPickerOpen(false);
+                        setReportesMesPickerOpen(false);
+                      }}
+                      disabled={reportesLoading}
+                    >
+                      <Text style={styles.selectText}>{reportesDia}</Text>
+                    </TouchableOpacity>
+                    {reportesDiaPickerOpen ? (
+                      <View style={styles.pickerList}>
+                        {reportDayOptions.map((dayValue) => (
+                          <TouchableOpacity
+                            key={`reporte-dia-${dayValue}`}
+                            style={[styles.pickerItem, reportesDia === dayValue && styles.pickerItemActive]}
+                            onPress={() => {
+                              setReportesDia(dayValue);
+                              setReportesDiaPickerOpen(false);
+                            }}
+                          >
+                            <Text style={styles.dataItem}>{dayValue}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.periodBtn, styles.reportGenerateBtn, (reportesLoading || reportesBootLoading) && styles.reportGenerateBtnDisabled]}
+                  onPress={handleGenerateInasistenciaReport}
+                  disabled={reportesLoading || reportesBootLoading || !reportesCursoId}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="bar-chart-outline" size={16} color="#fff" />
+                    <Text style={styles.periodBtnText}>{reportesLoading ? 'Generando...' : 'Mostrar reporte'}</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {reportesError ? <Text style={styles.errorText}>{reportesError}</Text> : null}
+              </View>
+
+              {reportesBootLoading ? (
+                <View style={styles.dataBox}>
+                  <Text style={styles.dataBullet}>Cargando cursos...</Text>
+                </View>
+              ) : null}
+
+              {reportesDetalle ? (
+                <>
+                  <View style={styles.reportMetricGrid}>
+                    <View style={styles.reportMetricCard}>
+                      <Text style={styles.reportMetricLabel}>Curso</Text>
+                      <Text style={styles.reportMetricValue}>{reportesDetalle?.curso?.nombre || reportesCursoNombre}</Text>
+                      <Text style={styles.reportMetricHint}>Filtro actual</Text>
+                    </View>
+                    <View style={styles.reportMetricCard}>
+                      <Text style={styles.reportMetricLabel}>Dia</Text>
+                      <Text style={styles.reportMetricValue}>{reportesDetalle?.detalleDia?.totalInasistencias || 0}</Text>
+                      <Text style={styles.reportMetricHint}>Inasistencias el {reportesDia}/{reportesMes}</Text>
+                    </View>
+                    <View style={styles.reportMetricCard}>
+                      <Text style={styles.reportMetricLabel}>Mes</Text>
+                      <Text style={styles.reportMetricValue}>{reportesDetalle?.resumenMes?.inasistencias || 0}</Text>
+                      <Text style={styles.reportMetricHint}>Faltas registradas del mes</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.dataBox}>
+                    <Text style={styles.dataTitle}>Detalle del dia seleccionado</Text>
+                    <Text style={styles.dataItem}>Fecha: <Text style={styles.dataValue}>{reportesDetalle?.fecha}</Text></Text>
+                    <Text style={styles.dataItem}>Ausentes: <Text style={styles.dataValue}>{reportesDetalle?.detalleDia?.totalAusentes || 0}</Text></Text>
+                    <Text style={styles.dataItem}>Fuera del aula: <Text style={styles.dataValue}>{reportesDetalle?.detalleDia?.totalAfuera || 0}</Text></Text>
+                    <Text style={styles.dataItem}>Sin registro: <Text style={styles.dataValue}>{reportesDetalle?.detalleDia?.totalSinRegistro || 0}</Text></Text>
+
+                    <View style={styles.reportListSection}>
+                      <Text style={styles.fieldLabel}>Estudiantes con inasistencia</Text>
+                      {Array.isArray(reportesDetalle?.detalleDia?.estudiantes) && reportesDetalle.detalleDia.estudiantes.length > 0 ? (
+                        reportesDetalle.detalleDia.estudiantes.map((student) => (
+                          <View key={`reporte-dia-${student.id}`} style={styles.reportListItem}>
+                            <Text style={styles.reportListTitle}>{student.nombres} {student.apellidos}</Text>
+                            <Text style={styles.reportListMeta}>
+                              {student.estadoActual ? `Estado: ${student.estadoActual}` : 'Sin registro de asistencia'}
+                            </Text>
+                          </View>
+                        ))
+                      ) : (
+                        <Text style={styles.dataBullet}>No se encontraron inasistencias para el dia seleccionado.</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.dataBox}>
+                    <Text style={styles.dataTitle}>Resumen del mes</Text>
+                    <Text style={styles.dataItem}>Dias con registro: <Text style={styles.dataValue}>{reportesDetalle?.resumenMes?.diasConRegistro || 0}</Text></Text>
+                    <Text style={styles.dataItem}>Dias con inasistencias: <Text style={styles.dataValue}>{reportesDetalle?.resumenMes?.diasConInasistencias || 0}</Text></Text>
+                    <Text style={styles.dataItem}>Estudiantes con faltas: <Text style={styles.dataValue}>{reportesDetalle?.resumenMes?.estudiantesConFaltas || 0}</Text></Text>
+
+                    <View style={styles.reportListSection}>
+                      <Text style={styles.fieldLabel}>Dias con mas faltas del mes</Text>
+                      {Array.isArray(reportesDetalle?.diasMasCriticosMes) && reportesDetalle.diasMasCriticosMes.length > 0 ? (
+                        reportesDetalle.diasMasCriticosMes.map((dayItem) => (
+                          <View key={`reporte-mes-dia-${dayItem.fecha}`} style={styles.reportListItem}>
+                            <Text style={styles.reportListTitle}>{dayItem.fecha}</Text>
+                            <Text style={styles.reportListMeta}>{dayItem.inasistencias} faltas</Text>
+                          </View>
+                        ))
+                      ) : (
+                        <Text style={styles.dataBullet}>No hay faltas registradas en el mes seleccionado.</Text>
+                      )}
+                    </View>
+
+                    <View style={styles.reportListSection}>
+                      <Text style={styles.fieldLabel}>Estudiantes con mas faltas en el mes</Text>
+                      {Array.isArray(reportesDetalle?.estudiantesConMasFaltas) && reportesDetalle.estudiantesConMasFaltas.length > 0 ? (
+                        reportesDetalle.estudiantesConMasFaltas.map((student) => (
+                          <View key={`reporte-mes-est-${student.estudianteId}`} style={styles.reportListItem}>
+                            <Text style={styles.reportListTitle}>{student.nombre}</Text>
+                            <Text style={styles.reportListMeta}>
+                              {student.inasistencias} faltas - {student.ausente} ausente - {student.afuera} afuera
+                            </Text>
+                          </View>
+                        ))
+                      ) : (
+                        <Text style={styles.dataBullet}>No hay estudiantes con faltas registradas en el mes.</Text>
+                      )}
+                    </View>
+                  </View>
+                </>
+              ) : null}
             </ScrollView>
           </View>
         </View>
@@ -3407,7 +4134,7 @@ const styles = StyleSheet.create({
   content: { flex: 1 },
   scroll: { flexGrow: 1, padding: 20, paddingBottom: 28 },
   mainColumn: { width: '100%', alignSelf: 'stretch', gap: 16 },
-  hero: { width: '100%', height: 170, borderRadius: 18, overflow: 'hidden', backgroundColor: '#111827', marginTop: 0, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.28, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12, elevation: 5, alignItems: 'center', justifyContent: 'center' },
+  hero: { width: '100%', height: 170, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000', marginTop: 0, alignSelf: 'center', shadowColor: '#000', shadowOpacity: 0.28, shadowOffset: { width: 0, height: 8 }, shadowRadius: 12, elevation: 5, alignItems: 'center', justifyContent: 'center' },
   logo: { width: '100%', height: '100%' },
   infoCard: { flexDirection: 'row', alignItems: 'center', width: '100%', alignSelf: 'stretch', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 18, paddingVertical: 10, paddingHorizontal: 12, gap: 10, borderWidth: 1, borderColor: 'rgba(56,189,248,0.4)', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 6 }, shadowRadius: 10, elevation: 6, marginTop: -12 },
   infoAvatar: { width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(56,189,248,0.18)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.6)', alignItems: 'center', justifyContent: 'center' },
@@ -3423,11 +4150,17 @@ const styles = StyleSheet.create({
   infoValue: { color: '#fff', fontWeight: '800', fontSize: 15, letterSpacing: 0.2 },
   actionGrid: { width: '100%', alignSelf: 'stretch', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, columnGap: 10, marginTop: 0 },
   actionGridRector: { gap: 12 },
+  actionGridMobile: { justifyContent: 'space-between', rowGap: 12, columnGap: 12 },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  btnRowMobile: { width: '100%', minWidth: 0, justifyContent: 'center' },
+  btnRowMobileStacked: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5 },
   actionBtn: { width: '48.8%', borderRadius: 14, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
+  actionBtnMobile: { width: '48%', flexBasis: '48%', maxWidth: '48%', minWidth: 0, paddingHorizontal: 10 },
   actionBtnFull: { width: '100%' },
   actionBtnRector: { width: '48.8%' },
   actionBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  actionBtnTextMobile: { fontSize: 12.5, flexShrink: 1, textAlign: 'center' },
+  actionBtnTextMobileStacked: { width: '100%', lineHeight: 15, textAlign: 'center', alignSelf: 'center' },
   actionBtnTextCompact: { fontSize: 13, flexShrink: 1, textAlign: 'center' },
   logoutActionBtn: { backgroundColor: '#ef4444' },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
@@ -3452,6 +4185,7 @@ const styles = StyleSheet.create({
   modalCard: { backgroundColor: '#0f172a', borderRadius: 16, padding: 0, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', maxHeight: '90%', width: '100%', alignSelf: 'center' },
   sharedActionModalCard: { ...SHARED_ACTION_MODAL },
   modalCardWide: { ...SHARED_ACTION_MODAL },
+  reportesModalCard: { width: Platform.OS === 'web' ? '52%' : '92%', maxWidth: 780, maxHeight: '82%', alignSelf: 'center' },
   periodModalCard: { ...SHARED_ACTION_MODAL },
   cursoModalCard: { ...SHARED_ACTION_MODAL },
   docenteCrudModalCard: { ...SHARED_ACTION_MODAL, marginTop: -12 },
@@ -3501,6 +4235,127 @@ const styles = StyleSheet.create({
   dataItem: { color: '#cbd5e1' },
   dataValue: { color: '#fff', fontWeight: '800' },
   dataBullet: { color: '#cbd5e1', fontSize: 12 },
+  assignedCoursesHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 4 },
+  assignedCoursesBadge: {
+    minWidth: 30,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(59,130,246,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.3)'
+  },
+  assignedCoursesBadgeText: { color: '#dbeafe', fontSize: 11.5, fontWeight: '800' },
+  assignedCoursesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  assignedCourseChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(30,41,59,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.22)'
+  },
+  assignedCourseChipActive: {
+    backgroundColor: 'rgba(59,130,246,0.2)',
+    borderColor: 'rgba(96,165,250,0.48)'
+  },
+  assignedCourseChipText: { color: '#cbd5e1', fontSize: 12.5, fontWeight: '700' },
+  assignedCourseChipTextActive: { color: '#eff6ff' },
+  docentePerfilBox: {
+    width: '100%',
+    alignSelf: 'stretch',
+    marginTop: 10,
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.24)',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 10,
+    elevation: 4
+  },
+  docentePerfilHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  docentePerfilTitleWrap: { flex: 1, gap: 2 },
+  docentePerfilEyebrow: { color: '#93c5fd', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  docentePerfilTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '900' },
+  docentePerfilBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(59,130,246,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.3)'
+  },
+  docentePerfilBadgeText: { color: '#dbeafe', fontSize: 11.5, fontWeight: '800' },
+  docentePerfilSummary: { color: '#cbd5e1', fontSize: 13, lineHeight: 19 },
+  docentePerfilError: { marginTop: 2 },
+  docenteMateriaList: { gap: 10 },
+  docenteMateriaCard: {
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30,41,59,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.2)',
+    gap: 10
+  },
+  docenteMateriaHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
+  docenteMateriaTitleBlock: { flexShrink: 0, minWidth: 120, paddingTop: 2 },
+  docenteMateriaAside: { flex: 1, minWidth: 260, alignItems: 'stretch' },
+  docenteMateriaLabel: { color: '#93c5fd', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.6 },
+  docenteMateriaLabelInline: { color: '#93c5fd', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
+  docenteMateriaCourseLine: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  docenteMateriaCourse: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 2 },
+  docenteMateriaMetaRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-end', gap: 8 },
+  docenteMateriaInlineChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(37,99,235,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.26)',
+    maxWidth: '100%'
+  },
+  docenteMateriaInlineChipText: { color: '#dbeafe', fontSize: 12.5, fontWeight: '700', textAlign: 'center' },
+  docenteMateriaActionBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(14,165,233,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.42)',
+    flexShrink: 0
+  },
+  docenteMateriaActionText: { color: '#e0f2fe', fontSize: 11.5, fontWeight: '800' },
+  docenteMateriaNamesWrap: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'flex-end' },
+  docenteMateriaChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(37,99,235,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.26)'
+  },
+  docenteMateriaChipText: { color: '#dbeafe', fontSize: 12, fontWeight: '700' },
+  docenteMateriaEmptyHint: { color: '#94a3b8', fontSize: 12.5, fontStyle: 'italic' },
+  docenteMateriaEmptyHintInline: { textAlign: 'right', alignSelf: 'center' },
+  docenteMateriaEmptyCard: {
+    minHeight: 74,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.18)',
+    backgroundColor: 'rgba(30,41,59,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 16
+  },
+  docenteMateriaEmptyText: { color: '#cbd5e1', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   docentesSearchBox: { marginTop: 10, gap: 6 },
   docentesSearchInputWrap: {
     flexDirection: 'row',
@@ -3531,6 +4386,38 @@ const styles = StyleSheet.create({
   docentesSearchSuggestionName: { color: '#f8fafc', fontWeight: '700', fontSize: 13.5 },
   docentesSearchSuggestionMeta: { color: '#94a3b8', fontSize: 12, marginTop: 2 },
   docentesSearchEmpty: { color: '#94a3b8', fontSize: 12.5, paddingHorizontal: 12, paddingVertical: 10 },
+  reportFieldGroup: { gap: 6 },
+  reportFiltersGrid: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', marginTop: 2 },
+  reportFieldColumn: { flex: 1, minWidth: 160, gap: 6 },
+  reportGenerateBtn: { alignSelf: 'flex-start', marginTop: 10 },
+  reportGenerateBtnDisabled: { opacity: 0.65 },
+  reportPickerEmpty: { paddingHorizontal: 12, paddingVertical: 10 },
+  reportMetricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  reportMetricCard: {
+    flexGrow: 1,
+    minWidth: 150,
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.18)',
+    padding: 14,
+    gap: 4
+  },
+  reportMetricLabel: { color: '#94a3b8', fontSize: 11.5, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+  reportMetricValue: { color: '#f8fafc', fontSize: 22, fontWeight: '900' },
+  reportMetricHint: { color: '#cbd5e1', fontSize: 12, lineHeight: 17 },
+  reportListSection: { marginTop: 10, gap: 8 },
+  reportListItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30,41,59,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.18)',
+    gap: 3
+  },
+  reportListTitle: { color: '#e2e8f0', fontSize: 13.5, fontWeight: '700' },
+  reportListMeta: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
   docentesOverviewSection: { marginTop: 6, width: '100%', alignSelf: 'stretch' },
   docenteSummaryCard: { padding: 12, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', marginTop: 10, gap: 10 },
   docenteSummaryTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
@@ -3546,6 +4433,29 @@ const styles = StyleSheet.create({
   courseActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   courseForm: { marginBottom: 10, gap: 8 },
   courseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+  estudianteMateriaSelectorBox: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(15,23,42,0.45)',
+    gap: 8
+  },
+  estudianteMateriaChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  estudianteMateriaChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(30,41,59,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.24)'
+  },
+  estudianteMateriaChipActive: {
+    backgroundColor: 'rgba(16,185,129,0.18)',
+    borderColor: 'rgba(16,185,129,0.55)'
+  },
+  estudianteMateriaChipText: { color: '#cbd5e1', fontSize: 12.5, fontWeight: '700' },
+  estudianteMateriaChipTextActive: { color: '#ecfdf5' },
   materiaCursoGroup: { gap: 6, marginTop: 8 },
   passwordInputWrap: { position: 'relative', justifyContent: 'center' },
   passwordInput: { paddingRight: 44 },
