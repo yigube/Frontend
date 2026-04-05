@@ -4,14 +4,14 @@ import * as SecureStore from 'expo-secure-store';
 const TOKEN_KEY = 'token';
 
 function hasWebStorage() {
-  return typeof window !== 'undefined' && !!window.localStorage;
+  return typeof window !== 'undefined' && !!window.sessionStorage;
 }
 
 export async function getToken() {
   if (Platform.OS === 'web') {
     if (!hasWebStorage()) return null;
     try {
-      return window.localStorage.getItem(TOKEN_KEY);
+      return window.sessionStorage.getItem(TOKEN_KEY) || window.localStorage.getItem(TOKEN_KEY);
     } catch {
       return null;
     }
@@ -27,7 +27,8 @@ export async function setToken(token) {
   if (Platform.OS === 'web') {
     if (!hasWebStorage()) return;
     try {
-      window.localStorage.setItem(TOKEN_KEY, token);
+      window.sessionStorage.setItem(TOKEN_KEY, token);
+      window.localStorage.removeItem(TOKEN_KEY);
     } catch {}
     return;
   }
@@ -40,6 +41,7 @@ export async function removeToken() {
   if (Platform.OS === 'web') {
     if (!hasWebStorage()) return;
     try {
+      window.sessionStorage.removeItem(TOKEN_KEY);
       window.localStorage.removeItem(TOKEN_KEY);
     } catch {}
     return;

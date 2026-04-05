@@ -337,14 +337,11 @@ export default function HomeScreen() {
     if (!docente?.id) return;
     try {
       const data = await resetDocentePassword(docente.id);
-      const temp = String(data?.temporaryPassword || '').trim();
       await loadDocentesActual(docenteColegioId || user?.schoolId);
       setResetPasswordFeedbackModal({
         visible: true,
         title: 'Clave restablecida',
-        message: temp
-          ? `Docente: ${docente.nombre || docente.email || docente.id}\nClave temporal: ${temp}\nComparte esta clave y solicita cambio inmediato.`
-          : 'Se restablecio la clave temporal correctamente.'
+        message: data?.message || 'Se envio una clave temporal al correo del docente.'
       });
     } catch (e) {
       setResetPasswordFeedbackModal({
