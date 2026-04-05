@@ -1149,6 +1149,61 @@ export default function HomeScreen() {
     }).filter((row) => row.nombres && row.apellidos && row.qr);
   };
 
+  const handleDownloadEstudianteCsvModelo = async () => {
+    const csvContent = [
+      'nombres,apellidos,qr,codigoEstudiante',
+      'Juan,Campos,QR_JUAN_001,COD001',
+      'Maria,Lopez,QR_MARIA_002,COD002'
+    ].join('\n');
+    const fileName = `modelo_estudiantes_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    if (Platform.OS === 'web') {
+      try {
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        Alert.alert('Error', 'No se pudo descargar el modelo CSV');
+      }
+      return;
+    }
+
+    try {
+      const FileSystem = await import('expo-file-system');
+      const targetDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+      if (!targetDir) {
+        Alert.alert('Error', 'No se encontro una carpeta valida para guardar el archivo');
+        return;
+      }
+      const fileUri = `${targetDir}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+        encoding: FileSystem.EncodingType.UTF8
+      });
+
+      try {
+        const Sharing = await import('expo-sharing');
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'text/csv',
+            dialogTitle: 'Modelo CSV de estudiantes'
+          });
+          return;
+        }
+      } catch {}
+
+      Alert.alert('Listo', `Modelo CSV guardado en:\n${fileUri}`);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo generar el modelo CSV');
+    }
+  };
+
   const openCreateEstudianteModal = async (preferredCursoId = null) => {
     setEstudianteCreateModalVisible(true);
     setEstudianteCreateCursoPickerOpen(false);
@@ -2621,10 +2676,10 @@ export default function HomeScreen() {
                   </View>
                 </TouchableOpacity>
                 {isRectorCoordinador ? (
-                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#0ea5a4' }]} onPress={openManualChangePasswordModal}>
                     <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                      <Ionicons name="log-out-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                      <Ionicons name="key-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cambiar contrasena</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
@@ -2655,6 +2710,17 @@ export default function HomeScreen() {
               </View>
             ) : null}
           </View>
+
+          {isRectorCoordinador ? (
+            <View style={styles.rectorGridLogoutRow}>
+              <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn, styles.rectorGridLogoutCentered]} onPress={logout} activeOpacity={0.85}>
+                <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                  <Ionicons name="log-out-outline" size={18} color="#fff" />
+                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {isAdmin ? (
             <View style={styles.adminGridLogoutRow}>
@@ -2713,6 +2779,14 @@ export default function HomeScreen() {
                       : 'Aun no tienes cursos o materias asignadas.'}
                   </Text>
                 ) : null}
+
+                <TouchableOpacity style={styles.docenteCsvModelBtn} onPress={handleDownloadEstudianteCsvModelo} activeOpacity={0.85}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="download-outline" size={16} color="#dbeafe" />
+                    <Text style={styles.docenteCsvModelBtnText}>Descargar modelo CSV</Text>
+                  </View>
+                </TouchableOpacity>
+                <Text style={styles.docenteCsvModelHint}>Encabezados: nombres, apellidos, qr, codigoEstudiante</Text>
 
                 {docentePerfilError ? <Text style={[styles.errorText, styles.docentePerfilError]}>{docentePerfilError}</Text> : null}
 
@@ -5736,6 +5810,18 @@ const styles = StyleSheet.create({
   docentePerfilBadgeText: { color: '#dbeafe', fontSize: 11.5, fontWeight: '800' },
   docentePerfilSummary: { color: '#cbd5e1', fontSize: 13, lineHeight: 19 },
   docentePerfilError: { marginTop: 2 },
+  docenteCsvModelBtn: {
+    marginTop: 10,
+    alignSelf: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(37,99,235,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.4)'
+  },
+  docenteCsvModelBtnText: { color: '#dbeafe', fontSize: 12.8, fontWeight: '800' },
+  docenteCsvModelHint: { color: '#93c5fd', fontSize: 11.5, marginTop: 6, textAlign: 'center' },
   docenteMateriaList: { gap: 10 },
   docenteMateriaCard: {
     padding: 12,
@@ -6320,6 +6406,8 @@ const styles = StyleSheet.create({
   logoutBtn: { width: '100%', alignSelf: 'stretch', marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
   docenteGridLogoutRow: { width: '100%', alignItems: 'center' },
   docenteGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
+  rectorGridLogoutRow: { width: '100%', alignItems: 'center' },
+  rectorGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   adminGridLogoutRow: { width: '100%', alignItems: 'center' },
   adminGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   docenteFooterLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
