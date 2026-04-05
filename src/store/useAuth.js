@@ -16,6 +16,7 @@ export const useAuth = create((set) => ({
       throw e;
     }
   },
+  updateUser: (patch = {}) => set((state) => ({ user: state.user ? { ...state.user, ...patch } : state.user })),
   logout: async () => { await logoutUser(); set({ user: null }); },
   restore: async () => { const token = await getToken(); if(!token) set({ user: null }); }
 }));

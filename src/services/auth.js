@@ -10,3 +10,8 @@ export async function loginUser(email, password) {
 export async function logoutUser() {
   await removeToken();
 }
+
+export async function changeMyPassword(currentPassword, newPassword) {
+  const { data } = await api.post('/auth/change-password', { currentPassword, newPassword });
+  return data;
+}

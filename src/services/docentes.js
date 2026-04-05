@@ -63,3 +63,8 @@ export async function updateDocente(id, payload) {
 export async function deleteDocente(id) {
   await api.delete(`/docentes/${id}`);
 }
+
+export async function resetDocentePassword(id) {
+  const { data } = await api.post(`/docentes/${id}/reset-password`);
+  return data;
+}

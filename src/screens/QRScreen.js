@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { getAusentesCurso, registrarAsistencia } from '../services/asistencias';
+import { useFocusEffect } from '@react-navigation/native';
+import { registrarAsistencia, syncAsistenciasPendientes, getAsistenciasPendientesCount } from '../services/asistencias';
 import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
 import { useAuth } from '../store/useAuth';
@@ -22,6 +23,7 @@ const formatTimeLabel = (value) => {
   }
   return parsed.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 };
+
 const normalizeMateriaOption = (value = '') => String(value || '').trim().toLowerCase();
 
 const buildEstadoFlags = (estado) => ({
@@ -31,7 +33,7 @@ const buildEstadoFlags = (estado) => ({
   ausente: estado === 'ausente'
 });
 
-export default function QRScreen({ route, navigation }) {
+export default function QRScreen({ navigation }) {
   const user = useAuth((state) => state.user);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -45,17 +47,22 @@ export default function QRScreen({ route, navigation }) {
   const [pendingQr, setPendingQr] = useState('');
   const [estadoModalVisible, setEstadoModalVisible] = useState(false);
   const [savingEstado, setSavingEstado] = useState(false);
-  const [ausentesDelDia, setAusentesDelDia] = useState([]);
-  const [loadingAusentes, setLoadingAusentes] = useState(false);
-  const [autoAusenteModal, setAutoAusenteModal] = useState({
+  const [successModal, setSuccessModal] = useState({
     visible: false,
     cursoNombre: '',
     materiaNombre: '',
-    fecha: '',
-    hora: ''
+    estado: '',
+    qr: '',
+    hora: '',
+    queued: false
   });
-  const scanMode = route?.params?.scanMode === 'absent-only' ? 'absent-only' : 'all';
-  const absentOnlyMode = scanMode === 'absent-only';
+  const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' });
+  const [duplicateModal, setDuplicateModal] = useState({ visible: false, title: '', message: '' });
+  const [infoModal, setInfoModal] = useState({ visible: false, title: '', message: '' });
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [syncingPending, setSyncingPending] = useState(false);
+  const scanLockRef = useRef(false);
+  const savingLockRef = useRef(false);
 
   const getMateriasDisponiblesByCurso = (cursoValue) => {
     const curso = (docentePerfilCursos || []).find((item) => String(item?.id) === String(cursoValue));
@@ -118,63 +125,124 @@ export default function QRScreen({ route, navigation }) {
       return disponibles[0] || '';
     });
     setMateriaPickerOpen(false);
-  }, [absentOnlyMode, cursoId, docentePerfilCursos]);
+  }, [cursoId, docentePerfilCursos]);
 
-  const loadAusentesDelDia = async (cursoValue, materiaValue = materiaSeleccionada) => {
-    if (!absentOnlyMode || !cursoValue) {
-      setAusentesDelDia([]);
-      return;
-    }
-    setLoadingAusentes(true);
+  const refreshPendingCount = async () => {
     try {
-      const params = {
-        cursoId: cursoValue,
-        fecha: getLocalDateISO()
-      };
-      const materiaNormalizada = String(materiaValue || '').trim();
-      if (materiaNormalizada) params.materia = materiaNormalizada;
-      const data = await getAusentesCurso(params);
-      setAusentesDelDia(Array.isArray(data?.ausentes) ? data.ausentes : []);
-    } catch (e) {
-      setAusentesDelDia([]);
-      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los ausentes del curso');
+      const count = await getAsistenciasPendientesCount();
+      setPendingSyncCount(Number(count) || 0);
+    } catch {}
+  };
+
+  const syncPendingIfAny = async () => {
+    try {
+      setSyncingPending(true);
+      const result = await syncAsistenciasPendientes();
+      setPendingSyncCount(Number(result?.pending || 0));
+      return result;
     } finally {
-      setLoadingAusentes(false);
+      setSyncingPending(false);
     }
   };
 
   useEffect(() => {
-    const cursoValue = Number(cursoId);
-    if (!cursoValue || !absentOnlyMode) {
-      setAusentesDelDia([]);
-      return;
-    }
-    const disponibles = getMateriasDisponiblesByCurso(cursoValue);
-    if (disponibles.length > 0 && !String(materiaSeleccionada || '').trim()) {
-      setAusentesDelDia([]);
-      return;
-    }
-    loadAusentesDelDia(cursoValue, materiaSeleccionada);
-  }, [cursoId, absentOnlyMode, materiaSeleccionada, docentePerfilCursos]);
+    (async () => {
+      await refreshPendingCount();
+      await syncPendingIfAny();
+      await refreshPendingCount();
+    })();
+  }, []);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      resetScanState();
+      setEstadoModalVisible(false);
+      setSuccessModal((prev) => ({ ...prev, visible: false }));
+      setErrorModal((prev) => ({ ...prev, visible: false }));
+      setDuplicateModal((prev) => ({ ...prev, visible: false }));
+      setInfoModal((prev) => ({ ...prev, visible: false }));
+      return undefined;
+    }, [])
+  );
 
   const resetScanState = () => {
     setPendingQr('');
-    setTimeout(() => setScanned(false), 500);
+    setScanned(false);
+    scanLockRef.current = false;
+    savingLockRef.current = false;
   };
 
-  const closeAutoAusenteModal = () => {
-    setAutoAusenteModal({ visible: false, cursoNombre: '', materiaNombre: '', fecha: '', hora: '' });
+  const cancelEstadoModal = () => {
+    if (savingEstado) return;
+    setEstadoModalVisible(false);
+    setPendingQr('');
+    // Evita relectura inmediata del mismo QR mientras sale de la pantalla.
+    scanLockRef.current = true;
+    setScanned(true);
+    navigation.navigate('Inicio');
+  };
+
+  const closeSuccessModal = () => {
+    setSuccessModal({
+      visible: false,
+      cursoNombre: '',
+      materiaNombre: '',
+      estado: '',
+      qr: '',
+      hora: '',
+      queued: false
+    });
+    resetScanState();
+  };
+
+  const finishSuccessFlow = () => {
+    closeSuccessModal();
+    setCursoPickerOpen(false);
+    setMateriaPickerOpen(false);
+    navigation.navigate('Inicio');
+  };
+
+  const closeErrorModal = () => {
+    setErrorModal({ visible: false, title: '', message: '' });
+    resetScanState();
+  };
+
+  const closeDuplicateModal = () => {
+    setDuplicateModal({ visible: false, title: '', message: '' });
+    resetScanState();
+  };
+
+  const closeInfoModal = () => {
+    setInfoModal({ visible: false, title: '', message: '' });
+  };
+
+  const cancelScannerFlow = () => {
+    if (savingEstado) return;
+    setCursoPickerOpen(false);
+    setMateriaPickerOpen(false);
+    setEstadoModalVisible(false);
+    setSuccessModal({
+      visible: false,
+      cursoNombre: '',
+      materiaNombre: '',
+      estado: '',
+      qr: '',
+      hora: '',
+      queued: false
+    });
+    resetScanState();
     navigation.navigate('Inicio');
   };
 
   const registrarConEstado = async (estado, qrValueOverride = pendingQr, options = {}) => {
-      const { returnHome = false } = options;
+    if (savingLockRef.current) return;
+    savingLockRef.current = true;
     const cursoValue = Number(cursoId);
     const materiaValue = String((options?.materia ?? materiaSeleccionada) || '').trim();
     if (!cursoValue || !qrValueOverride) {
       setEstadoModalVisible(false);
       resetScanState();
-      setScanned(false);
+      savingLockRef.current = false;
       return;
     }
 
@@ -191,70 +259,82 @@ export default function QRScreen({ route, navigation }) {
         ...flags
       });
 
-      if (returnHome) {
-        setAutoAusenteModal({
-          visible: true,
-          cursoNombre: cursos.find((c) => String(c.id) === String(cursoValue))?.nombre || `Curso ${cursoValue}`,
-          materiaNombre: response?.registro?.materia?.nombre || materiaValue || '',
-          fecha: getLocalDateISO(),
-          hora: formatTimeLabel(
-            response?.registro?.horaRegistro
-            || response?.registro?.hora_registro
-            || response?.registro?.updatedAt
-            || response?.registro?.createdAt
-            || response?.registro?.updated_at
-            || response?.registro?.created_at
-          )
-        });
+      setSuccessModal({
+        visible: true,
+        cursoNombre: cursos.find((curso) => String(curso.id) === String(cursoValue))?.nombre || `Curso ${cursoValue}`,
+        materiaNombre: response?.registro?.materia?.nombre || materiaValue || '',
+        estado,
+        qr: qrValueOverride,
+        hora: formatTimeLabel(
+          response?.registro?.horaRegistro
+          || response?.registro?.hora_registro
+          || response?.registro?.updatedAt
+          || response?.registro?.createdAt
+          || response?.registro?.updated_at
+          || response?.registro?.created_at
+        ),
+        queued: Boolean(response?.queued)
+      });
+      if (response?.queued) {
+        await refreshPendingCount();
+        Alert.alert('Sin internet estable', 'Asistencia guardada localmente. Se sincronizara automaticamente cuando vuelva la conexion.');
+        const retrySync = await syncPendingIfAny();
+        if (Number(retrySync?.sent || 0) > 0) {
+          await refreshPendingCount();
+        }
       } else {
-        Alert.alert(
-          'Asistencia registrada',
-          `QR: ${qrValueOverride}\nEstado: ${estado}${materiaValue ? `\nMateria: ${materiaValue}` : ''}`
-        );
+        const syncResult = await syncPendingIfAny();
+        if (Number(syncResult?.sent || 0) > 0) {
+          await refreshPendingCount();
+        }
       }
     } catch (e) {
-      Alert.alert('Error', e?.response?.data?.error || e.message);
-    } finally {
-      if (absentOnlyMode) {
-        await loadAusentesDelDia(cursoValue);
+      const backendError = String(e?.response?.data?.error || e.message || '').trim();
+      if (e?.response?.status === 409 || backendError === 'La asistencia ya fue registrada para esta clase') {
+        setDuplicateModal({
+          visible: true,
+          title: 'Asistencia ya registrada',
+          message: 'Este estudiante ya fue escaneado para esta clase. Puedes continuar con el siguiente QR.'
+        });
+      } else if (backendError.toLowerCase().includes('no existe periodo activo')) {
+        setErrorModal({
+          visible: true,
+          title: 'Periodo no activo',
+          message: `No hay periodo activo para la fecha ${getLocalDateISO()}. Verifica el rango de fechas del periodo y la fecha del dispositivo.`
+        });
+      } else {
+        setErrorModal({
+          visible: true,
+          title: 'No se pudo registrar',
+          message: backendError || 'No se pudo registrar la asistencia'
+        });
       }
+    } finally {
       setSavingEstado(false);
-      resetScanState();
+      savingLockRef.current = false;
     }
   };
 
-  const onBarcodeScanned = async ({ data }) => {
-    if (scanned) return;
+  const onBarcodeScanned = ({ data }) => {
+    if (scanLockRef.current || scanned || savingLockRef.current || successModal.visible || errorModal.visible || duplicateModal.visible || infoModal.visible || estadoModalVisible) return;
     const cursoValue = Number(cursoId);
     if (!cursoValue) {
-      Alert.alert('Curso requerido', 'Selecciona un curso antes de escanear.');
-      return;
-    }
-
-    const qrValue = String(data || '');
-    if (materiasDisponibles.length > 0 && !String(materiaSeleccionada || '').trim()) {
-      Alert.alert('Materia requerida', 'Selecciona una materia antes de escanear.');
-      return;
-    }
-    if (absentOnlyMode) {
-      const allowScan = ausentesDelDia.some((item) => String(item.qr || '') === qrValue);
-      if (!allowScan) {
-        setScanned(true);
-        Alert.alert('QR no habilitado', 'Este estudiante no aparece como ausente para el curso y fecha actual.');
-        setTimeout(() => setScanned(false), 500);
-        return;
-      }
-
-      setScanned(true);
-      await registrarConEstado('ausente', qrValue, {
-        returnHome: true,
-        materia: materiaSeleccionada
+      setInfoModal({
+        visible: true,
+        title: 'Curso requerido',
+        message: 'Selecciona un curso antes de escanear.'
       });
       return;
     }
 
+    if (materiasDisponibles.length > 0 && !String(materiaSeleccionada || '').trim()) {
+      Alert.alert('Materia requerida', 'Selecciona una materia antes de escanear.');
+      return;
+    }
+
+    scanLockRef.current = true;
     setScanned(true);
-    setPendingQr(qrValue);
+    setPendingQr(String(data || ''));
     setEstadoModalVisible(true);
   };
 
@@ -275,19 +355,14 @@ export default function QRScreen({ route, navigation }) {
       />
 
       <View style={styles.overlay}>
-        {absentOnlyMode ? (
-          <View style={styles.modePill}>
-            <Text style={styles.modePillText}>
-              {loadingAusentes ? 'Cargando ausentes...' : `Solo ausentes: ${ausentesDelDia.length}`}
-            </Text>
-          </View>
-        ) : null}
-
         <Text style={styles.label}>Curso</Text>
-        <Pressable style={styles.selectBox} onPress={() => {
-          setCursoPickerOpen((prev) => !prev);
-          setMateriaPickerOpen(false);
-        }}>
+        <Pressable
+          style={styles.selectBox}
+          onPress={() => {
+            setCursoPickerOpen((prev) => !prev);
+            setMateriaPickerOpen(false);
+          }}
+        >
           <Text style={styles.selectText}>
             {loadingCursos
               ? 'Cargando cursos...'
@@ -318,50 +393,7 @@ export default function QRScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {absentOnlyMode ? (
-          <>
-            <Text style={[styles.label, styles.secondaryLabel]}>Materia</Text>
-            <Pressable
-              style={[styles.selectBox, materiasDisponibles.length === 0 && styles.selectBoxDisabled]}
-              onPress={() => {
-                if (materiasDisponibles.length === 0) return;
-                setMateriaPickerOpen((prev) => !prev);
-                setCursoPickerOpen(false);
-              }}
-            >
-              <Text style={styles.selectText}>
-                {materiasDisponibles.length === 0
-                  ? 'No hay materias configuradas'
-                  : (materiaSeleccionada || 'Selecciona una materia')}
-              </Text>
-              <Ionicons
-                name={materiaPickerOpen ? 'chevron-up-outline' : 'chevron-down-outline'}
-                size={16}
-                color="#e5e7eb"
-              />
-            </Pressable>
-
-            {materiaPickerOpen ? (
-              <View style={styles.dropdownList}>
-                {materiasDisponibles.map((materia) => (
-                  <Pressable
-                    key={materia}
-                    style={[
-                      styles.dropdownItem,
-                      normalizeMateriaOption(materiaSeleccionada) === normalizeMateriaOption(materia) && styles.dropdownItemActive
-                    ]}
-                    onPress={() => {
-                      setMateriaSeleccionada(materia);
-                      setMateriaPickerOpen(false);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>{materia}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </>
-        ) : materiasDisponibles.length > 0 ? (
+        {materiasDisponibles.length > 0 ? (
           <>
             <Text style={[styles.label, styles.secondaryLabel]}>Materia</Text>
             <Pressable
@@ -400,9 +432,38 @@ export default function QRScreen({ route, navigation }) {
             ) : null}
           </>
         ) : null}
+
+        {pendingSyncCount > 0 ? (
+          <View style={styles.offlineQueueBanner}>
+            <View style={styles.offlineQueueInfo}>
+              <Ionicons name="cloud-offline-outline" size={14} color="#fde68a" />
+              <Text style={styles.offlineQueueText}>{pendingSyncCount} pendiente(s) por sincronizar</Text>
+            </View>
+            <Pressable
+              style={[styles.offlineSyncBtn, syncingPending && { opacity: 0.6 }]}
+              onPress={async () => {
+                if (syncingPending) return;
+                const result = await syncPendingIfAny();
+                await refreshPendingCount();
+                if (Number(result?.sent || 0) > 0) {
+                  Alert.alert('Sincronizacion completa', `Se sincronizaron ${result.sent} registro(s).`);
+                }
+              }}
+            >
+              <Text style={styles.offlineSyncBtnText}>{syncingPending ? 'Sincronizando...' : 'Sincronizar'}</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        <Pressable style={styles.overlayCancelBtn} onPress={cancelScannerFlow}>
+          <View style={styles.btnRow}>
+            <Ionicons name="close-outline" size={16} color="#fca5a5" />
+            <Text style={styles.overlayCancelText}>Cancelar</Text>
+          </View>
+        </Pressable>
       </View>
 
-      <Modal transparent visible={estadoModalVisible} onRequestClose={() => {}} animationType="fade">
+      <Modal transparent visible={estadoModalVisible} onRequestClose={cancelEstadoModal} animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Selecciona estado de asistencia</Text>
@@ -421,53 +482,111 @@ export default function QRScreen({ route, navigation }) {
               ))}
             </View>
 
-            <Pressable
-              style={[styles.cancelBtn, savingEstado && { opacity: 0.6 }]}
-              onPress={() => {
-                if (savingEstado) return;
-                setEstadoModalVisible(false);
-                setPendingQr('');
-                setScanned(false);
-              }}
-            >
+            <Pressable style={[styles.cancelBtn, savingEstado && { opacity: 0.6 }]} onPress={cancelEstadoModal}>
               <Text style={styles.cancelText}>Cancelar</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
-      <Modal transparent visible={autoAusenteModal.visible} onRequestClose={closeAutoAusenteModal} animationType="fade">
+      <Modal transparent visible={successModal.visible} onRequestClose={closeSuccessModal} animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.successModalCard}>
             <View style={styles.successIconWrap}>
-              <Ionicons name="checkmark-done-outline" size={28} color="#86efac" />
+              <Ionicons name={successModal.queued ? 'cloud-offline-outline' : 'checkmark-done-outline'} size={28} color={successModal.queued ? '#facc15' : '#86efac'} />
             </View>
-            <Text style={styles.successTitle}>Falla registrada</Text>
+            <Text style={styles.successTitle}>{successModal.queued ? 'Registro en cola' : 'Asistencia registrada'}</Text>
             <Text style={styles.successText}>
-              La inasistencia se registró correctamente y el estudiante quedó marcado como ausente.
+              {successModal.queued
+                ? 'Se guardo localmente por conectividad limitada. Se enviara al servidor cuando vuelva la senal.'
+                : 'El registro se guardo correctamente y puedes continuar escaneando.'}
             </Text>
+            <Text style={styles.successQuestion}>Deseas seguir escaneando?</Text>
 
             <View style={styles.successMetaCard}>
               <Text style={styles.successMetaLabel}>Curso</Text>
-              <Text style={styles.successMetaValue}>{autoAusenteModal.cursoNombre || 'Sin curso'}</Text>
-              {autoAusenteModal.materiaNombre ? (
+              <Text style={styles.successMetaValue}>{successModal.cursoNombre || 'Sin curso'}</Text>
+              <Text style={styles.successMetaLabel}>Estado</Text>
+              <Text style={styles.successMetaValue}>{successModal.estado || 'Sin estado'}</Text>
+              {successModal.materiaNombre ? (
                 <>
                   <Text style={styles.successMetaLabel}>Materia</Text>
-                  <Text style={styles.successMetaValue}>{autoAusenteModal.materiaNombre}</Text>
+                  <Text style={styles.successMetaValue}>{successModal.materiaNombre}</Text>
                 </>
               ) : null}
-              <Text style={styles.successMetaLabel}>Fecha</Text>
-              <Text style={styles.successMetaValue}>{autoAusenteModal.fecha || 'Sin fecha'}</Text>
+              <Text style={styles.successMetaLabel}>QR</Text>
+              <Text style={styles.successMetaValue}>{successModal.qr || 'Sin QR'}</Text>
               <Text style={styles.successMetaLabel}>Hora</Text>
-              <Text style={styles.successMetaValue}>{autoAusenteModal.hora || 'Sin hora'}</Text>
+              <Text style={styles.successMetaValue}>{successModal.hora || 'Sin hora'}</Text>
             </View>
 
-            <Text style={styles.successHint}>Al cerrar este mensaje volverás al menú principal.</Text>
+            <View style={styles.successActions}>
+              <TouchableOpacity style={styles.successBtnSecondary} onPress={finishSuccessFlow}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="checkmark-outline" size={16} color="#e2e8f0" />
+                  <Text style={styles.successBtnSecondaryText}>Finalizar</Text>
+                </View>
+              </TouchableOpacity>
 
-            <TouchableOpacity style={styles.successBtn} onPress={closeAutoAusenteModal}>
+              <TouchableOpacity style={styles.successBtn} onPress={closeSuccessModal}>
+                <View style={styles.btnRow}>
+                  <Ionicons name="scan-outline" size={16} color="#fff" />
+                  <Text style={styles.successBtnText}>Seguir escaneando</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent visible={errorModal.visible} onRequestClose={closeErrorModal} animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.errorModalCard}>
+            <View style={styles.errorIconWrap}>
+              <Ionicons name="alert-circle-outline" size={26} color="#fca5a5" />
+            </View>
+            <Text style={styles.errorTitle}>{errorModal.title || 'Error'}</Text>
+            <Text style={styles.errorTextModal}>{errorModal.message || 'Ocurrio un problema al registrar asistencia.'}</Text>
+            <TouchableOpacity style={styles.errorBtn} onPress={closeErrorModal}>
               <View style={styles.btnRow}>
-                <Ionicons name="home-outline" size={16} color="#fff" />
-                <Text style={styles.successBtnText}>Volver al menu</Text>
+                <Ionicons name="checkmark-outline" size={15} color="#fff" />
+                <Text style={styles.errorBtnText}>Entendido</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent visible={duplicateModal.visible} onRequestClose={closeDuplicateModal} animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.duplicateModalCard}>
+            <View style={styles.duplicateIconWrap}>
+              <Ionicons name="information-circle-outline" size={26} color="#93c5fd" />
+            </View>
+            <Text style={styles.duplicateTitle}>{duplicateModal.title || 'Asistencia ya registrada'}</Text>
+            <Text style={styles.duplicateTextModal}>{duplicateModal.message || 'Este estudiante ya fue escaneado para esta clase.'}</Text>
+            <TouchableOpacity style={styles.duplicateBtn} onPress={closeDuplicateModal}>
+              <View style={styles.btnRow}>
+                <Ionicons name="scan-outline" size={15} color="#fff" />
+                <Text style={styles.duplicateBtnText}>Seguir escaneando</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal transparent visible={infoModal.visible} onRequestClose={closeInfoModal} animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.infoModalCard}>
+            <View style={styles.infoIconWrap}>
+              <Ionicons name="scan-circle-outline" size={26} color="#67e8f9" />
+            </View>
+            <Text style={styles.infoTitle}>{infoModal.title || 'Informacion'}</Text>
+            <Text style={styles.infoTextModal}>{infoModal.message || 'Revisa los datos antes de continuar.'}</Text>
+            <TouchableOpacity style={styles.infoBtn} onPress={closeInfoModal}>
+              <View style={styles.btnRow}>
+                <Ionicons name="checkmark-outline" size={15} color="#fff" />
+                <Text style={styles.infoBtnText}>Entendido</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -490,17 +609,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)'
   },
-  modePill: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: 'rgba(250,204,21,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(250,204,21,0.5)'
-  },
-  modePillText: { color: '#fde68a', fontWeight: '800', fontSize: 12 },
   label: { color: '#fff', fontWeight: '700', marginBottom: 6 },
   secondaryLabel: { marginTop: 10 },
   selectBox: {
@@ -515,9 +623,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8
   },
-  selectBoxDisabled: {
-    opacity: 0.65
-  },
   selectText: { color: '#fff', fontWeight: '700', flexShrink: 1 },
   dropdownList: {
     marginTop: 8,
@@ -530,6 +635,30 @@ const styles = StyleSheet.create({
   dropdownItemActive: { backgroundColor: 'rgba(34,197,94,0.2)' },
   dropdownText: { color: '#e5e7eb' },
   dropdownHint: { color: '#cbd5e1', paddingHorizontal: 12, paddingVertical: 10 },
+  offlineQueueBanner: {
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(250,204,21,0.45)',
+    backgroundColor: 'rgba(113,63,18,0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10
+  },
+  offlineQueueInfo: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  offlineQueueText: { color: '#fef3c7', fontSize: 12, fontWeight: '700' },
+  offlineSyncBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.6)',
+    backgroundColor: 'rgba(2,132,199,0.35)'
+  },
+  offlineSyncBtnText: { color: '#e0f2fe', fontSize: 12, fontWeight: '800' },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   modalBackdrop: {
     flex: 1,
@@ -572,6 +701,7 @@ const styles = StyleSheet.create({
   },
   successTitle: { color: '#f0fdf4', fontWeight: '900', fontSize: 20, textAlign: 'center' },
   successText: { color: '#d1fae5', fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  successQuestion: { color: '#bbf7d0', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   successMetaCard: {
     width: '100%',
     borderRadius: 14,
@@ -583,10 +713,15 @@ const styles = StyleSheet.create({
   },
   successMetaLabel: { color: '#86efac', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
   successMetaValue: { color: '#f8fafc', fontSize: 14, fontWeight: '800', marginBottom: 4 },
-  successHint: { color: '#94a3b8', fontSize: 12, textAlign: 'center', lineHeight: 18 },
-  successBtn: {
+  successActions: {
     marginTop: 4,
     width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  successBtn: {
+    flex: 1,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
@@ -595,6 +730,118 @@ const styles = StyleSheet.create({
     borderColor: '#22c55e'
   },
   successBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  successBtnSecondary: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: 'rgba(51,65,85,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.45)'
+  },
+  successBtnSecondaryText: { color: '#e2e8f0', fontWeight: '800', fontSize: 14 },
+  errorModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 18,
+    backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.35)',
+    padding: 18,
+    alignItems: 'center',
+    gap: 10
+  },
+  errorIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(127,29,29,0.34)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.45)'
+  },
+  errorTitle: { color: '#fee2e2', fontWeight: '900', fontSize: 19, textAlign: 'center' },
+  errorTextModal: { color: '#fecaca', fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  errorBtn: {
+    marginTop: 4,
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#dc2626',
+    borderWidth: 1,
+    borderColor: '#ef4444'
+  },
+  errorBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  duplicateModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 18,
+    backgroundColor: '#0b1a33',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.35)',
+    padding: 18,
+    alignItems: 'center',
+    gap: 10
+  },
+  duplicateIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30,58,138,0.36)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.45)'
+  },
+  duplicateTitle: { color: '#dbeafe', fontWeight: '900', fontSize: 19, textAlign: 'center' },
+  duplicateTextModal: { color: '#bfdbfe', fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  duplicateBtn: {
+    marginTop: 4,
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#2563eb',
+    borderWidth: 1,
+    borderColor: '#3b82f6'
+  },
+  duplicateBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  infoModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 18,
+    backgroundColor: '#0b1f2a',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.45)',
+    padding: 18,
+    alignItems: 'center',
+    gap: 10
+  },
+  infoIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,145,178,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.45)'
+  },
+  infoTitle: { color: '#cffafe', fontWeight: '900', fontSize: 19, textAlign: 'center' },
+  infoTextModal: { color: '#a5f3fc', fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  infoBtn: {
+    marginTop: 4,
+    width: '100%',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#0891b2',
+    borderWidth: 1,
+    borderColor: '#06b6d4'
+  },
+  infoBtnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   estadoGrid: { gap: 8 },
   estadoBtn: {
     borderRadius: 10,
@@ -614,5 +861,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.45)'
   },
-  cancelText: { color: '#e2e8f0', fontWeight: '700' }
+  cancelText: { color: '#e2e8f0', fontWeight: '700' },
+  overlayCancelBtn: {
+    marginTop: 12,
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    backgroundColor: 'rgba(127,29,29,0.32)',
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.55)'
+  },
+  overlayCancelText: { color: '#fecaca', fontWeight: '800' }
 });
