@@ -49,14 +49,18 @@ export default function HomeScreen() {
   const [asignacionCursosDocente, setAsignacionCursosDocente] = useState({});
   const [savingAsignacionDocenteId, setSavingAsignacionDocenteId] = useState(null);
   const cursoDocSchoolRef = useRef(null);
-  const [cursosModalVisible, setCursosModalVisible] = useState(false);
+  const [adminCursosModalVisible, setAdminCursosModalVisible] = useState(false);
+  const [rectorCursosModalVisible, setRectorCursosModalVisible] = useState(false);
   const [deleteCursoModal, setDeleteCursoModal] = useState({ visible: false, curso: null });
   const [cursoCrudColegioId, setCursoCrudColegioId] = useState(null);
   const [cursoCrudPickerOpen, setCursoCrudPickerOpen] = useState(false);
   const [loadingCursos, setLoadingCursos] = useState(false);
-  const [cursoFormVisible, setCursoFormVisible] = useState(false);
-  const [cursoNombre, setCursoNombre] = useState('');
-  const [cursoEditing, setCursoEditing] = useState(null);
+  const [adminCursoFormVisible, setAdminCursoFormVisible] = useState(false);
+  const [adminCursoNombre, setAdminCursoNombre] = useState('');
+  const [adminCursoEditing, setAdminCursoEditing] = useState(null);
+  const [rectorCursoFormVisible, setRectorCursoFormVisible] = useState(false);
+  const [rectorCursoNombre, setRectorCursoNombre] = useState('');
+  const [rectorCursoEditing, setRectorCursoEditing] = useState(null);
   const [savingCurso, setSavingCurso] = useState(false);
   const [estudiantesModalVisible, setEstudiantesModalVisible] = useState(false);
   const [estudiantes, setEstudiantes] = useState([]);
@@ -143,6 +147,7 @@ export default function HomeScreen() {
   const [docenteError, setDocenteError] = useState('');
   const [changingPassword, setChangingPassword] = useState(false);
   const [changePasswordModalVisible, setChangePasswordModalVisible] = useState(false);
+  const [manualChangePasswordModalVisible, setManualChangePasswordModalVisible] = useState(false);
   const [changePasswordError, setChangePasswordError] = useState('');
   const [changePasswordForm, setChangePasswordForm] = useState({ current: '', next: '', confirm: '' });
   const [showChangeCurrentPassword, setShowChangeCurrentPassword] = useState(false);
@@ -316,6 +321,18 @@ export default function HomeScreen() {
     setChangePasswordError('');
   };
 
+  const openManualChangePasswordModal = () => {
+    clearChangePasswordForm();
+    setManualChangePasswordModalVisible(true);
+  };
+
+  const closeManualChangePasswordModal = () => {
+    if (changingPassword) return;
+    if (user?.mustChangePassword) return;
+    setManualChangePasswordModalVisible(false);
+    clearChangePasswordForm();
+  };
+
   const handleResetDocentePassword = async (docente) => {
     if (!docente?.id) return;
     try {
@@ -348,8 +365,9 @@ export default function HomeScreen() {
       setChangePasswordError('Completa todos los campos');
       return;
     }
-    if (next.length < 4) {
-      setChangePasswordError('La nueva clave debe tener minimo 4 caracteres');
+    const strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z\d]).{8,}$/;
+    if (!strongPasswordRegex.test(next)) {
+      setChangePasswordError('La nueva clave debe tener minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial');
       return;
     }
     if (next !== confirm) {
@@ -361,6 +379,7 @@ export default function HomeScreen() {
       await changeMyPassword(current, next);
       updateUser({ mustChangePassword: false });
       setChangePasswordModalVisible(false);
+      setManualChangePasswordModalVisible(false);
       clearChangePasswordForm();
       showPeriodStatusModal('Clave actualizada');
     } catch (e) {
@@ -856,10 +875,10 @@ export default function HomeScreen() {
     return ordered;
   };
 
-  const openCursosModal = async () => {
-    setCursoFormVisible(false);
-    setCursoEditing(null);
-    setCursoNombre('');
+  const openAdminCursosModal = async () => {
+    setAdminCursoFormVisible(false);
+    setAdminCursoEditing(null);
+    setAdminCursoNombre('');
     setCursoCrudPickerOpen(false);
     setLoadingCursos(true);
     try {
@@ -869,7 +888,30 @@ export default function HomeScreen() {
       const defaultSchoolId = user?.schoolId || colegios?.[0]?.id || null;
       setCursoCrudColegioId(defaultSchoolId);
       await loadCursosAsignados(defaultSchoolId);
-      setCursosModalVisible(true);
+      setAdminCursosModalVisible(true);
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
+    } finally {
+      setLoadingCursos(false);
+    }
+  };
+
+  const openRectorCursosModal = async () => {
+    setRectorCursoFormVisible(false);
+    setRectorCursoEditing(null);
+    setRectorCursoNombre('');
+    setCursoCrudPickerOpen(false);
+    setLoadingCursos(true);
+    try {
+      const defaultSchoolId = Number(user?.schoolId) || null;
+      if (!defaultSchoolId) {
+        Alert.alert('Colegio requerido', 'No se encontro un colegio asociado a este usuario');
+        return;
+      }
+      setColegiosOptions([{ id: defaultSchoolId, nombre: user?.schoolName || `Colegio ${defaultSchoolId}` }]);
+      setCursoCrudColegioId(defaultSchoolId);
+      await loadCursosAsignados(defaultSchoolId);
+      setRectorCursosModalVisible(true);
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
     } finally {
@@ -878,10 +920,14 @@ export default function HomeScreen() {
   };
 
   const closeCursosModal = () => {
-    setCursosModalVisible(false);
-    setCursoFormVisible(false);
-    setCursoEditing(null);
-    setCursoNombre('');
+    setAdminCursosModalVisible(false);
+    setRectorCursosModalVisible(false);
+    setAdminCursoFormVisible(false);
+    setAdminCursoEditing(null);
+    setAdminCursoNombre('');
+    setRectorCursoFormVisible(false);
+    setRectorCursoEditing(null);
+    setRectorCursoNombre('');
     setCursoCrudColegioId(null);
     setCursoCrudPickerOpen(false);
   };
@@ -891,9 +937,9 @@ export default function HomeScreen() {
     if (!Number.isFinite(parsedSchoolId) || parsedSchoolId <= 0) return;
     setCursoCrudColegioId(parsedSchoolId);
     setCursoCrudPickerOpen(false);
-    setCursoFormVisible(false);
-    setCursoEditing(null);
-    setCursoNombre('');
+    setAdminCursoFormVisible(false);
+    setAdminCursoEditing(null);
+    setAdminCursoNombre('');
     setLoadingCursos(true);
     try {
       await loadCursosAsignados(parsedSchoolId);
@@ -2121,19 +2167,30 @@ export default function HomeScreen() {
     setColegiosOptions([]);
   };
 
-  const openCursoForm = (curso = null) => {
+  const openAdminCursoForm = (curso = null) => {
     if (curso) {
-      setCursoEditing(curso);
-      setCursoNombre(curso.nombre || '');
+      setAdminCursoEditing(curso);
+      setAdminCursoNombre(curso.nombre || '');
     } else {
-      setCursoEditing(null);
-      setCursoNombre('');
+      setAdminCursoEditing(null);
+      setAdminCursoNombre('');
     }
-    setCursoFormVisible(true);
+    setAdminCursoFormVisible(true);
   };
 
-  const handleSaveCurso = async () => {
-    const nombre = cursoNombre.trim();
+  const openRectorCursoForm = (curso = null) => {
+    if (curso) {
+      setRectorCursoEditing(curso);
+      setRectorCursoNombre(curso.nombre || '');
+    } else {
+      setRectorCursoEditing(null);
+      setRectorCursoNombre('');
+    }
+    setRectorCursoFormVisible(true);
+  };
+
+  const handleSaveAdminCurso = async () => {
+    const nombre = adminCursoNombre.trim();
     if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el curso');
     const schoolId = Number(cursoCrudColegioId || user?.schoolId);
     if (!Number.isFinite(schoolId) || schoolId <= 0) {
@@ -2142,15 +2199,42 @@ export default function HomeScreen() {
     setSavingCurso(true);
     setLoadingCursos(true);
     try {
-      if (cursoEditing) {
-        await updateCurso(cursoEditing.id, { nombre, schoolId });
+      if (adminCursoEditing) {
+        await updateCurso(adminCursoEditing.id, { nombre, schoolId });
       } else {
         await createCurso({ nombre, schoolId });
       }
       await loadCursosAsignados(schoolId);
-      setCursoFormVisible(false);
-      setCursoEditing(null);
-      setCursoNombre('');
+      setAdminCursoFormVisible(false);
+      setAdminCursoEditing(null);
+      setAdminCursoNombre('');
+    } catch (e) {
+      Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el curso');
+    } finally {
+      setSavingCurso(false);
+      setLoadingCursos(false);
+    }
+  };
+
+  const handleSaveRectorCurso = async () => {
+    const nombre = rectorCursoNombre.trim();
+    if (!nombre) return Alert.alert('Nombre requerido', 'Ingresa un nombre para el curso');
+    const schoolId = Number(user?.schoolId || cursoCrudColegioId);
+    if (!Number.isFinite(schoolId) || schoolId <= 0) {
+      return Alert.alert('Colegio requerido', 'No se encontro colegio para este usuario');
+    }
+    setSavingCurso(true);
+    setLoadingCursos(true);
+    try {
+      if (rectorCursoEditing) {
+        await updateCurso(rectorCursoEditing.id, { nombre, schoolId });
+      } else {
+        await createCurso({ nombre, schoolId });
+      }
+      await loadCursosAsignados(schoolId);
+      setRectorCursoFormVisible(false);
+      setRectorCursoEditing(null);
+      setRectorCursoNombre('');
     } catch (e) {
       Alert.alert('Error', e?.response?.data?.error || 'No se pudo guardar el curso');
     } finally {
@@ -2211,6 +2295,7 @@ export default function HomeScreen() {
   const mobileColegioControlBtnStyle = isMobileApp ? styles.colegioControlBtnMobile : null;
   const mobileColegioControlRowStyle = isMobileApp ? styles.colegioControlBtnRowMobile : null;
   const mobileColegioControlTextStyle = isMobileApp ? styles.colegioControlBtnTextMobile : null;
+  const isForcedPasswordChange = Boolean(user?.mustChangePassword);
   const showMobileGridLogout = isMobileApp && !isRectorCoordinador && !isDocente && !isAdmin;
   const docenteMateriasAsignadasTotal = docentePerfilCursos.reduce(
     (total, curso) => total + (Array.isArray(curso?.materias) ? curso.materias.length : 0),
@@ -2259,9 +2344,9 @@ export default function HomeScreen() {
       setChangePasswordModalVisible(true);
       return;
     }
-    setChangePasswordModalVisible(false);
-    clearChangePasswordForm();
-  }, [user?.mustChangePassword]);
+    setChangePasswordModalVisible(Boolean(manualChangePasswordModalVisible));
+    if (!manualChangePasswordModalVisible) clearChangePasswordForm();
+  }, [user?.mustChangePassword, manualChangePasswordModalVisible]);
 
   useEffect(() => {
     let unsubscribe = null;
@@ -2442,12 +2527,20 @@ export default function HomeScreen() {
                     <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Panel docente</Text>
                   </View>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#0ea5a4' }]} onPress={openManualChangePasswordModal}>
                   <View style={[styles.btnRow, mobileBtnRowStyle, mobileDocenteRowStyle]}>
-                    <Ionicons name="log-out-outline" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Cerrar sesion</Text>
+                    <Ionicons name="key-outline" size={18} color="#fff" />
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Cambiar contrasena</Text>
                   </View>
                 </TouchableOpacity>
+                <View style={styles.docenteGridLogoutRow}>
+                  <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn, styles.docenteGridLogoutCentered]} onPress={logout} activeOpacity={0.85}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileDocenteRowStyle]}>
+                      <Ionicons name="log-out-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Cerrar sesion</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               </>
             ) : (
               <>
@@ -2459,8 +2552,11 @@ export default function HomeScreen() {
                     </View>
                   </TouchableOpacity>
                 ) : null}
-                {canManageCourses ? (
-                  <TouchableOpacity style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#38bdf8' }]} onPress={openCursosModal}>
+                {canManageCourses && !isAdmin ? (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#38bdf8' }]}
+                    onPress={isAdmin ? openAdminCursosModal : openRectorCursosModal}
+                  >
                     <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="book-outline" size={18} color="#fff" />
                       <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>{isRectorCoordinador ? 'Crear cursos' : 'Crear cursos'}</Text>
@@ -2540,14 +2636,6 @@ export default function HomeScreen() {
                         <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Periodos activos</Text>
                       </View>
                     </TouchableOpacity>
-                    {isAdmin ? (
-                      <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
-                        <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                          <Ionicons name="log-out-outline" size={18} color="#fff" />
-                          <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
-                        </View>
-                      </TouchableOpacity>
-                    ) : null}
                   </>
                 ) : null}
               </>
@@ -2567,6 +2655,17 @@ export default function HomeScreen() {
               </View>
             ) : null}
           </View>
+
+          {isAdmin ? (
+            <View style={styles.adminGridLogoutRow}>
+              <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn, styles.adminGridLogoutCentered]} onPress={logout} activeOpacity={0.85}>
+                <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                  <Ionicons name="log-out-outline" size={18} color="#fff" />
+                  <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          ) : null}
 
           {!isAdmin && !isDocente && !isRectorCoordinador && !showMobileGridLogout ? (
             <TouchableOpacity style={[styles.logoutBtn, isDocente && styles.docenteFooterLogoutCentered]} onPress={logout} activeOpacity={0.85}>
@@ -3058,7 +3157,7 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="slide"
-        visible={cursosModalVisible}
+        visible={adminCursosModalVisible}
         onRequestClose={closeCursosModal}
       >
         <View style={styles.modalBackdrop}>
@@ -3069,67 +3168,63 @@ export default function HomeScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalHeader}>
-                <Text style={styles.periodTitle}>Cursos</Text>
+                <Text style={styles.periodTitle}>Cursos (Administrador)</Text>
                 <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
                   <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
                 </Pressable>
               </View>
 
-              {canManageCourses ? (
-                <View style={styles.courseActionsRow}>
-                  <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openCursoForm()}>
-                    <View style={styles.btnRow}>
-                      <Ionicons name="add-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>Nuevo</Text>
-                    </View>
-                  </TouchableOpacity>
-                  {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
-                </View>
-              ) : null}
+              <View style={styles.courseActionsRow}>
+                <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openAdminCursoForm()}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>Nuevo</Text>
+                  </View>
+                </TouchableOpacity>
+                {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+              </View>
 
-              {canManageCourses ? (
-                <View style={{ marginBottom: 10 }}>
-                  <Text style={styles.fieldLabel}>Colegio</Text>
-                  <TouchableOpacity
-                    style={[styles.selectBoxFull, { marginTop: 6 }]}
-                    onPress={() => setCursoCrudPickerOpen(prev => !prev)}
-                    disabled={loadingCursos || colegiosLoading}
-                  >
-                    <Text style={styles.selectText}>{resolveColegioNombre(cursoCrudColegioId || user?.schoolId)}</Text>
-                  </TouchableOpacity>
-                  {cursoCrudPickerOpen && colegiosOptions.length > 0 ? (
-                    <View style={styles.pickerList}>
-                      {colegiosOptions.map(c => (
-                        <TouchableOpacity
-                          key={c.id}
-                          style={[styles.pickerItem, String(cursoCrudColegioId) === String(c.id) && styles.pickerItemActive]}
-                          onPress={async () => {
-                            await changeCursoCrudColegio(c.id);
-                          }}
-                        >
-                          <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
-                </View>
-              ) : null}
+              <View style={{ marginBottom: 10 }}>
+                <Text style={styles.fieldLabel}>Colegio</Text>
+                <TouchableOpacity
+                  style={[styles.selectBoxFull, { marginTop: 6 }]}
+                  onPress={() => setCursoCrudPickerOpen(prev => !prev)}
+                  disabled={loadingCursos || colegiosLoading}
+                >
+                  <Text style={styles.selectText}>{resolveColegioNombre(cursoCrudColegioId || user?.schoolId)}</Text>
+                </TouchableOpacity>
+                {cursoCrudPickerOpen && colegiosOptions.length > 0 ? (
+                  <View style={styles.pickerList}>
+                    {colegiosOptions.map(c => (
+                      <TouchableOpacity
+                        key={c.id}
+                        style={[styles.pickerItem, String(cursoCrudColegioId) === String(c.id) && styles.pickerItemActive]}
+                        onPress={async () => {
+                          await changeCursoCrudColegio(c.id);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
 
-              {canManageCourses && cursoFormVisible ? (
-                <View style={styles.courseForm}>
-                  <Text style={styles.fieldLabel}>{cursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
+              {adminCursoFormVisible ? (
+                <View style={styles.adminCourseForm}>
+                  <Text style={styles.fieldLabel}>{adminCursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
                   <TextInput
-                    style={styles.courseInput}
+                    style={styles.adminCourseInput}
                     placeholder="Nombre del curso"
                     placeholderTextColor="#9ca3af"
-                    value={cursoNombre}
+                    value={adminCursoNombre}
                     editable={!savingCurso}
-                    onChangeText={setCursoNombre}
+                    onChangeText={setAdminCursoNombre}
                   />
-                  <View style={styles.courseFormActions}>
+                  <View style={styles.adminCourseFormActions}>
                     <TouchableOpacity
                       style={[styles.smallBtn, styles.outlineBtn, savingCurso && { opacity: 0.6 }]}
-                      onPress={() => { if (!savingCurso) { setCursoFormVisible(false); setCursoEditing(null); setCursoNombre(''); } }}
+                      onPress={() => { if (!savingCurso) { setAdminCursoFormVisible(false); setAdminCursoEditing(null); setAdminCursoNombre(''); } }}
                       disabled={savingCurso}
                     >
                       <View style={styles.btnRow}>
@@ -3139,7 +3234,7 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
-                      onPress={handleSaveCurso}
+                      onPress={handleSaveAdminCurso}
                       disabled={savingCurso}
                     >
                       <View style={styles.btnRow}>
@@ -3159,27 +3254,127 @@ export default function HomeScreen() {
                   <Text style={styles.dataBullet}>- No hay cursos</Text>
                 ) : (
                   sortCursosForDisplay(cursosAsignados).map((c) => (
-                    <View key={c.id} style={[styles.courseRow, styles.courseCardRow]}>
-                      <View style={styles.courseRowContent}>
-                        <Text style={styles.courseRowTitle}>{c.nombre}</Text>
+                    <View key={c.id} style={[styles.adminCourseRow, styles.adminCourseCardRow]}>
+                      <View style={styles.adminCourseRowContent}>
+                        <Text style={styles.adminCourseRowTitle}>{c.nombre}</Text>
                         {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
                       </View>
-                      {canManageCourses ? (
-                        <View style={styles.courseRowActions}>
-                          <TouchableOpacity style={[styles.smallBtn, styles.courseActionBtn, styles.updateBtn]} onPress={() => openCursoForm(c)}>
-                            <View style={styles.btnRow}>
-                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Editar</Text>
-                            </View>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={[styles.smallBtn, styles.courseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
-                            <View style={styles.btnRow}>
-                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Eliminar</Text>
-                            </View>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
+                      <View style={styles.adminCourseRowActions}>
+                        <TouchableOpacity style={[styles.smallBtn, styles.adminCourseActionBtn, styles.updateBtn]} onPress={() => openAdminCursoForm(c)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Editar</Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.smallBtn, styles.adminCourseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Eliminar</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={rectorCursosModalVisible}
+        onRequestClose={closeCursosModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.cursoModalCard]}>
+            <ScrollView
+              contentContainerStyle={[styles.modalContent, styles.cursoModalContent]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.periodTitle}>Cursos (Rector / Coordinador)</Text>
+                <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                </Pressable>
+              </View>
+
+              <View style={styles.courseActionsRow}>
+                <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openRectorCursoForm()}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                    <Text style={styles.smallBtnText}>Nuevo</Text>
+                  </View>
+                </TouchableOpacity>
+                {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+              </View>
+
+              {rectorCursoFormVisible ? (
+                <View style={styles.rectorCourseForm}>
+                  <Text style={styles.fieldLabel}>{rectorCursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
+                  <TextInput
+                    style={styles.rectorCourseInput}
+                    placeholder="Nombre del curso"
+                    placeholderTextColor="#9ca3af"
+                    value={rectorCursoNombre}
+                    editable={!savingCurso}
+                    onChangeText={setRectorCursoNombre}
+                  />
+                  <View style={styles.rectorCourseFormActions}>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.outlineBtn, savingCurso && { opacity: 0.6 }]}
+                      onPress={() => { if (!savingCurso) { setRectorCursoFormVisible(false); setRectorCursoEditing(null); setRectorCursoNombre(''); } }}
+                      disabled={savingCurso}
+                    >
+                      <View style={styles.btnRow}>
+                        <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                        <Text style={styles.smallBtnText}>Cancelar</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
+                      onPress={handleSaveRectorCurso}
+                      disabled={savingCurso}
+                    >
+                      <View style={styles.btnRow}>
+                        <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+                        <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
+
+              <View style={styles.dataBox}>
+                <Text style={styles.dataTitle}>Lista</Text>
+                {loadingCursos ? (
+                  <Text style={styles.dataBullet}>Cargando cursos...</Text>
+                ) : cursosAsignados.length === 0 ? (
+                  <Text style={styles.dataBullet}>- No hay cursos</Text>
+                ) : (
+                  sortCursosForDisplay(cursosAsignados).map((c) => (
+                    <View key={c.id} style={[styles.rectorCourseRow, styles.rectorCourseCardRow]}>
+                      <View style={styles.rectorCourseRowContent}>
+                        <Text style={styles.rectorCourseRowTitle}>{c.nombre}</Text>
+                        {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
+                      </View>
+                      <View style={styles.rectorCourseRowActions}>
+                        <TouchableOpacity style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.updateBtn]} onPress={() => openRectorCursoForm(c)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Editar</Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Eliminar</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   ))
                 )}
@@ -5039,15 +5234,24 @@ export default function HomeScreen() {
         transparent
         animationType="fade"
         visible={changePasswordModalVisible}
-        onRequestClose={() => {}}
+        onRequestClose={closeManualChangePasswordModal}
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.changePasswordModalCard]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Cambio obligatorio de clave</Text>
+              <Text style={styles.periodTitle}>{isForcedPasswordChange ? 'Cambio obligatorio de clave' : 'Cambiar contrasena'}</Text>
+              {!isForcedPasswordChange ? (
+                <Pressable onPress={closeManualChangePasswordModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                </Pressable>
+              ) : null}
             </View>
             <View style={styles.modalContent}>
-              <Text style={styles.dataBullet}>Debes cambiar tu clave temporal para continuar.</Text>
+              <Text style={styles.dataBullet}>
+                {isForcedPasswordChange
+                  ? 'Debes cambiar tu clave temporal para continuar.'
+                  : 'Usa una clave segura: minimo 8 caracteres, mayuscula, minuscula, numero y caracter especial.'}
+              </Text>
 
               <View style={styles.passwordInputWrap}>
                 <TextInput
@@ -5100,12 +5304,21 @@ export default function HomeScreen() {
               {changePasswordError ? <Text style={styles.errorText}>{changePasswordError}</Text> : null}
 
               <View style={styles.courseFormActions}>
-                <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn, changingPassword && { opacity: 0.6 }]} onPress={logout} disabled={changingPassword}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="log-out-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>Cerrar sesion</Text>
-                  </View>
-                </TouchableOpacity>
+                {isForcedPasswordChange ? (
+                  <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn, changingPassword && { opacity: 0.6 }]} onPress={logout} disabled={changingPassword}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="log-out-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Cerrar sesion</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={[styles.smallBtn, styles.outlineBtn, changingPassword && { opacity: 0.6 }]} onPress={closeManualChangePasswordModal} disabled={changingPassword}>
+                    <View style={styles.btnRow}>
+                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Cancelar</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity style={[styles.smallBtn, styles.createBtn, changingPassword && { opacity: 0.6 }]} onPress={handleSubmitForcedPasswordChange} disabled={changingPassword}>
                   <View style={styles.btnRow}>
                     <Ionicons name="save-outline" size={14} color="#e5e7eb" />
@@ -5920,6 +6133,10 @@ const styles = StyleSheet.create({
   courseActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   courseForm: { marginBottom: 10, gap: 8 },
   courseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+  adminCourseForm: { marginBottom: 10, gap: 8 },
+  adminCourseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
+  rectorCourseForm: { marginBottom: 10, gap: 8 },
+  rectorCourseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
   estudianteMateriaSelectorBox: {
     padding: 12,
     borderRadius: 12,
@@ -5955,6 +6172,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   courseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
+  adminCourseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
+  rectorCourseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
   infoBtn: { backgroundColor: 'rgba(59,130,246,0.18)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.45)' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
@@ -6037,6 +6256,18 @@ const styles = StyleSheet.create({
   courseRowActive: { backgroundColor: 'rgba(56,189,248,0.08)', borderRadius: 10, paddingHorizontal: 8 },
   courseRowActions: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignSelf: 'center' },
   courseActionBtn: { paddingHorizontal: 8, paddingVertical: 7 },
+  adminCourseRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  adminCourseCardRow: { paddingHorizontal: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.38)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.14)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.14)', marginBottom: 6 },
+  adminCourseRowContent: { flex: 1, minWidth: 0, gap: 2, paddingRight: 2 },
+  adminCourseRowTitle: { color: '#f8fafc', fontSize: 15, fontWeight: '800' },
+  adminCourseRowActions: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignSelf: 'center' },
+  adminCourseActionBtn: { paddingHorizontal: 8, paddingVertical: 7 },
+  rectorCourseRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  rectorCourseCardRow: { paddingHorizontal: 8, paddingVertical: 8, borderRadius: 12, backgroundColor: 'rgba(15,23,42,0.38)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.14)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.14)', marginBottom: 6 },
+  rectorCourseRowContent: { flex: 1, minWidth: 0, gap: 2, paddingRight: 2 },
+  rectorCourseRowTitle: { color: '#f8fafc', fontSize: 15, fontWeight: '800' },
+  rectorCourseRowActions: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignSelf: 'center' },
+  rectorCourseActionBtn: { paddingHorizontal: 8, paddingVertical: 7 },
   estudianteRowCard: {
     borderRadius: 14,
     paddingHorizontal: 12,
@@ -6087,7 +6318,10 @@ const styles = StyleSheet.create({
   linkBtn: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, borderColor: 'rgba(59,130,246,0.4)' },
   linkBtnText: { color: '#bfdbfe', fontWeight: '700', fontSize: 12 },
   logoutBtn: { width: '100%', alignSelf: 'stretch', marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
-  docenteGridLogoutCentered: { alignSelf: 'center' },
+  docenteGridLogoutRow: { width: '100%', alignItems: 'center' },
+  docenteGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
+  adminGridLogoutRow: { width: '100%', alignItems: 'center' },
+  adminGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   docenteFooterLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   logoutText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 }
 });

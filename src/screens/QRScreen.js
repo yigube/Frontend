@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { registrarAsistencia, syncAsistenciasPendientes, getAsistenciasPendientesCount } from '../services/asistencias';
 import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
@@ -35,6 +35,7 @@ const buildEstadoFlags = (estado) => ({
 
 export default function QRScreen({ navigation }) {
   const user = useAuth((state) => state.user);
+  const isFocused = useIsFocused();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [cursoId, setCursoId] = useState(null);
@@ -63,6 +64,12 @@ export default function QRScreen({ navigation }) {
   const [syncingPending, setSyncingPending] = useState(false);
   const scanLockRef = useRef(false);
   const savingLockRef = useRef(false);
+  const cameraActive = isFocused
+    && !estadoModalVisible
+    && !successModal.visible
+    && !errorModal.visible
+    && !duplicateModal.visible
+    && !infoModal.visible;
 
   const getMateriasDisponiblesByCurso = (cursoValue) => {
     const curso = (docentePerfilCursos || []).find((item) => String(item?.id) === String(cursoValue));
@@ -350,8 +357,9 @@ export default function QRScreen({ navigation }) {
     <View style={{ flex: 1 }}>
       <CameraView
         style={{ flex: 1 }}
+        active={cameraActive}
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        onBarcodeScanned={onBarcodeScanned}
+        onBarcodeScanned={cameraActive ? onBarcodeScanned : undefined}
       />
 
       <View style={styles.overlay}>

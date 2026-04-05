@@ -1,14 +1,51 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image, Modal, Pressable } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
+import { requestPasswordReset } from '../services/auth';
 
 export default function LoginScreen() {
   const { control, handleSubmit } = useForm({ defaultValues: { email: '', password: '' } });
   const login = useAuth(s => s.login);
   const loading = useAuth(s => s.loading);
   const [showPassword, setShowPassword] = useState(false);
+  const [resetModalVisible, setResetModalVisible] = useState(false);
+  const [sendingTemporaryPassword, setSendingTemporaryPassword] = useState(false);
+  const [resetForm, setResetForm] = useState({ email: '' });
+  const [resetError, setResetError] = useState('');
+
+  const openResetModal = () => {
+    setResetError('');
+    setResetForm({ email: '' });
+    setResetModalVisible(true);
+  };
+
+  const closeResetModal = () => {
+    if (sendingTemporaryPassword) return;
+    setResetModalVisible(false);
+  };
+
+  const handleSubmitResetPassword = async () => {
+    if (sendingTemporaryPassword) return;
+    const email = String(resetForm.email || '').trim().toLowerCase();
+
+    if (!email) {
+      setResetError('Ingresa un correo valido');
+      return;
+    }
+
+    setSendingTemporaryPassword(true);
+    try {
+      await requestPasswordReset(email);
+      setResetModalVisible(false);
+      Alert.alert('Clave temporal enviada', 'Revisa tu correo. Ingresa con la clave temporal y luego cambiala desde la app.');
+    } catch (e) {
+      setResetError(e?.response?.data?.error || e?.message || 'No se pudo enviar la clave temporal');
+    } finally {
+      setSendingTemporaryPassword(false);
+    }
+  };
 
   const onSubmit = async ({ email, password }) => {
     try {
@@ -74,7 +111,51 @@ export default function LoginScreen() {
             <Text style={styles.loginBtnText}>{loading ? 'Ingresando...' : 'Ingresar'}</Text>
           </View>
         </TouchableOpacity>
+        <Pressable style={styles.resetLinkWrap} onPress={openResetModal}>
+          <Text style={styles.resetLinkText}>Restablecer contrasena</Text>
+        </Pressable>
       </View>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={resetModalVisible}
+        onRequestClose={closeResetModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Restablecer contrasena</Text>
+              <Pressable onPress={closeResetModal} disabled={sendingTemporaryPassword}>
+                <Ionicons name="close-outline" size={20} color="#d1d5db" />
+              </Pressable>
+            </View>
+            <Text style={styles.modalHelp}>Ingresa tu correo y te enviaremos una clave temporal para entrar y cambiarla desde la aplicacion.</Text>
+
+            <TextInput
+              style={styles.modalInput}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholder="Correo"
+              placeholderTextColor="#94a3b8"
+              value={resetForm.email}
+              onChangeText={(txt) => setResetForm((prev) => ({ ...prev, email: txt }))}
+              editable={!sendingTemporaryPassword}
+            />
+
+            {resetError ? <Text style={styles.resetError}>{resetError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.secondaryBtn, sendingTemporaryPassword && { opacity: 0.6 }]} onPress={closeResetModal} disabled={sendingTemporaryPassword}>
+                <Text style={styles.secondaryBtnText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.primaryBtn, sendingTemporaryPassword && { opacity: 0.6 }]} onPress={handleSubmitResetPassword} disabled={sendingTemporaryPassword}>
+                <Text style={styles.primaryBtnText}>{sendingTemporaryPassword ? 'Enviando...' : 'Enviar clave temporal'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -91,5 +172,19 @@ const styles = StyleSheet.create({
   eyeBtn: { paddingHorizontal: 10, paddingVertical: 8 },
   loginBtn: { marginTop: 6, backgroundColor: '#2563eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   loginBtnText: { color: '#fff', fontWeight: '700' },
-  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 }
+  btnRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  resetLinkWrap: { marginTop: 8, alignItems: 'center' },
+  resetLinkText: { color: '#2563eb', fontWeight: '700', textDecorationLine: 'underline' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.7)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  modalCard: { width: '100%', maxWidth: 480, borderRadius: 14, padding: 16, backgroundColor: '#0f172a', borderWidth: 1, borderColor: 'rgba(148,163,184,0.25)', gap: 10 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  modalTitle: { color: '#f8fafc', fontSize: 19, fontWeight: '800' },
+  modalHelp: { color: '#cbd5e1', fontSize: 12.5, lineHeight: 18 },
+  modalInput: { borderWidth: 1, borderColor: 'rgba(148,163,184,0.4)', borderRadius: 10, padding: 10, color: '#f8fafc', backgroundColor: 'rgba(15,23,42,0.5)' },
+  resetError: { color: '#fecaca', fontWeight: '700', fontSize: 12.5, marginTop: 2 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+  secondaryBtn: { borderWidth: 1, borderColor: 'rgba(148,163,184,0.45)', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 },
+  secondaryBtnText: { color: '#e2e8f0', fontWeight: '700' },
+  primaryBtn: { backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, borderWidth: 1, borderColor: '#22c55e' },
+  primaryBtnText: { color: '#f0fdf4', fontWeight: '800' }
 });

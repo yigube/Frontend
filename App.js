@@ -19,6 +19,21 @@ if (typeof window !== 'undefined' && !globalThis.__pointerEventsWarnFiltered) {
   globalThis.__pointerEventsWarnFiltered = true;
 }
 
+if (!globalThis.__keepAwakeErrorFiltered) {
+  const originalError = console.error;
+  console.error = (...args) => {
+    const first = args[0];
+    if (
+      typeof first === 'string'
+      && first.includes('Unable to activate keep awake')
+    ) {
+      return;
+    }
+    originalError(...args);
+  };
+  globalThis.__keepAwakeErrorFiltered = true;
+}
+
 export default function App() {
   const restore = useAuth(s => s.restore);
   useEffect(() => { restore(); }, []);

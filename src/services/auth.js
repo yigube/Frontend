@@ -15,3 +15,8 @@ export async function changeMyPassword(currentPassword, newPassword) {
   const { data } = await api.post('/auth/change-password', { currentPassword, newPassword });
   return data;
 }
+
+export async function requestPasswordReset(email) {
+  const { data } = await api.post('/auth/reset-password', { email });
+  return data;
+}
