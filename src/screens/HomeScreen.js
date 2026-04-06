@@ -113,6 +113,8 @@ export default function HomeScreen() {
   const [colegiosModalVisible, setColegiosModalVisible] = useState(false);
   const [colegiosListModalVisible, setColegiosListModalVisible] = useState(false);
   const [colegiosList, setColegiosList] = useState([]);
+  const [colegiosListView, setColegiosListView] = useState('colegios');
+  const [rectoresSearchTerm, setRectoresSearchTerm] = useState('');
   const [colegioNombre, setColegioNombre] = useState('');
   const [colegioCodigoDane, setColegioCodigoDane] = useState('');
   const [rectorNombre, setRectorNombre] = useState('');
@@ -235,18 +237,19 @@ export default function HomeScreen() {
     return e?.message || fallback;
   };
   const normalizeColegioItem = (colegio = {}) => {
-    const rectorSource = colegio?.rector || {};
+    const safeColegio = colegio && typeof colegio === 'object' ? colegio : {};
+    const rectorSource = safeColegio?.rector || {};
     const rector = {
-      cargo: colegio?.rectorCargo || rectorSource?.cargo || null,
-      nombre: colegio?.rectorNombre || colegio?.rector_nombre || rectorSource?.nombre || null,
-      apellido: colegio?.rectorApellido || colegio?.rector_apellido || rectorSource?.apellido || null,
-      correo: colegio?.rectorCorreo || colegio?.rector_correo || rectorSource?.correo || null,
-      telefono: colegio?.rectorTelefono || colegio?.rector_telefono || rectorSource?.telefono || null,
-      cedula: colegio?.rectorCedula || colegio?.rector_cedula || rectorSource?.cedula || null
+      cargo: safeColegio?.rectorCargo || rectorSource?.cargo || null,
+      nombre: safeColegio?.rectorNombre || safeColegio?.rector_nombre || rectorSource?.nombre || null,
+      apellido: safeColegio?.rectorApellido || safeColegio?.rector_apellido || rectorSource?.apellido || null,
+      correo: safeColegio?.rectorCorreo || safeColegio?.rector_correo || rectorSource?.correo || null,
+      telefono: safeColegio?.rectorTelefono || safeColegio?.rector_telefono || rectorSource?.telefono || null,
+      cedula: safeColegio?.rectorCedula || safeColegio?.rector_cedula || rectorSource?.cedula || null
     };
     return {
-      ...colegio,
-      codigoDane: colegio?.codigoDane || colegio?.codigo_dane || '',
+      ...safeColegio,
+      codigoDane: safeColegio?.codigoDane || safeColegio?.codigo_dane || '',
       rector,
       rectorCargo: rector.cargo || 'rector',
       rectorNombre: rector.nombre || '',
@@ -254,7 +257,7 @@ export default function HomeScreen() {
       rectorCorreo: rector.correo || '',
       rectorTelefono: rector.telefono || '',
       rectorCedula: rector.cedula || '',
-      rectorTienePassword: Boolean(colegio?.rectorTienePassword)
+      rectorTienePassword: Boolean(safeColegio?.rectorTienePassword)
     };
   };
   const normalizeSearchText = (value = '') => String(value || '')
@@ -262,6 +265,16 @@ export default function HomeScreen() {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+  const hasDirectivoData = (colegio = {}) => Boolean(
+    colegio?.rectorCargo
+    || colegio?.rector?.cargo
+    || colegio?.rectorNombre
+    || colegio?.rectorApellido
+    || colegio?.rectorCorreo
+    || colegio?.rectorTelefono
+    || colegio?.rectorCedula
+    || colegio?.rectorTienePassword
+  );
 
   const clearPeriodStatusTimeout = () => {
     if (!periodStatusTimeoutRef.current) return;
@@ -1510,11 +1523,21 @@ export default function HomeScreen() {
 
   const openColegiosListModal = async () => {
     await loadColegios();
+    setColegiosListView('colegios');
+    setRectoresSearchTerm('');
+    setColegiosListModalVisible(true);
+  };
+
+  const openRectoresListModal = async () => {
+    await loadColegios();
+    setColegiosListView('rectores');
+    setRectoresSearchTerm('');
     setColegiosListModalVisible(true);
   };
 
   const closeColegiosListModal = () => {
     setColegiosListModalVisible(false);
+    setRectoresSearchTerm('');
   };
 
   const askDeleteColegio = (colegio) => {
@@ -2381,6 +2404,32 @@ export default function HomeScreen() {
       return blob.includes(adminDocentesSearchNormalized);
     })
     : docentes;
+  const rectoresSearchNormalized = normalizeSearchText(rectoresSearchTerm);
+  const rectoresRegistrados = (colegiosList || [])
+    .map((item) => normalizeColegioItem(item))
+    .filter((colegio) => hasDirectivoData(colegio))
+    .map((colegio) => {
+      const cargoValue = (colegio?.rectorCargo || 'rector').toLowerCase();
+      const cargoLabel = cargoValue === 'coordinador' ? 'Coordinador' : 'Rector';
+      const nombreCompleto = [colegio?.rectorNombre, colegio?.rectorApellido].filter(Boolean).join(' ').trim();
+      return {
+        id: colegio.id,
+        cargoLabel,
+        nombreCompleto,
+        colegioNombre: colegio?.nombre || `Colegio ${colegio?.id}`,
+        correo: colegio?.rectorCorreo || '',
+        telefono: colegio?.rectorTelefono || '',
+        cedula: colegio?.rectorCedula || ''
+      };
+    });
+  const rectoresFiltrados = rectoresSearchNormalized
+    ? rectoresRegistrados.filter((rector) => {
+      const blob = normalizeSearchText(
+        `${rector?.nombreCompleto || ''} ${rector?.colegioNombre || ''} ${rector?.correo || ''} ${rector?.telefono || ''} ${rector?.cedula || ''} ${rector?.cargoLabel || ''}`
+      );
+      return blob.includes(rectoresSearchNormalized);
+    })
+    : rectoresRegistrados;
   const realtimeContextRef = useRef({
     estudiantesModalVisible: false,
     cursoSeleccionado: null,
@@ -2655,11 +2704,27 @@ export default function HomeScreen() {
                     </View>
                   </TouchableOpacity>
                 ) : null}
+                {isAdmin ? (
+                  <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#10b981' }]} onPress={openRectoresListModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                      <Ionicons name="people-circle-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Ver rectores</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
                 {isRectorCoordinador && canManagePeriods ? (
                   <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#7c3aed' }]} onPress={openPeriodManagerModal}>
                     <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="calendar-outline" size={18} color="#fff" />
                       <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Periodos activos</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {isRectorCoordinador ? (
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                      <Ionicons name="log-out-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
@@ -2688,6 +2753,14 @@ export default function HomeScreen() {
                         <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Periodos activos</Text>
                       </View>
                     </TouchableOpacity>
+                    {isAdmin ? (
+                      <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn]} onPress={logout} activeOpacity={0.85}>
+                        <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                          <Ionicons name="log-out-outline" size={18} color="#fff" />
+                          <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : null}
                   </>
                 ) : null}
               </>
@@ -2707,28 +2780,6 @@ export default function HomeScreen() {
               </View>
             ) : null}
           </View>
-
-          {isRectorCoordinador ? (
-            <View style={styles.rectorGridLogoutRow}>
-              <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn, styles.rectorGridLogoutCentered]} onPress={logout} activeOpacity={0.85}>
-                <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                  <Ionicons name="log-out-outline" size={18} color="#fff" />
-                  <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {isAdmin ? (
-            <View style={styles.adminGridLogoutRow}>
-              <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn, styles.adminGridLogoutCentered]} onPress={logout} activeOpacity={0.85}>
-                <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                  <Ionicons name="log-out-outline" size={18} color="#fff" />
-                  <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          ) : null}
 
           {!isAdmin && !isDocente && !isRectorCoordinador && !showMobileGridLogout ? (
             <TouchableOpacity style={[styles.logoutBtn, isDocente && styles.docenteFooterLogoutCentered]} onPress={logout} activeOpacity={0.85}>
@@ -3619,6 +3670,18 @@ export default function HomeScreen() {
                     </View>
                   </TouchableOpacity>
                   <TouchableOpacity
+                    style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioRectoresBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
+                    onPress={openRectoresListModal}
+                    disabled={savingColegio}
+                  >
+                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                      <Ionicons name="people-circle-outline" size={14} color="#e5e7eb" />
+                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Mostrar rectores</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
+                  <TouchableOpacity
                     style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioSaveBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
                     onPress={handleSaveColegio}
                     disabled={savingColegio}
@@ -3701,7 +3764,7 @@ export default function HomeScreen() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.colegioListModalCard]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Colegios en el sistema</Text>
+              <Text style={styles.periodTitle}>{colegiosListView === 'rectores' ? 'Rectores en el sistema' : 'Colegios en el sistema'}</Text>
               <Pressable onPress={closeColegiosListModal} style={styles.closeBtn}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
@@ -3710,26 +3773,62 @@ export default function HomeScreen() {
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
               <View style={[styles.dataBox, styles.colegiosRegisteredBox]}>
                 <View style={styles.colegiosRegisteredHeader}>
-                  <Text style={styles.dataTitle}>Colegios registrados</Text>
+                  <Text style={styles.dataTitle}>{colegiosListView === 'rectores' ? 'Directivos registrados' : 'Colegios registrados'}</Text>
                   {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                 </View>
-                {colegiosList.length === 0 && !colegiosLoading ? (
+                {colegiosListView === 'rectores' ? (
+                  <View style={styles.rectoresListWrap}>
+                    <View style={styles.docentesSearchBox}>
+                      <Text style={styles.fieldLabel}>Filtrar rectores</Text>
+                      <View style={styles.docentesSearchInputWrap}>
+                        <Ionicons name="search-outline" size={16} color="#94a3b8" />
+                        <TextInput
+                          style={styles.docentesSearchInput}
+                          placeholder="Nombre, colegio, correo, telefono o cedula"
+                          placeholderTextColor="#94a3b8"
+                          value={rectoresSearchTerm}
+                          onChangeText={setRectoresSearchTerm}
+                        />
+                        {rectoresSearchTerm ? (
+                          <Pressable
+                            onPress={() => setRectoresSearchTerm('')}
+                            style={styles.docentesSearchClearBtn}
+                          >
+                            <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    </View>
+                    {rectoresRegistrados.length === 0 && !colegiosLoading ? (
+                      <Text style={styles.dataBullet}>No hay rectores registrados.</Text>
+                    ) : rectoresFiltrados.length === 0 ? (
+                      <Text style={styles.dataBullet}>No hay rectores que coincidan con el filtro.</Text>
+                    ) : (
+                      rectoresFiltrados.map((rector) => (
+                        <View key={`rector-list-${rector.id}`} style={styles.rectorRegisteredCard}>
+                          <View style={styles.rectorRegisteredTop}>
+                            <Text style={styles.rectorRegisteredName}>{rector.nombreCompleto || 'Sin nombre registrado'}</Text>
+                            <View style={styles.colegioRegisteredMetaChip}>
+                              <Ionicons name="person-outline" size={12} color="#bbf7d0" />
+                              <Text style={[styles.colegioRegisteredMetaChipText, styles.colegioRegisteredRoleChipText]}>{rector.cargoLabel}</Text>
+                            </View>
+                          </View>
+                          <Text style={styles.rectorRegisteredMeta}>Colegio: {rector.colegioNombre}</Text>
+                          <Text style={styles.rectorRegisteredMeta}>Correo: {rector.correo || 'No registrado'}</Text>
+                          <Text style={styles.rectorRegisteredMeta}>Telefono: {rector.telefono || 'No registrado'}</Text>
+                          <Text style={styles.rectorRegisteredMeta}>Cedula: {rector.cedula || 'No registrada'}</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                ) : colegiosList.length === 0 && !colegiosLoading ? (
                   <Text style={styles.dataBullet}>- Aun no hay colegios registrados</Text>
                 ) : (
                   colegiosList.map((c) => {
                     const colegio = normalizeColegioItem(c);
                     const cargoValue = (colegio?.rectorCargo || 'rector').toLowerCase();
                     const cargoLabel = cargoValue === 'coordinador' ? 'Coordinador' : 'Rector';
-                    const hasRectorData = Boolean(
-                      colegio?.rectorCargo
-                      || colegio?.rector?.cargo
-                      || colegio?.rectorNombre
-                      || colegio?.rectorApellido
-                      || colegio?.rectorCorreo
-                      || colegio?.rectorTelefono
-                      || colegio?.rectorCedula
-                      || colegio?.rectorTienePassword
-                    );
+                    const hasRectorData = hasDirectivoData(colegio);
                     return (
                       <View
                         key={colegio.id}
@@ -6154,6 +6253,34 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: '600'
   },
+  rectoresListWrap: {
+    gap: 10
+  },
+  rectorRegisteredCard: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30,41,59,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.22)',
+    gap: 4
+  },
+  rectorRegisteredTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8
+  },
+  rectorRegisteredName: {
+    color: '#f8fafc',
+    fontSize: 14.5,
+    fontWeight: '800',
+    flex: 1
+  },
+  rectorRegisteredMeta: {
+    color: '#cbd5e1',
+    fontSize: 12
+  },
   docenteInlineCard: {
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -6278,6 +6405,16 @@ const styles = StyleSheet.create({
   },
   colegioRoleBtnText: {
     color: '#f8fafc'
+  },
+  colegioRectoresBtn: {
+    backgroundColor: 'rgba(6,78,59,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.55)',
+    shadowColor: '#10b981',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
   },
   colegioListBtn: {
     backgroundColor: 'rgba(8,47,73,0.96)',
