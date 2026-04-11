@@ -15,6 +15,7 @@
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.9.26",
     "axios": "^1.7.7",
+    "exceljs": "^4.4.0",
     "expo": "^54.0.0",
     "expo-asset": "~12.0.11",
     "expo-camera": "~17.0.10",

@@ -67,6 +67,7 @@ export default function HomeScreen() {
   const [estudiantesLoading, setEstudiantesLoading] = useState(false);
   const [estudiantesError, setEstudiantesError] = useState('');
   const [downloadingQrZip, setDownloadingQrZip] = useState(false);
+  const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [deleteEstudianteConfirmModal, setDeleteEstudianteConfirmModal] = useState({ visible: false, estudiante: null, deleting: false });
   const [estudianteDeleteSuccessModal, setEstudianteDeleteSuccessModal] = useState({ visible: false, message: '' });
   const [estudiantesExistentesModal, setEstudiantesExistentesModal] = useState({ visible: false, students: [], created: 0 });
@@ -80,7 +81,7 @@ export default function HomeScreen() {
   const [estudianteCreateModalVisible, setEstudianteCreateModalVisible] = useState(false);
   const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
   const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
-  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '' });
+  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', codigoEstudiante: '' });
   const [estudianteCreateMaterias, setEstudianteCreateMaterias] = useState([]);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [uploadedStudents, setUploadedStudents] = useState([]);
@@ -284,6 +285,7 @@ export default function HomeScreen() {
     const apellidos = parts.slice(-1).join(' ');
     return `${normalizeSearchText(nombres).replace(/\s+/g, ' ')}|${normalizeSearchText(apellidos).replace(/\s+/g, ' ')}`;
   };
+  const normalizeStudentCodeKey = (student = {}) => normalizeSearchText(student?.codigoEstudiante || '');
   const hasDirectivoData = (colegio = {}) => Boolean(
     colegio?.rectorCargo
     || colegio?.rector?.cargo
@@ -1263,6 +1265,104 @@ export default function HomeScreen() {
     }
   };
 
+  const downloadExcelTemplate = async () => {
+    if (downloadingTemplate) return;
+    setDownloadingTemplate(true);
+    try {
+      const ExcelJSModule = await import('exceljs');
+      const ExcelJS = ExcelJSModule?.default || ExcelJSModule;
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Plantilla');
+      worksheet.columns = [
+        { header: 'codigo', key: 'codigo', width: 20 },
+        { header: 'nombre', key: 'nombre', width: 28 },
+        { header: 'apellidos', key: 'apellidos', width: 28 }
+      ];
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getCell('A1').protection = { locked: true };
+      worksheet.getCell('B1').protection = { locked: true };
+      worksheet.getCell('C1').protection = { locked: true };
+      worksheet.getColumn(1).style = { protection: { locked: false } };
+      worksheet.getColumn(2).style = { protection: { locked: false } };
+      worksheet.getColumn(3).style = { protection: { locked: false } };
+      worksheet.getCell('A1').protection = { locked: true };
+      worksheet.getCell('B1').protection = { locked: true };
+      worksheet.getCell('C1').protection = { locked: true };
+      await worksheet.protect('plantilla_edusac', {
+        selectLockedCells: false,
+        selectUnlockedCells: true,
+        formatCells: false,
+        formatColumns: false,
+        formatRows: false,
+        insertColumns: false,
+        insertRows: false,
+        insertHyperlinks: false,
+        deleteColumns: false,
+        deleteRows: false,
+        sort: false,
+        autoFilter: false,
+        pivotTables: false
+      });
+      const fileName = `plantilla_estudiantes_${new Date().toISOString().slice(0, 10)}.xlsx`;
+
+      if (Platform.OS === 'web') {
+        const xlsxArrayBuffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([xlsxArrayBuffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        });
+        const nav = typeof window !== 'undefined' ? window.navigator : null;
+        if (nav && typeof nav.msSaveOrOpenBlob === 'function') {
+          nav.msSaveOrOpenBlob(blob, fileName);
+        } else {
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = fileName;
+          anchor.style.display = 'none';
+          document.body.appendChild(anchor);
+          anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          document.body.removeChild(anchor);
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+        }
+        Alert.alert('Listo', 'Plantilla Excel descargada.');
+      } else {
+        const xlsxArrayBuffer = await workbook.xlsx.writeBuffer();
+        const bytes = new Uint8Array(xlsxArrayBuffer);
+        const chunkSize = 0x8000;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.subarray(i, i + chunkSize);
+          binary += String.fromCharCode(...chunk);
+        }
+        const xlsxBase64 = typeof btoa === 'function'
+          ? btoa(binary)
+          : (typeof Buffer !== 'undefined' ? Buffer.from(bytes).toString('base64') : '');
+        if (!xlsxBase64) throw new Error('No se pudo convertir la plantilla a base64');
+        const FileSystem = await import('expo-file-system');
+        const targetDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+        if (!targetDir) throw new Error('No se encontro una carpeta valida para guardar la plantilla');
+        const fileUri = `${targetDir}${fileName}`;
+        await FileSystem.writeAsStringAsync(fileUri, xlsxBase64, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+        try {
+          const Sharing = await import('expo-sharing');
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              dialogTitle: 'Plantilla de estudiantes'
+            });
+          }
+        } catch {}
+        Alert.alert('Listo', 'Plantilla Excel generada.');
+      }
+    } catch (e) {
+      Alert.alert('Error', getApiErrorMessage(e, `No se pudo descargar la plantilla${e?.message ? `: ${e.message}` : ''}`));
+    } finally {
+      setDownloadingTemplate(false);
+    }
+  };
+
   const buildAutoQrCode = (nombres = '', apellidos = '', seed = '') => {
     const normalizeChunk = (value) => String(value || '')
       .trim()
@@ -1281,16 +1381,16 @@ export default function HomeScreen() {
   };
 
   const parseSpreadsheetRows = async (fileData) => {
-    if (!fileData) return [];
+    if (!fileData) return { students: [], invalidRows: [] };
     const XLSX = await import('xlsx');
     const workbook = fileData?.arrayBuffer
       ? XLSX.read(fileData.arrayBuffer, { type: 'array' })
       : XLSX.read(String(fileData?.base64 || ''), { type: 'base64' });
     const firstSheetName = workbook?.SheetNames?.[0];
-    if (!firstSheetName) return [];
+    if (!firstSheetName) return { students: [], invalidRows: [] };
     const firstSheet = workbook.Sheets[firstSheetName];
     const matrix = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
-    if (!Array.isArray(matrix) || matrix.length < 2) return [];
+    if (!Array.isArray(matrix) || matrix.length < 2) return { students: [], invalidRows: [] };
 
     const normalizeHeader = (value = '') => String(value || '')
       .trim()
@@ -1300,35 +1400,58 @@ export default function HomeScreen() {
 
     const headers = (Array.isArray(matrix[0]) ? matrix[0] : []).map(normalizeHeader);
     const nonEmptyHeaders = headers.filter(Boolean);
-    const allowedHeaders = new Set(['nombre', 'nombres', 'apellidos']);
+    const allowedHeaders = new Set([
+      'codigo',
+      'nombre',
+      'nombres',
+      'apellidos',
+      'codigo estudiante',
+      'codigoestudiante',
+      'codigo_de_estudiante',
+      'codigo de estudiante'
+    ]);
     const hasInvalidHeader = nonEmptyHeaders.some((header) => !allowedHeaders.has(header));
     const nameHeadersCount = nonEmptyHeaders.filter((header) => header === 'nombre' || header === 'nombres').length;
     const lastNameHeadersCount = nonEmptyHeaders.filter((header) => header === 'apellidos').length;
-    if (hasInvalidHeader || nonEmptyHeaders.length !== 2 || nameHeadersCount !== 1 || lastNameHeadersCount !== 1) {
-      return [];
+    const studentCodeHeaders = new Set(['codigo', 'codigo estudiante', 'codigoestudiante', 'codigo_de_estudiante', 'codigo de estudiante']);
+    const studentCodeHeadersCount = nonEmptyHeaders.filter((header) => studentCodeHeaders.has(header)).length;
+    if (hasInvalidHeader || nonEmptyHeaders.length !== 3 || nameHeadersCount !== 1 || lastNameHeadersCount !== 1 || studentCodeHeadersCount !== 1) {
+      return { students: [], invalidRows: [] };
     }
     const idxNombres = headers.indexOf('nombres') >= 0 ? headers.indexOf('nombres') : headers.indexOf('nombre');
     const idxApellidos = headers.indexOf('apellidos');
-    if (idxNombres < 0 || idxApellidos < 0) return [];
+    const idxCodigo = headers.findIndex((header) => studentCodeHeaders.has(header));
+    if (idxNombres < 0 || idxApellidos < 0 || idxCodigo < 0) return { students: [], invalidRows: [] };
 
-    return matrix.slice(1).map((row = [], index) => {
+    const parsedRows = matrix.slice(1).map((row = [], index) => {
       const cols = Array.isArray(row) ? row : [];
       const nombres = String(cols[idxNombres] || '').trim();
       const apellidos = String(cols[idxApellidos] || '').trim();
+      const codigoEstudiante = String(cols[idxCodigo] || '').trim();
       return {
+        excelRow: index + 2,
         nombres,
         apellidos,
         qr: buildAutoQrCode(nombres, apellidos, `xls-${index + 1}`),
-        codigoEstudiante: ''
+        codigoEstudiante
       };
-    }).filter((row) => row.nombres && row.apellidos);
+    });
+
+    const invalidRows = parsedRows
+      .filter((row) => !row.nombres || !row.apellidos || !row.codigoEstudiante)
+      .map((row) => row.excelRow);
+    const students = parsedRows
+      .filter((row) => row.nombres && row.apellidos && row.codigoEstudiante)
+      .map(({ excelRow, ...rest }) => rest);
+
+    return { students, invalidRows };
   };
 
   const openCreateEstudianteModal = async (preferredCursoId = null) => {
     setEstudianteCreateModalVisible(true);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
-    setEstudianteCreateForm({ nombres: '', apellidos: '' });
+    setEstudianteCreateForm({ nombres: '', apellidos: '', codigoEstudiante: '' });
     setEstudianteCreateMaterias([]);
     setSelectedCsvFile(null);
     setUploadedStudents([]);
@@ -1372,11 +1495,113 @@ export default function HomeScreen() {
     setEstudianteCreateError('');
     setEstudianteCreateCursoId(null);
     setEstudianteCreateMaterias([]);
-    setEstudianteCreateForm({ nombres: '', apellidos: '' });
+    setEstudianteCreateForm({ nombres: '', apellidos: '', codigoEstudiante: '' });
     setSelectedCsvFile(null);
     setUploadedStudents([]);
     setEstudiantesExistentesModal({ visible: false, students: [], created: 0 });
     setSavingEstudiante(false);
+  };
+
+  const uploadStudentsFromFile = async (fileData) => {
+    const cursoId = Number(estudianteCreateCursoId);
+    const materiasSeleccionadas = estudianteCreateMaterias.filter((materia) => (
+      estudianteCreateMateriasDisponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia))
+    ));
+    if (!Number.isFinite(cursoId) || cursoId <= 0) {
+      setEstudianteCreateError('Selecciona un curso antes de subir el archivo');
+      return;
+    }
+    if (estudianteCreateMateriasDisponibles.length > 0 && materiasSeleccionadas.length === 0) {
+      setEstudianteCreateError('Selecciona al menos una materia del curso');
+      return;
+    }
+    if (!fileData?.arrayBuffer && !fileData?.base64) {
+      setEstudianteCreateError('Primero selecciona un archivo XLS o XLSX');
+      return;
+    }
+    const parsed = await parseSpreadsheetRows(fileData);
+    const estudiantes = Array.isArray(parsed?.students) ? parsed.students : [];
+    const invalidRows = Array.isArray(parsed?.invalidRows) ? parsed.invalidRows : [];
+    if (invalidRows.length > 0) {
+      setEstudianteCreateError(`Hay filas incompletas en el Excel (${invalidRows.join(', ')}). Debes completar codigo, nombre(s) y apellidos.`);
+      return;
+    }
+    if (!estudiantes.length) {
+      setEstudianteCreateError('Archivo Excel invalido. Las columnas obligatorias son: codigo, nombre(s) y apellidos');
+      return;
+    }
+    setSavingEstudiante(true);
+    setEstudianteCreateError('');
+    try {
+      const estudiantesCurso = await getEstudiantes({ cursoId });
+      const existingDbNameKeys = new Set(
+        (Array.isArray(estudiantesCurso) ? estudiantesCurso : [])
+          .map((student) => normalizeStudentIdentityKey(student))
+          .filter(Boolean)
+      );
+      const existingDbCodeKeys = new Set(
+        (Array.isArray(estudiantesCurso) ? estudiantesCurso : [])
+          .map((student) => normalizeStudentCodeKey(student))
+          .filter(Boolean)
+      );
+      const seenFileNameKeys = new Set();
+      const seenFileCodeKeys = new Set();
+      const estudiantesNuevos = [];
+      const estudiantesOmitidos = [];
+      estudiantes.forEach((student) => {
+        const nameKey = normalizeStudentIdentityKey(student);
+        const codeKey = normalizeStudentCodeKey(student);
+        if (!nameKey || !codeKey) return;
+        if (existingDbCodeKeys.has(codeKey) && existingDbNameKeys.has(nameKey)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Ya existe en este curso (codigo y nombre)' });
+          return;
+        }
+        if (existingDbCodeKeys.has(codeKey)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Ya existe en este curso (codigo)' });
+          return;
+        }
+        if (existingDbNameKeys.has(nameKey)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Ya existe en este curso (nombre y apellidos)' });
+          return;
+        }
+        if (seenFileCodeKeys.has(codeKey) && seenFileNameKeys.has(nameKey)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Duplicado dentro del archivo (codigo y nombre)' });
+          return;
+        }
+        if (seenFileCodeKeys.has(codeKey)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Duplicado dentro del archivo (codigo)' });
+          return;
+        }
+        if (seenFileNameKeys.has(nameKey)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Duplicado dentro del archivo (nombre y apellidos)' });
+          return;
+        }
+        seenFileNameKeys.add(nameKey);
+        seenFileCodeKeys.add(codeKey);
+        estudiantesNuevos.push(student);
+      });
+
+      if (estudiantesNuevos.length === 0) {
+        setUploadedStudents([]);
+        setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: 0 });
+        setEstudianteCreateError('No hay estudiantes nuevos para subir. Revisa los duplicados mostrados.');
+        return;
+      }
+
+      const data = await createEstudiantesLote({ cursoId, estudiantes: estudiantesNuevos, materias: materiasSeleccionadas });
+      const createdCount = Number(data?.created || 0) || estudiantesNuevos.length;
+      setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantesNuevos);
+      if (estudiantesOmitidos.length > 0) {
+        setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: createdCount });
+        Alert.alert('Carga parcial', `Se cargaron ${createdCount} estudiante(s). ${estudiantesOmitidos.length} no se subieron por duplicados.`);
+      } else {
+        Alert.alert('Listo', `Se cargaron ${createdCount} estudiantes`);
+      }
+    } catch (e) {
+      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo Excel'));
+    } finally {
+      setSavingEstudiante(false);
+    }
   };
 
   const handleImportCsv = async () => {
@@ -1395,7 +1620,9 @@ export default function HomeScreen() {
           return;
         }
         const arrayBuffer = await file.arrayBuffer();
-        setSelectedCsvFile({ name: file.name, ext, arrayBuffer });
+        const nextFile = { name: file.name, ext, arrayBuffer };
+        setSelectedCsvFile(nextFile);
+        await uploadStudentsFromFile(nextFile);
       };
       input.click();
       return;
@@ -1424,94 +1651,33 @@ export default function HomeScreen() {
         return;
       }
       const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
-      setSelectedCsvFile({ name, ext, base64 });
+      const nextFile = { name, ext, base64 };
+      setSelectedCsvFile(nextFile);
+      await uploadStudentsFromFile(nextFile);
     } catch (e) {
       setEstudianteCreateError('No se pudo abrir el selector de archivos del dispositivo.');
     }
   };
 
   const handleUploadCsv = async () => {
-    const cursoId = Number(estudianteCreateCursoId);
-    const materiasSeleccionadas = estudianteCreateMaterias.filter((materia) => (
-      estudianteCreateMateriasDisponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia))
-    ));
-    if (!Number.isFinite(cursoId) || cursoId <= 0) {
-      setEstudianteCreateError('Selecciona un curso antes de subir el archivo');
-      return;
-    }
-    if (estudianteCreateMateriasDisponibles.length > 0 && materiasSeleccionadas.length === 0) {
-      setEstudianteCreateError('Selecciona al menos una materia del curso');
-      return;
-    }
     if (!selectedCsvFile?.arrayBuffer && !selectedCsvFile?.base64) {
       setEstudianteCreateError('Primero selecciona un archivo XLS o XLSX');
       return;
     }
-    const estudiantes = await parseSpreadsheetRows(selectedCsvFile);
-    if (!estudiantes.length) {
-      setEstudianteCreateError('Archivo Excel invalido. Solo se permiten las columnas: nombre(s),apellidos');
-      return;
-    }
-    setSavingEstudiante(true);
-    setEstudianteCreateError('');
-    try {
-      const estudiantesCurso = await getEstudiantes({ cursoId });
-      const existingDbKeys = new Set(
-        (Array.isArray(estudiantesCurso) ? estudiantesCurso : [])
-          .map((student) => normalizeStudentIdentityKey(student))
-          .filter(Boolean)
-      );
-      const seenFileKeys = new Set();
-      const estudiantesNuevos = [];
-      const estudiantesOmitidos = [];
-      estudiantes.forEach((student) => {
-        const key = normalizeStudentIdentityKey(student);
-        if (!key) return;
-        if (existingDbKeys.has(key)) {
-          estudiantesOmitidos.push({ ...student, motivo: 'Ya existe en este curso' });
-          return;
-        }
-        if (seenFileKeys.has(key)) {
-          estudiantesOmitidos.push({ ...student, motivo: 'Duplicado dentro del archivo' });
-          return;
-        }
-        seenFileKeys.add(key);
-        estudiantesNuevos.push(student);
-      });
-
-      if (estudiantesNuevos.length === 0) {
-        setUploadedStudents([]);
-        setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: 0 });
-        setEstudianteCreateError('No hay estudiantes nuevos para subir. Revisa los duplicados mostrados.');
-        return;
-      }
-
-      const data = await createEstudiantesLote({ cursoId, estudiantes: estudiantesNuevos, materias: materiasSeleccionadas });
-      const createdCount = Number(data?.created || 0) || estudiantesNuevos.length;
-      setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantesNuevos);
-      if (estudiantesOmitidos.length > 0) {
-        setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: createdCount });
-        Alert.alert('Carga parcial', `Se cargaron ${createdCount} estudiante(s). ${estudiantesOmitidos.length} no se subieron por duplicados.`);
-      } else {
-        Alert.alert('Listo', `Se cargaron ${createdCount} estudiantes`);
-      }
-    } catch (e) {
-      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo Excel'));
-    } finally {
-      setSavingEstudiante(false);
-    }
+    await uploadStudentsFromFile(selectedCsvFile);
   };
 
   const handleCreateEstudiante = async () => {
     const nombres = (estudianteCreateForm.nombres || '').trim();
     const apellidos = (estudianteCreateForm.apellidos || '').trim();
+    const codigoEstudiante = (estudianteCreateForm.codigoEstudiante || '').trim();
     const qr = buildAutoQrCode(nombres, apellidos, 'manual');
     const cursoId = Number(estudianteCreateCursoId);
     const materiasSeleccionadas = estudianteCreateMaterias.filter((materia) => (
       estudianteCreateMateriasDisponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia))
     ));
-    if (!nombres || !apellidos) {
-      setEstudianteCreateError('Completa nombres y apellidos');
+    if (!nombres || !apellidos || !codigoEstudiante) {
+      setEstudianteCreateError('Completa nombres, apellidos y codigo del estudiante');
       return;
     }
     if (!Number.isFinite(cursoId) || cursoId <= 0) {
@@ -1525,7 +1691,7 @@ export default function HomeScreen() {
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      await createEstudiante({ nombres, apellidos, qr, cursoId, materias: materiasSeleccionadas });
+      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId, materias: materiasSeleccionadas });
       Alert.alert('Listo', 'Estudiante agregado correctamente');
       closeCreateEstudianteModal();
     } catch (e) {
@@ -3144,6 +3310,14 @@ export default function HomeScreen() {
                 editable={!savingEstudiante}
                 onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, apellidos: v }))}
               />
+              <TextInput
+                style={styles.courseInput}
+                placeholder="Codigo del estudiante"
+                placeholderTextColor="#9ca3af"
+                value={estudianteCreateForm.codigoEstudiante}
+                editable={!savingEstudiante}
+                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, codigoEstudiante: v }))}
+              />
               <Text style={styles.dataBullet}>El codigo QR se genera automaticamente al guardar.</Text>
               <TouchableOpacity
                 style={[styles.smallBtn, styles.outlineBtn, savingEstudiante && { opacity: 0.6 }]}
@@ -3152,25 +3326,24 @@ export default function HomeScreen() {
               >
                 <View style={styles.btnRow}>
                   <Ionicons name="document-attach-outline" size={14} color="#e5e7eb" />
-                  <Text style={styles.smallBtnText}>Seleccionar archivo Excel</Text>
+                  <Text style={styles.smallBtnText}>{savingEstudiante ? 'Procesando...' : 'Subir plantilla'}</Text>
                 </View>
               </TouchableOpacity>
-              <Text style={styles.dataBullet}>Excel (.xls/.xlsx) encabezados: nombre(s),apellidos (sin columnas extra)</Text>
               {selectedCsvFile ? (
                 <Text style={styles.dataBullet}>
-                  Archivo: {selectedCsvFile.name} {selectedCsvFile.ext ? `(.${selectedCsvFile.ext})` : ''}
+                  Archivo: {selectedCsvFile.name}
                 </Text>
               ) : (
                 <Text style={styles.dataBullet}>Archivo: no seleccionado</Text>
               )}
               <TouchableOpacity
-                style={[styles.smallBtn, styles.createBtn, savingEstudiante && { opacity: 0.6 }]}
-                onPress={handleUploadCsv}
-                disabled={savingEstudiante}
+                style={[styles.smallBtn, styles.infoBtn, (savingEstudiante || downloadingTemplate) && { opacity: 0.6 }]}
+                onPress={downloadExcelTemplate}
+                disabled={savingEstudiante || downloadingTemplate}
               >
                 <View style={styles.btnRow}>
-                  <Ionicons name="cloud-upload-outline" size={14} color="#e5e7eb" />
-                  <Text style={styles.smallBtnText}>{savingEstudiante ? 'Subiendo...' : 'Subir archivo Excel'}</Text>
+                  <Ionicons name="download-outline" size={14} color="#e5e7eb" />
+                  <Text style={styles.smallBtnText}>{downloadingTemplate ? 'Descargando...' : 'Descargar plantilla'}</Text>
                 </View>
               </TouchableOpacity>
               {estudianteCreateError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudianteCreateError}</Text> : null}
