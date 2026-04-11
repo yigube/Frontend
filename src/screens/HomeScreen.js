@@ -2,6 +2,11 @@
 import { View, Text, StyleSheet, TouchableOpacity, Image, ScrollView, Alert, Modal, Pressable, TextInput, Platform, Animated } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import JSZip from 'jszip';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
+import QRCodeGenerator from 'qrcode-generator';
+import jpeg from 'jpeg-js';
+import { Buffer as BufferPolyfill } from 'buffer';
 import { useAuth } from '../store/useAuth';
 import ScreenBackground from '../components/ScreenBackground';
 import { getPeriodos, createPeriodo, updatePeriodo, deletePeriodo } from '../services/periodos';
@@ -14,6 +19,9 @@ import { useAttendance } from '../store/useAttendance';
 import { changeMyPassword } from '../services/auth';
 
 const ALL_MATERIAS_OPTION = '__all_materias__';
+if (typeof globalThis !== 'undefined' && typeof globalThis.Buffer === 'undefined') {
+  globalThis.Buffer = BufferPolyfill;
+}
 
 export default function HomeScreen() {
   const logout = useAuth(s => s.logout);
@@ -67,10 +75,13 @@ export default function HomeScreen() {
   const [estudiantesLoading, setEstudiantesLoading] = useState(false);
   const [estudiantesError, setEstudiantesError] = useState('');
   const [downloadingQrZip, setDownloadingQrZip] = useState(false);
+  const [qrZipProgress, setQrZipProgress] = useState(0);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [deleteEstudianteConfirmModal, setDeleteEstudianteConfirmModal] = useState({ visible: false, estudiante: null, deleting: false });
   const [estudianteDeleteSuccessModal, setEstudianteDeleteSuccessModal] = useState({ visible: false, message: '' });
   const [uploadTemplateSuccessModal, setUploadTemplateSuccessModal] = useState({ visible: false, message: '' });
+  const [qrZipErrorModal, setQrZipErrorModal] = useState({ visible: false, message: '' });
+  const [qrZipDownloadModal, setQrZipDownloadModal] = useState({ visible: false, message: '' });
   const [estudiantesExistentesModal, setEstudiantesExistentesModal] = useState({ visible: false, students: [], created: 0 });
   const estudianteDeleteSuccessTimeoutRef = useRef(null);
   const uploadTemplateSuccessTimeoutRef = useRef(null);
@@ -375,6 +386,18 @@ export default function HomeScreen() {
       setUploadTemplateSuccessModal({ visible: false, message: '' });
       uploadTemplateSuccessTimeoutRef.current = null;
     }, 2600);
+  };
+  const showQrZipErrorModal = (message) => {
+    setQrZipErrorModal({
+      visible: true,
+      message: String(message || 'No se pudo generar ni descargar el ZIP de códigos QR.')
+    });
+  };
+  const showQrZipDownloadModal = (message) => {
+    setQrZipDownloadModal({
+      visible: true,
+      message: String(message || '')
+    });
   };
 
   const clearChangePasswordForm = () => {
@@ -1196,6 +1219,34 @@ export default function HomeScreen() {
     .replace(/[^a-zA-Z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 70);
+  const buildQrJpgBinary = (value = '') => {
+    const qr = QRCodeGenerator(0, 'H');
+    qr.addData(String(value || ''));
+    qr.make();
+    const size = qr.getModuleCount();
+    const margin = 4;
+    const scale = 12;
+    const total = (size + margin * 2) * scale;
+    const frameData = new Uint8Array(total * total * 4);
+
+    for (let y = 0; y < total; y += 1) {
+      for (let x = 0; x < total; x += 1) {
+        const pixelIndex = (y * total + x) * 4;
+        const qrX = Math.floor(x / scale) - margin;
+        const qrY = Math.floor(y / scale) - margin;
+        const isDark = qrX >= 0 && qrX < size && qrY >= 0 && qrY < size && qr.isDark(qrY, qrX);
+        const color = isDark ? 0 : 255;
+        frameData[pixelIndex] = color;
+        frameData[pixelIndex + 1] = color;
+        frameData[pixelIndex + 2] = color;
+        frameData[pixelIndex + 3] = 255;
+      }
+    }
+    const encoded = jpeg.encode({ data: frameData, width: total, height: total }, 92);
+    const buffer = encoded?.data;
+    if (!buffer) throw new Error('No se pudo codificar el QR en JPG');
+    return buffer;
+  };
 
   const downloadEstudiantesQrZip = async () => {
     if (downloadingQrZip) return;
@@ -1207,38 +1258,29 @@ export default function HomeScreen() {
     }
 
     setDownloadingQrZip(true);
+    setQrZipProgress(1);
     try {
-      const JSZip = (await import('jszip')).default;
-      const QRCodeModule = await import('qrcode');
-      const toDataURL = QRCodeModule?.toDataURL || QRCodeModule?.default?.toDataURL;
-      if (typeof toDataURL !== 'function') {
-        throw new Error('No se pudo inicializar el generador QR');
-      }
       const zip = new JSZip();
       const courseLabel = sanitizeFileName(cursoSeleccionadoNombre || `curso_${cursoSeleccionado || ''}`) || 'curso';
-      const folder = zip.folder(`qr_${courseLabel}`);
-      if (!folder) {
-        throw new Error('No se pudo crear la carpeta ZIP');
-      }
 
       for (let index = 0; index < studentsWithQr.length; index += 1) {
         const student = studentsWithQr[index];
         const qrValue = String(student?.qr || '').trim();
         const fullName = String(student?.nombre || `${student?.nombres || ''} ${student?.apellidos || ''}`).trim();
         const safeName = sanitizeFileName(fullName) || `estudiante_${index + 1}`;
-        const pngBase64 = await toDataURL(qrValue, {
-          errorCorrectionLevel: 'H',
-          margin: 2,
-          width: 640
-        });
-        const pureBase64 = String(pngBase64).split(',')[1] || '';
-        folder.file(`${String(index + 1).padStart(3, '0')}_${safeName}.png`, pureBase64, { base64: true });
+        const jpgBinary = buildQrJpgBinary(qrValue);
+        zip.file(`${String(index + 1).padStart(3, '0')}_${safeName}.jpg`, jpgBinary);
+        const buildPct = Math.round(((index + 1) / studentsWithQr.length) * 80);
+        setQrZipProgress(Math.max(1, buildPct));
       }
 
       const zipName = `qrs_${courseLabel}_${new Date().toISOString().slice(0, 10)}.zip`;
+      setQrZipProgress(85);
 
       if (Platform.OS === 'web') {
+        setQrZipProgress(92);
         const blob = await zip.generateAsync({ type: 'blob' });
+        setQrZipProgress(98);
         const nav = typeof window !== 'undefined' ? window.navigator : null;
         if (nav && typeof nav.msSaveOrOpenBlob === 'function') {
           nav.msSaveOrOpenBlob(blob, zipName);
@@ -1253,31 +1295,64 @@ export default function HomeScreen() {
           document.body.removeChild(anchor);
           setTimeout(() => URL.revokeObjectURL(url), 1500);
         }
-        Alert.alert('Listo', `Se descargo el ZIP con ${studentsWithQr.length} QR(s).`);
+        setQrZipProgress(100);
+        showQrZipDownloadModal(`ZIP descargado correctamente.\nArchivo: ${zipName}\nRuta: Descargas del navegador.`);
       } else {
+        setQrZipProgress(92);
         const zipBase64 = await zip.generateAsync({ type: 'base64' });
-        const FileSystem = await import('expo-file-system');
-        const targetDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-        if (!targetDir) throw new Error('No se encontro una carpeta valida para guardar el ZIP');
-        const fileUri = `${targetDir}${zipName}`;
-        await FileSystem.writeAsStringAsync(fileUri, zipBase64, {
-          encoding: FileSystem.EncodingType.Base64
-        });
-        try {
-          const Sharing = await import('expo-sharing');
-          if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(fileUri, {
-              mimeType: 'application/zip',
-              dialogTitle: 'QR de estudiantes'
-            });
+        setQrZipProgress(98);
+        if (Platform.OS === 'android') {
+          const SAF = FileSystemLegacy.StorageAccessFramework;
+          const downloadDirUri = SAF.getUriForDirectoryInRoot('Download');
+          const permissions = await SAF.requestDirectoryPermissionsAsync(downloadDirUri);
+          if (!permissions?.granted || !permissions?.directoryUri) {
+            throw new Error('No se otorgó permiso para guardar en la carpeta Download.');
           }
-        } catch {}
-        Alert.alert('Listo', `ZIP generado con ${studentsWithQr.length} QR(s).`);
+          const baseName = zipName.replace(/\.zip$/i, '');
+          let targetFileUri;
+          try {
+            targetFileUri = await SAF.createFileAsync(
+              permissions.directoryUri,
+              baseName,
+              'application/zip'
+            );
+          } catch {
+            targetFileUri = await SAF.createFileAsync(
+              permissions.directoryUri,
+              `${baseName}_${Date.now()}`,
+              'application/zip'
+            );
+          }
+          await SAF.writeAsStringAsync(targetFileUri, zipBase64, {
+            encoding: FileSystemLegacy.EncodingType.Base64
+          });
+          setQrZipProgress(100);
+          showQrZipDownloadModal(`ZIP generado correctamente.\nArchivo: ${zipName}\nRuta: Download/${zipName}\nURI: ${targetFileUri}`);
+        } else {
+          const targetDir = FileSystemLegacy.documentDirectory || FileSystemLegacy.cacheDirectory;
+          if (!targetDir) throw new Error('No se encontró una carpeta válida para guardar el ZIP.');
+          const fileUri = `${targetDir}${zipName}`;
+          await FileSystemLegacy.writeAsStringAsync(fileUri, zipBase64, {
+            encoding: FileSystemLegacy.EncodingType.Base64
+          });
+          setQrZipProgress(100);
+          try {
+            const Sharing = await import('expo-sharing');
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(fileUri, {
+                mimeType: 'application/zip',
+                dialogTitle: 'QR de estudiantes'
+              });
+            }
+          } catch {}
+          showQrZipDownloadModal(`ZIP generado correctamente.\nArchivo: ${zipName}\nRuta: ${fileUri}`);
+        }
       }
     } catch (e) {
-      Alert.alert('Error', getApiErrorMessage(e, `No se pudo generar/descargar el ZIP de codigos QR${e?.message ? `: ${e.message}` : ''}`));
+      showQrZipErrorModal(getApiErrorMessage(e, `No se pudo generar ni descargar el ZIP de códigos QR${e?.message ? `: ${e.message}` : ''}`));
     } finally {
       setDownloadingQrZip(false);
+      setQrZipProgress(0);
     }
   };
 
@@ -1354,12 +1429,11 @@ export default function HomeScreen() {
           ? btoa(binary)
           : (typeof Buffer !== 'undefined' ? Buffer.from(bytes).toString('base64') : '');
         if (!xlsxBase64) throw new Error('No se pudo convertir la plantilla a base64');
-        const FileSystem = await import('expo-file-system');
-        const targetDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+        const targetDir = FileSystemLegacy.documentDirectory || FileSystemLegacy.cacheDirectory;
         if (!targetDir) throw new Error('No se encontro una carpeta valida para guardar la plantilla');
         const fileUri = `${targetDir}${fileName}`;
-        await FileSystem.writeAsStringAsync(fileUri, xlsxBase64, {
-          encoding: FileSystem.EncodingType.Base64
+        await FileSystemLegacy.writeAsStringAsync(fileUri, xlsxBase64, {
+          encoding: FileSystemLegacy.EncodingType.Base64
         });
         try {
           const Sharing = await import('expo-sharing');
@@ -1648,7 +1722,6 @@ export default function HomeScreen() {
 
     try {
       const DocumentPicker = await import('expo-document-picker');
-      const FileSystem = await import('expo-file-system');
       const result = await DocumentPicker.getDocumentAsync({
         type: [
           'application/vnd.ms-excel',
@@ -1668,7 +1741,7 @@ export default function HomeScreen() {
         setEstudianteCreateError('El archivo debe ser .xls o .xlsx');
         return;
       }
-      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+      const base64 = await FileSystemLegacy.readAsStringAsync(file.uri, { encoding: FileSystemLegacy.EncodingType.Base64 });
       const nextFile = { name, ext, base64 };
       setSelectedCsvFile(nextFile);
       await uploadStudentsFromFile(nextFile);
@@ -5032,7 +5105,9 @@ export default function HomeScreen() {
                   >
                     <View style={styles.btnRow}>
                       <Ionicons name="download-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>{downloadingQrZip ? 'Generando ZIP...' : 'Descargar QR (ZIP)'}</Text>
+                      <Text style={styles.smallBtnText}>
+                        {downloadingQrZip ? `Descargando ZIP... ${Math.max(1, Math.min(100, qrZipProgress))}%` : 'Descargar QR (ZIP)'}
+                      </Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -5935,6 +6010,56 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="fade"
+        visible={qrZipErrorModal.visible}
+        onRequestClose={() => setQrZipErrorModal({ visible: false, message: '' })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.qrZipErrorCard}>
+            <View style={styles.qrZipErrorIconWrap}>
+              <Ionicons name="alert-circle-outline" size={24} color="#fda4af" />
+            </View>
+            <View style={styles.qrZipErrorContent}>
+              <Text style={styles.qrZipErrorTitle}>Error al descargar ZIP</Text>
+              <Text style={styles.qrZipErrorText}>{qrZipErrorModal.message}</Text>
+            </View>
+            <Pressable
+              style={styles.qrZipErrorCloseBtn}
+              onPress={() => setQrZipErrorModal({ visible: false, message: '' })}
+            >
+              <Ionicons name="close-outline" size={16} color="#fecdd3" />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={qrZipDownloadModal.visible}
+        onRequestClose={() => setQrZipDownloadModal({ visible: false, message: '' })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.qrZipDownloadCard}>
+            <View style={styles.qrZipDownloadIconWrap}>
+              <Ionicons name="download-outline" size={24} color="#bfdbfe" />
+            </View>
+            <View style={styles.qrZipDownloadContent}>
+              <Text style={styles.qrZipDownloadTitle}>ZIP descargado</Text>
+              <Text style={styles.qrZipDownloadText}>{qrZipDownloadModal.message}</Text>
+            </View>
+            <Pressable
+              style={styles.qrZipDownloadCloseBtn}
+              onPress={() => setQrZipDownloadModal({ visible: false, message: '' })}
+            >
+              <Ionicons name="close-outline" size={16} color="#dbeafe" />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
         visible={estudiantesExistentesModal.visible}
         onRequestClose={() => setEstudiantesExistentesModal({ visible: false, students: [], created: 0 })}
       >
@@ -6290,6 +6415,88 @@ const styles = StyleSheet.create({
   uploadTemplateSuccessContent: { flex: 1, minWidth: 0, gap: 2 },
   uploadTemplateSuccessTitle: { color: '#ccfbf1', fontSize: 14.2, fontWeight: '900' },
   uploadTemplateSuccessText: { color: '#99f6e4', fontSize: 12.5, fontWeight: '700' },
+  qrZipErrorCard: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#2a0b15',
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.45)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#be123c',
+    shadowOpacity: 0.34,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 8
+  },
+  qrZipErrorIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(244,63,94,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.5)'
+  },
+  qrZipErrorContent: { flex: 1, minWidth: 0, gap: 2 },
+  qrZipErrorTitle: { color: '#ffe4e6', fontSize: 14.2, fontWeight: '900' },
+  qrZipErrorText: { color: '#fecdd3', fontSize: 12.5, fontWeight: '700' },
+  qrZipErrorCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(127,29,29,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.45)'
+  },
+  qrZipDownloadCard: {
+    width: '100%',
+    maxWidth: 460,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#0b1530',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.42)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#1d4ed8',
+    shadowOpacity: 0.34,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 8
+  },
+  qrZipDownloadIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(59,130,246,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.5)'
+  },
+  qrZipDownloadContent: { flex: 1, minWidth: 0, gap: 2 },
+  qrZipDownloadTitle: { color: '#dbeafe', fontSize: 14.2, fontWeight: '900' },
+  qrZipDownloadText: { color: '#bfdbfe', fontSize: 12.4, fontWeight: '700', lineHeight: 18 },
+  qrZipDownloadCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30,58,138,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.45)'
+  },
   uploadedStudentsBox: {
     marginTop: 8,
     borderRadius: 14,
