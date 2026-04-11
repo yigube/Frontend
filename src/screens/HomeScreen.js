@@ -70,8 +70,10 @@ export default function HomeScreen() {
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
   const [deleteEstudianteConfirmModal, setDeleteEstudianteConfirmModal] = useState({ visible: false, estudiante: null, deleting: false });
   const [estudianteDeleteSuccessModal, setEstudianteDeleteSuccessModal] = useState({ visible: false, message: '' });
+  const [uploadTemplateSuccessModal, setUploadTemplateSuccessModal] = useState({ visible: false, message: '' });
   const [estudiantesExistentesModal, setEstudiantesExistentesModal] = useState({ visible: false, students: [], created: 0 });
   const estudianteDeleteSuccessTimeoutRef = useRef(null);
+  const uploadTemplateSuccessTimeoutRef = useRef(null);
   const [cursoSeleccionado, setCursoSeleccionado] = useState(null);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
   const [estudianteMateriaFiltro, setEstudianteMateriaFiltro] = useState(ALL_MATERIAS_OPTION);
@@ -314,6 +316,11 @@ export default function HomeScreen() {
     clearTimeout(estudianteDeleteSuccessTimeoutRef.current);
     estudianteDeleteSuccessTimeoutRef.current = null;
   };
+  const clearUploadTemplateSuccessTimeout = () => {
+    if (!uploadTemplateSuccessTimeoutRef.current) return;
+    clearTimeout(uploadTemplateSuccessTimeoutRef.current);
+    uploadTemplateSuccessTimeoutRef.current = null;
+  };
 
   const hideColegiosSuccess = ({ animated = true } = {}) => {
     clearColegiosSuccessTimer();
@@ -360,6 +367,14 @@ export default function HomeScreen() {
       setEstudianteDeleteSuccessModal({ visible: false, message: '' });
       estudianteDeleteSuccessTimeoutRef.current = null;
     }, 2200);
+  };
+  const showUploadTemplateSuccessModal = (message = 'Estudiantes cargados correctamente') => {
+    clearUploadTemplateSuccessTimeout();
+    setUploadTemplateSuccessModal({ visible: true, message });
+    uploadTemplateSuccessTimeoutRef.current = setTimeout(() => {
+      setUploadTemplateSuccessModal({ visible: false, message: '' });
+      uploadTemplateSuccessTimeoutRef.current = null;
+    }, 2600);
   };
 
   const clearChangePasswordForm = () => {
@@ -602,6 +617,7 @@ export default function HomeScreen() {
   useEffect(() => () => clearPeriodStatusTimeout(), []);
   useEffect(() => () => clearColegiosSuccessTimer(), []);
   useEffect(() => () => clearEstudianteDeleteSuccessTimeout(), []);
+  useEffect(() => () => clearUploadTemplateSuccessTimeout(), []);
 
   const sortPeriodos = (list) => [...(list || [])].sort((a, b) => {
     const aDate = getPeriodoComparableValue(a?.fechaInicio);
@@ -1490,6 +1506,7 @@ export default function HomeScreen() {
   };
 
   const closeCreateEstudianteModal = () => {
+    clearUploadTemplateSuccessTimeout();
     setEstudianteCreateModalVisible(false);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
@@ -1498,6 +1515,7 @@ export default function HomeScreen() {
     setEstudianteCreateForm({ nombres: '', apellidos: '', codigoEstudiante: '' });
     setSelectedCsvFile(null);
     setUploadedStudents([]);
+    setUploadTemplateSuccessModal({ visible: false, message: '' });
     setEstudiantesExistentesModal({ visible: false, students: [], created: 0 });
     setSavingEstudiante(false);
   };
@@ -1593,9 +1611,9 @@ export default function HomeScreen() {
       setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantesNuevos);
       if (estudiantesOmitidos.length > 0) {
         setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: createdCount });
-        Alert.alert('Carga parcial', `Se cargaron ${createdCount} estudiante(s). ${estudiantesOmitidos.length} no se subieron por duplicados.`);
+        showUploadTemplateSuccessModal(`Estudiantes cargados correctamente (${createdCount}).`);
       } else {
-        Alert.alert('Listo', `Se cargaron ${createdCount} estudiantes`);
+        showUploadTemplateSuccessModal(`Estudiantes cargados correctamente (${createdCount}).`);
       }
     } catch (e) {
       setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo Excel'));
@@ -3348,13 +3366,35 @@ export default function HomeScreen() {
               </TouchableOpacity>
               {estudianteCreateError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudianteCreateError}</Text> : null}
               {uploadedStudents.length > 0 ? (
-                <View style={styles.dataBox}>
-                  <Text style={styles.dataTitle}>Estudiantes cargados</Text>
-                  {uploadedStudents.map((s, idx) => (
-                    <Text key={`${s.id || 'new'}-${idx}`} style={styles.dataBullet}>
-                      - {s.nombres} {s.apellidos} | QR: {s.qr}{s.codigoEstudiante ? ` | Codigo: ${s.codigoEstudiante}` : ''}
-                    </Text>
-                  ))}
+                <View style={styles.uploadedStudentsBox}>
+                  <View style={styles.uploadedStudentsHeader}>
+                    <View style={styles.uploadedStudentsHeaderLeft}>
+                      <View style={styles.uploadedStudentsHeaderIconWrap}>
+                        <Ionicons name="people-outline" size={14} color="#93c5fd" />
+                      </View>
+                      <Text style={styles.uploadedStudentsTitle}>Estudiantes cargados</Text>
+                    </View>
+                    <View style={styles.uploadedStudentsCountBadge}>
+                      <Text style={styles.uploadedStudentsCountText}>{uploadedStudents.length}</Text>
+                    </View>
+                  </View>
+                  <ScrollView
+                    style={styles.uploadedStudentsList}
+                    contentContainerStyle={styles.uploadedStudentsListContent}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {uploadedStudents.map((s, idx) => (
+                      <View key={`${s.id || 'new'}-${idx}`} style={styles.uploadedStudentsItem}>
+                        <Text style={styles.uploadedStudentsItemName}>{`${s.nombres || ''} ${s.apellidos || ''}`.trim()}</Text>
+                        <Text style={styles.uploadedStudentsItemMeta}>
+                          {s.codigoEstudiante ? `Codigo: ${s.codigoEstudiante}` : 'Codigo: -'}
+                        </Text>
+                        <Text style={styles.uploadedStudentsItemMeta}>
+                          {s.qr ? `QR: ${s.qr}` : 'QR generado'}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
               ) : null}
               <View style={styles.courseFormActions}>
@@ -5873,6 +5913,28 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="fade"
+        visible={uploadTemplateSuccessModal.visible}
+        onRequestClose={() => {
+          clearUploadTemplateSuccessTimeout();
+          setUploadTemplateSuccessModal({ visible: false, message: '' });
+        }}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.uploadTemplateSuccessCard}>
+            <View style={styles.uploadTemplateSuccessIconWrap}>
+              <Ionicons name="cloud-done-outline" size={24} color="#99f6e4" />
+            </View>
+            <View style={styles.uploadTemplateSuccessContent}>
+              <Text style={styles.uploadTemplateSuccessTitle}>Estudiantes cargados correctamente</Text>
+              <Text style={styles.uploadTemplateSuccessText}>{uploadTemplateSuccessModal.message}</Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
         visible={estudiantesExistentesModal.visible}
         onRequestClose={() => setEstudiantesExistentesModal({ visible: false, students: [], created: 0 })}
       >
@@ -6197,6 +6259,84 @@ const styles = StyleSheet.create({
   estudianteDeleteSuccessContent: { flex: 1, minWidth: 0, gap: 2 },
   estudianteDeleteSuccessTitle: { color: '#dcfce7', fontSize: 14, fontWeight: '900' },
   estudianteDeleteSuccessText: { color: '#bbf7d0', fontSize: 12.5, fontWeight: '700' },
+  uploadTemplateSuccessCard: {
+    width: '100%',
+    maxWidth: 430,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#052e2b',
+    borderWidth: 1,
+    borderColor: 'rgba(45,212,191,0.42)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#0f766e',
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 8
+  },
+  uploadTemplateSuccessIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(20,184,166,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(94,234,212,0.6)'
+  },
+  uploadTemplateSuccessContent: { flex: 1, minWidth: 0, gap: 2 },
+  uploadTemplateSuccessTitle: { color: '#ccfbf1', fontSize: 14.2, fontWeight: '900' },
+  uploadTemplateSuccessText: { color: '#99f6e4', fontSize: 12.5, fontWeight: '700' },
+  uploadedStudentsBox: {
+    marginTop: 8,
+    borderRadius: 14,
+    padding: 10,
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.32)',
+    gap: 8
+  },
+  uploadedStudentsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  uploadedStudentsHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  uploadedStudentsHeaderIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(37,99,235,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.42)'
+  },
+  uploadedStudentsTitle: { color: '#e0f2fe', fontWeight: '900', fontSize: 13.5 },
+  uploadedStudentsCountBadge: {
+    minWidth: 28,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34,197,94,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.4)'
+  },
+  uploadedStudentsCountText: { color: '#dcfce7', fontSize: 11.5, fontWeight: '900' },
+  uploadedStudentsList: { maxHeight: 190 },
+  uploadedStudentsListContent: { gap: 7, paddingVertical: 2 },
+  uploadedStudentsItem: {
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(30,41,59,0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.22)',
+    gap: 2
+  },
+  uploadedStudentsItemName: { color: '#f8fafc', fontWeight: '800', fontSize: 12.8 },
+  uploadedStudentsItemMeta: { color: '#bfdbfe', fontSize: 11.4, fontWeight: '700' },
   estudianteDeleteSuccessCloseBtn: {
     width: 28,
     height: 28,
