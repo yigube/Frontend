@@ -69,6 +69,7 @@ export default function HomeScreen() {
   const [downloadingQrZip, setDownloadingQrZip] = useState(false);
   const [deleteEstudianteConfirmModal, setDeleteEstudianteConfirmModal] = useState({ visible: false, estudiante: null, deleting: false });
   const [estudianteDeleteSuccessModal, setEstudianteDeleteSuccessModal] = useState({ visible: false, message: '' });
+  const [estudiantesExistentesModal, setEstudiantesExistentesModal] = useState({ visible: false, students: [], created: 0 });
   const estudianteDeleteSuccessTimeoutRef = useRef(null);
   const [cursoSeleccionado, setCursoSeleccionado] = useState(null);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
@@ -269,6 +270,20 @@ export default function HomeScreen() {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
+  const normalizeStudentIdentityKey = (student = {}) => {
+    const rawNombres = String(student?.nombres || '').trim();
+    const rawApellidos = String(student?.apellidos || '').trim();
+    if (rawNombres || rawApellidos) {
+      return `${normalizeSearchText(rawNombres).replace(/\s+/g, ' ')}|${normalizeSearchText(rawApellidos).replace(/\s+/g, ' ')}`;
+    }
+    const fullName = String(student?.nombre || '').trim();
+    if (!fullName) return '';
+    const parts = fullName.split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) return `${normalizeSearchText(fullName).replace(/\s+/g, ' ')}|`;
+    const nombres = parts.slice(0, -1).join(' ');
+    const apellidos = parts.slice(-1).join(' ');
+    return `${normalizeSearchText(nombres).replace(/\s+/g, ' ')}|${normalizeSearchText(apellidos).replace(/\s+/g, ' ')}`;
+  };
   const hasDirectivoData = (colegio = {}) => Boolean(
     colegio?.rectorCargo
     || colegio?.rector?.cargo
@@ -1360,6 +1375,7 @@ export default function HomeScreen() {
     setEstudianteCreateForm({ nombres: '', apellidos: '' });
     setSelectedCsvFile(null);
     setUploadedStudents([]);
+    setEstudiantesExistentesModal({ visible: false, students: [], created: 0 });
     setSavingEstudiante(false);
   };
 
@@ -1439,9 +1455,46 @@ export default function HomeScreen() {
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      const data = await createEstudiantesLote({ cursoId, estudiantes, materias: materiasSeleccionadas });
-      setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantes);
-      Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
+      const estudiantesCurso = await getEstudiantes({ cursoId });
+      const existingDbKeys = new Set(
+        (Array.isArray(estudiantesCurso) ? estudiantesCurso : [])
+          .map((student) => normalizeStudentIdentityKey(student))
+          .filter(Boolean)
+      );
+      const seenFileKeys = new Set();
+      const estudiantesNuevos = [];
+      const estudiantesOmitidos = [];
+      estudiantes.forEach((student) => {
+        const key = normalizeStudentIdentityKey(student);
+        if (!key) return;
+        if (existingDbKeys.has(key)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Ya existe en este curso' });
+          return;
+        }
+        if (seenFileKeys.has(key)) {
+          estudiantesOmitidos.push({ ...student, motivo: 'Duplicado dentro del archivo' });
+          return;
+        }
+        seenFileKeys.add(key);
+        estudiantesNuevos.push(student);
+      });
+
+      if (estudiantesNuevos.length === 0) {
+        setUploadedStudents([]);
+        setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: 0 });
+        setEstudianteCreateError('No hay estudiantes nuevos para subir. Revisa los duplicados mostrados.');
+        return;
+      }
+
+      const data = await createEstudiantesLote({ cursoId, estudiantes: estudiantesNuevos, materias: materiasSeleccionadas });
+      const createdCount = Number(data?.created || 0) || estudiantesNuevos.length;
+      setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantesNuevos);
+      if (estudiantesOmitidos.length > 0) {
+        setEstudiantesExistentesModal({ visible: true, students: estudiantesOmitidos, created: createdCount });
+        Alert.alert('Carga parcial', `Se cargaron ${createdCount} estudiante(s). ${estudiantesOmitidos.length} no se subieron por duplicados.`);
+      } else {
+        Alert.alert('Listo', `Se cargaron ${createdCount} estudiantes`);
+      }
     } catch (e) {
       setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo Excel'));
     } finally {
@@ -5647,6 +5700,53 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="fade"
+        visible={estudiantesExistentesModal.visible}
+        onRequestClose={() => setEstudiantesExistentesModal({ visible: false, students: [], created: 0 })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.existingStudentsModalCard}>
+            <View style={styles.existingStudentsHeader}>
+              <View style={styles.existingStudentsIconWrap}>
+                <Ionicons name="alert-circle-outline" size={22} color="#f59e0b" />
+              </View>
+              <View style={styles.existingStudentsHeaderText}>
+                <Text style={styles.existingStudentsTitle}>Estudiantes omitidos</Text>
+                <Text style={styles.existingStudentsSubtitle}>
+                  {estudiantesExistentesModal.created > 0
+                    ? `Se cargaron ${estudiantesExistentesModal.created} nuevos.`
+                    : 'No se cargaron estudiantes nuevos.'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.existingStudentsList}>
+              <ScrollView
+                style={{ maxHeight: 260 }}
+                contentContainerStyle={{ gap: 8, paddingVertical: 2 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {(Array.isArray(estudiantesExistentesModal.students) ? estudiantesExistentesModal.students : []).map((student, index) => (
+                  <View key={`existing-student-${index}`} style={styles.existingStudentsItem}>
+                    <Text style={styles.existingStudentsName}>{`${student?.nombres || ''} ${student?.apellidos || ''}`.trim() || 'Sin nombre'}</Text>
+                    <Text style={styles.existingStudentsReason}>{student?.motivo || 'Duplicado'}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+
+            <TouchableOpacity
+              style={styles.existingStudentsCloseBtn}
+              onPress={() => setEstudiantesExistentesModal({ visible: false, students: [], created: 0 })}
+            >
+              <Text style={styles.existingStudentsCloseBtnText}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
         visible={deletePeriodModal.visible}
         onRequestClose={() => setDeletePeriodModal({ visible: false, id: null })}
       >
@@ -5983,6 +6083,64 @@ const styles = StyleSheet.create({
   },
   resetPasswordModalBtnText: { color: '#ecfdf5', fontWeight: '900', fontSize: 14 },
   statusModalText: { color: '#dcfce7', fontWeight: '800', fontSize: 16 },
+  existingStudentsModalCard: {
+    width: '100%',
+    maxWidth: 460,
+    borderRadius: 18,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: '#0b1324',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.45)',
+    alignSelf: 'center',
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 7
+  },
+  existingStudentsHeader: { flexDirection: 'row', gap: 10, alignItems: 'center', marginBottom: 10 },
+  existingStudentsIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(245,158,11,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,191,36,0.55)'
+  },
+  existingStudentsHeaderText: { flex: 1, minWidth: 0 },
+  existingStudentsTitle: { color: '#fef3c7', fontWeight: '900', fontSize: 17 },
+  existingStudentsSubtitle: { color: '#fde68a', fontWeight: '700', fontSize: 12.5, marginTop: 2 },
+  existingStudentsList: {
+    borderRadius: 12,
+    padding: 10,
+    backgroundColor: 'rgba(15,23,42,0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.25)',
+    marginBottom: 12
+  },
+  existingStudentsItem: {
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(30,41,59,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.26)'
+  },
+  existingStudentsName: { color: '#f8fafc', fontWeight: '800', fontSize: 13.5 },
+  existingStudentsReason: { color: '#fbbf24', fontWeight: '700', fontSize: 11.5, marginTop: 2 },
+  existingStudentsCloseBtn: {
+    alignSelf: 'stretch',
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    backgroundColor: '#d97706',
+    borderWidth: 1,
+    borderColor: '#f59e0b'
+  },
+  existingStudentsCloseBtnText: { color: '#fff7ed', fontWeight: '900', fontSize: 13 },
   deleteModalCard: { width: '100%', maxWidth: 360, borderRadius: 16, padding: 18, backgroundColor: '#111827', borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)', alignItems: 'center' },
   deleteModalIconWrap: { width: 48, height: 48, borderRadius: 24, backgroundColor: 'rgba(239,68,68,0.15)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.45)', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
   deleteModalTitle: { color: '#fee2e2', fontWeight: '900', fontSize: 18, marginBottom: 6 },
