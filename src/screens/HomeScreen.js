@@ -66,6 +66,10 @@ export default function HomeScreen() {
   const [estudiantes, setEstudiantes] = useState([]);
   const [estudiantesLoading, setEstudiantesLoading] = useState(false);
   const [estudiantesError, setEstudiantesError] = useState('');
+  const [downloadingQrZip, setDownloadingQrZip] = useState(false);
+  const [deleteEstudianteConfirmModal, setDeleteEstudianteConfirmModal] = useState({ visible: false, estudiante: null, deleting: false });
+  const [estudianteDeleteSuccessModal, setEstudianteDeleteSuccessModal] = useState({ visible: false, message: '' });
+  const estudianteDeleteSuccessTimeoutRef = useRef(null);
   const [cursoSeleccionado, setCursoSeleccionado] = useState(null);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
   const [estudianteMateriaFiltro, setEstudianteMateriaFiltro] = useState(ALL_MATERIAS_OPTION);
@@ -75,7 +79,7 @@ export default function HomeScreen() {
   const [estudianteCreateModalVisible, setEstudianteCreateModalVisible] = useState(false);
   const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
   const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
-  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '' });
   const [estudianteCreateMaterias, setEstudianteCreateMaterias] = useState([]);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [uploadedStudents, setUploadedStudents] = useState([]);
@@ -288,6 +292,12 @@ export default function HomeScreen() {
     colegiosSuccessTimerRef.current = null;
   };
 
+  const clearEstudianteDeleteSuccessTimeout = () => {
+    if (!estudianteDeleteSuccessTimeoutRef.current) return;
+    clearTimeout(estudianteDeleteSuccessTimeoutRef.current);
+    estudianteDeleteSuccessTimeoutRef.current = null;
+  };
+
   const hideColegiosSuccess = ({ animated = true } = {}) => {
     clearColegiosSuccessTimer();
     if (!colegiosSuccess) return;
@@ -324,6 +334,15 @@ export default function HomeScreen() {
       setPeriodStatusModal({ visible: false, message: '' });
       periodStatusTimeoutRef.current = null;
     }, 2000);
+  };
+
+  const showEstudianteDeleteSuccessModal = (message) => {
+    clearEstudianteDeleteSuccessTimeout();
+    setEstudianteDeleteSuccessModal({ visible: true, message });
+    estudianteDeleteSuccessTimeoutRef.current = setTimeout(() => {
+      setEstudianteDeleteSuccessModal({ visible: false, message: '' });
+      estudianteDeleteSuccessTimeoutRef.current = null;
+    }, 2200);
   };
 
   const clearChangePasswordForm = () => {
@@ -565,6 +584,7 @@ export default function HomeScreen() {
   useEffect(() => { loadPeriodos(); }, []);
   useEffect(() => () => clearPeriodStatusTimeout(), []);
   useEffect(() => () => clearColegiosSuccessTimer(), []);
+  useEffect(() => () => clearEstudianteDeleteSuccessTimeout(), []);
 
   const sortPeriodos = (list) => [...(list || [])].sort((a, b) => {
     const aDate = getPeriodoComparableValue(a?.fechaInicio);
@@ -1115,110 +1135,185 @@ export default function HomeScreen() {
   };
 
   const askDeleteEstudiante = (estudiante) => {
-    Alert.alert(
-      'Eliminar estudiante',
-      `Vas a eliminar a "${estudiante?.nombres || ''} ${estudiante?.apellidos || ''}". Esta accion no se puede deshacer.`,
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteEstudiante(estudiante?.id);
-              await loadEstudiantesPorCurso(cursoSeleccionado);
-              if (String(estudianteEditing) === String(estudiante?.id)) cancelEditEstudiante();
-              Alert.alert('Listo', 'Estudiante eliminado');
-            } catch (e) {
-              Alert.alert('Error', getApiErrorMessage(e, 'No se pudo eliminar el estudiante'));
-            }
-          }
-        }
-      ]
-    );
+    setDeleteEstudianteConfirmModal({ visible: true, estudiante: estudiante || null, deleting: false });
   };
 
-  const parseCsvRows = (csvText) => {
-    const normalized = String(csvText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const lines = normalized.split('\n').map((l) => l.trim()).filter(Boolean);
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
-    const idxNombres = headers.indexOf('nombres');
-    const idxApellidos = headers.indexOf('apellidos');
-    const idxQr = headers.indexOf('qr');
-    const idxCodigo = headers.indexOf('codigoestudiante');
-    if (idxNombres < 0 || idxApellidos < 0 || idxQr < 0) return [];
-    return lines.slice(1).map((line) => {
-      const cols = line.split(',').map((c) => c.trim());
-      return {
-        nombres: cols[idxNombres] || '',
-        apellidos: cols[idxApellidos] || '',
-        qr: cols[idxQr] || '',
-        codigoEstudiante: idxCodigo >= 0 ? (cols[idxCodigo] || '') : ''
-      };
-    }).filter((row) => row.nombres && row.apellidos && row.qr);
+  const handleConfirmDeleteEstudiante = async () => {
+    const estudiante = deleteEstudianteConfirmModal?.estudiante;
+    if (!estudiante?.id) return;
+    setDeleteEstudianteConfirmModal((prev) => ({ ...prev, deleting: true }));
+    try {
+      await deleteEstudiante(estudiante.id);
+      await loadEstudiantesPorCurso(cursoSeleccionado);
+      if (String(estudianteEditing) === String(estudiante.id)) cancelEditEstudiante();
+      setDeleteEstudianteConfirmModal({ visible: false, estudiante: null, deleting: false });
+      const nombreCompleto = `${estudiante?.nombres || ''} ${estudiante?.apellidos || ''}`.trim();
+      showEstudianteDeleteSuccessModal(
+        nombreCompleto ? `${nombreCompleto} fue eliminado` : 'Estudiante eliminado'
+      );
+    } catch (e) {
+      setDeleteEstudianteConfirmModal((prev) => ({ ...prev, deleting: false }));
+      Alert.alert('Error', getApiErrorMessage(e, 'No se pudo eliminar el estudiante'));
+    }
   };
 
-  const handleDownloadEstudianteCsvModelo = async () => {
-    const csvContent = [
-      'nombres,apellidos,qr,codigoEstudiante',
-      'Juan,Campos,QR_JUAN_001,COD001',
-      'Maria,Lopez,QR_MARIA_002,COD002'
-    ].join('\n');
-    const fileName = `modelo_estudiantes_${new Date().toISOString().slice(0, 10)}.csv`;
+  const sanitizeFileName = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 70);
 
-    if (Platform.OS === 'web') {
-      try {
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        Alert.alert('Error', 'No se pudo descargar el modelo CSV');
-      }
+  const downloadEstudiantesQrZip = async () => {
+    if (downloadingQrZip) return;
+    const studentsWithQr = (Array.isArray(estudiantesFiltrados) ? estudiantesFiltrados : [])
+      .filter((item) => String(item?.qr || '').trim());
+    if (!studentsWithQr.length) {
+      Alert.alert('Sin datos', 'No hay estudiantes con QR para exportar en la vista actual.');
       return;
     }
 
+    setDownloadingQrZip(true);
     try {
-      const FileSystem = await import('expo-file-system');
-      const targetDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
-      if (!targetDir) {
-        Alert.alert('Error', 'No se encontro una carpeta valida para guardar el archivo');
-        return;
+      const JSZip = (await import('jszip')).default;
+      const QRCodeModule = await import('qrcode');
+      const toDataURL = QRCodeModule?.toDataURL || QRCodeModule?.default?.toDataURL;
+      if (typeof toDataURL !== 'function') {
+        throw new Error('No se pudo inicializar el generador QR');
       }
-      const fileUri = `${targetDir}${fileName}`;
-      await FileSystem.writeAsStringAsync(fileUri, csvContent, {
-        encoding: FileSystem.EncodingType.UTF8
-      });
+      const zip = new JSZip();
+      const courseLabel = sanitizeFileName(cursoSeleccionadoNombre || `curso_${cursoSeleccionado || ''}`) || 'curso';
+      const folder = zip.folder(`qr_${courseLabel}`);
+      if (!folder) {
+        throw new Error('No se pudo crear la carpeta ZIP');
+      }
 
-      try {
-        const Sharing = await import('expo-sharing');
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'text/csv',
-            dialogTitle: 'Modelo CSV de estudiantes'
-          });
-          return;
+      for (let index = 0; index < studentsWithQr.length; index += 1) {
+        const student = studentsWithQr[index];
+        const qrValue = String(student?.qr || '').trim();
+        const fullName = String(student?.nombre || `${student?.nombres || ''} ${student?.apellidos || ''}`).trim();
+        const safeName = sanitizeFileName(fullName) || `estudiante_${index + 1}`;
+        const pngBase64 = await toDataURL(qrValue, {
+          errorCorrectionLevel: 'H',
+          margin: 2,
+          width: 640
+        });
+        const pureBase64 = String(pngBase64).split(',')[1] || '';
+        folder.file(`${String(index + 1).padStart(3, '0')}_${safeName}.png`, pureBase64, { base64: true });
+      }
+
+      const zipName = `qrs_${courseLabel}_${new Date().toISOString().slice(0, 10)}.zip`;
+
+      if (Platform.OS === 'web') {
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const nav = typeof window !== 'undefined' ? window.navigator : null;
+        if (nav && typeof nav.msSaveOrOpenBlob === 'function') {
+          nav.msSaveOrOpenBlob(blob, zipName);
+        } else {
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = zipName;
+          anchor.style.display = 'none';
+          document.body.appendChild(anchor);
+          anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+          document.body.removeChild(anchor);
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
         }
-      } catch {}
-
-      Alert.alert('Listo', `Modelo CSV guardado en:\n${fileUri}`);
+        Alert.alert('Listo', `Se descargo el ZIP con ${studentsWithQr.length} QR(s).`);
+      } else {
+        const zipBase64 = await zip.generateAsync({ type: 'base64' });
+        const FileSystem = await import('expo-file-system');
+        const targetDir = FileSystem.documentDirectory || FileSystem.cacheDirectory;
+        if (!targetDir) throw new Error('No se encontro una carpeta valida para guardar el ZIP');
+        const fileUri = `${targetDir}${zipName}`;
+        await FileSystem.writeAsStringAsync(fileUri, zipBase64, {
+          encoding: FileSystem.EncodingType.Base64
+        });
+        try {
+          const Sharing = await import('expo-sharing');
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'application/zip',
+              dialogTitle: 'QR de estudiantes'
+            });
+          }
+        } catch {}
+        Alert.alert('Listo', `ZIP generado con ${studentsWithQr.length} QR(s).`);
+      }
     } catch (e) {
-      Alert.alert('Error', 'No se pudo generar el modelo CSV');
+      Alert.alert('Error', getApiErrorMessage(e, `No se pudo generar/descargar el ZIP de codigos QR${e?.message ? `: ${e.message}` : ''}`));
+    } finally {
+      setDownloadingQrZip(false);
     }
+  };
+
+  const buildAutoQrCode = (nombres = '', apellidos = '', seed = '') => {
+    const normalizeChunk = (value) => String(value || '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Z0-9]+/g, '')
+      .slice(0, 6);
+    const baseNombres = normalizeChunk(nombres) || 'EST';
+    const baseApellidos = normalizeChunk(apellidos) || 'AUTO';
+    const randomChunk = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}${String(seed || '')}`
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 10);
+    return `QR-${baseNombres}-${baseApellidos}-${randomChunk}`;
+  };
+
+  const parseSpreadsheetRows = async (fileData) => {
+    if (!fileData) return [];
+    const XLSX = await import('xlsx');
+    const workbook = fileData?.arrayBuffer
+      ? XLSX.read(fileData.arrayBuffer, { type: 'array' })
+      : XLSX.read(String(fileData?.base64 || ''), { type: 'base64' });
+    const firstSheetName = workbook?.SheetNames?.[0];
+    if (!firstSheetName) return [];
+    const firstSheet = workbook.Sheets[firstSheetName];
+    const matrix = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+    if (!Array.isArray(matrix) || matrix.length < 2) return [];
+
+    const normalizeHeader = (value = '') => String(value || '')
+      .trim()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const headers = (Array.isArray(matrix[0]) ? matrix[0] : []).map(normalizeHeader);
+    const nonEmptyHeaders = headers.filter(Boolean);
+    const allowedHeaders = new Set(['nombre', 'nombres', 'apellidos']);
+    const hasInvalidHeader = nonEmptyHeaders.some((header) => !allowedHeaders.has(header));
+    const nameHeadersCount = nonEmptyHeaders.filter((header) => header === 'nombre' || header === 'nombres').length;
+    const lastNameHeadersCount = nonEmptyHeaders.filter((header) => header === 'apellidos').length;
+    if (hasInvalidHeader || nonEmptyHeaders.length !== 2 || nameHeadersCount !== 1 || lastNameHeadersCount !== 1) {
+      return [];
+    }
+    const idxNombres = headers.indexOf('nombres') >= 0 ? headers.indexOf('nombres') : headers.indexOf('nombre');
+    const idxApellidos = headers.indexOf('apellidos');
+    if (idxNombres < 0 || idxApellidos < 0) return [];
+
+    return matrix.slice(1).map((row = [], index) => {
+      const cols = Array.isArray(row) ? row : [];
+      const nombres = String(cols[idxNombres] || '').trim();
+      const apellidos = String(cols[idxApellidos] || '').trim();
+      return {
+        nombres,
+        apellidos,
+        qr: buildAutoQrCode(nombres, apellidos, `xls-${index + 1}`),
+        codigoEstudiante: ''
+      };
+    }).filter((row) => row.nombres && row.apellidos);
   };
 
   const openCreateEstudianteModal = async (preferredCursoId = null) => {
     setEstudianteCreateModalVisible(true);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
-    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteCreateForm({ nombres: '', apellidos: '' });
     setEstudianteCreateMaterias([]);
     setSelectedCsvFile(null);
     setUploadedStudents([]);
@@ -1262,7 +1357,7 @@ export default function HomeScreen() {
     setEstudianteCreateError('');
     setEstudianteCreateCursoId(null);
     setEstudianteCreateMaterias([]);
-    setEstudianteCreateForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '' });
+    setEstudianteCreateForm({ nombres: '', apellidos: '' });
     setSelectedCsvFile(null);
     setUploadedStudents([]);
     setSavingEstudiante(false);
@@ -1273,14 +1368,18 @@ export default function HomeScreen() {
     if (Platform.OS === 'web') {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.csv,text/csv';
+      input.accept = '.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
       input.onchange = async (event) => {
         const file = event?.target?.files?.[0];
         if (!file) return;
-        const content = await file.text();
         const dotIdx = file.name.lastIndexOf('.');
         const ext = dotIdx >= 0 ? file.name.slice(dotIdx + 1).toLowerCase() : '';
-        setSelectedCsvFile({ name: file.name, ext, content });
+        if (!['xls', 'xlsx'].includes(ext)) {
+          setEstudianteCreateError('El archivo debe ser .xls o .xlsx');
+          return;
+        }
+        const arrayBuffer = await file.arrayBuffer();
+        setSelectedCsvFile({ name: file.name, ext, arrayBuffer });
       };
       input.click();
       return;
@@ -1290,18 +1389,26 @@ export default function HomeScreen() {
       const DocumentPicker = await import('expo-document-picker');
       const FileSystem = await import('expo-file-system');
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'text/comma-separated-values', 'text/plain'],
+        type: [
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/octet-stream'
+        ],
         copyToCacheDirectory: true,
         multiple: false
       });
       if (result.canceled) return;
       const file = result.assets?.[0];
       if (!file?.uri) return;
-      const content = await FileSystem.readAsStringAsync(file.uri);
-      const name = file.name || file.uri.split('/').pop() || 'archivo.csv';
+      const name = file.name || file.uri.split('/').pop() || 'archivo.xlsx';
       const dotIdx = name.lastIndexOf('.');
       const ext = dotIdx >= 0 ? name.slice(dotIdx + 1).toLowerCase() : '';
-      setSelectedCsvFile({ name, ext, content });
+      if (!['xls', 'xlsx'].includes(ext)) {
+        setEstudianteCreateError('El archivo debe ser .xls o .xlsx');
+        return;
+      }
+      const base64 = await FileSystem.readAsStringAsync(file.uri, { encoding: FileSystem.EncodingType.Base64 });
+      setSelectedCsvFile({ name, ext, base64 });
     } catch (e) {
       setEstudianteCreateError('No se pudo abrir el selector de archivos del dispositivo.');
     }
@@ -1320,13 +1427,13 @@ export default function HomeScreen() {
       setEstudianteCreateError('Selecciona al menos una materia del curso');
       return;
     }
-    if (!selectedCsvFile?.content) {
-      setEstudianteCreateError('Primero selecciona un archivo CSV');
+    if (!selectedCsvFile?.arrayBuffer && !selectedCsvFile?.base64) {
+      setEstudianteCreateError('Primero selecciona un archivo XLS o XLSX');
       return;
     }
-    const estudiantes = parseCsvRows(selectedCsvFile.content);
+    const estudiantes = await parseSpreadsheetRows(selectedCsvFile);
     if (!estudiantes.length) {
-      setEstudianteCreateError('CSV invalido. Encabezados requeridos: nombres,apellidos,qr,codigoEstudiante');
+      setEstudianteCreateError('Archivo Excel invalido. Solo se permiten las columnas: nombre(s),apellidos');
       return;
     }
     setSavingEstudiante(true);
@@ -1336,7 +1443,7 @@ export default function HomeScreen() {
       setUploadedStudents(Array.isArray(data?.students) ? data.students : estudiantes);
       Alert.alert('Listo', `Se cargaron ${data?.created || estudiantes.length} estudiantes`);
     } catch (e) {
-      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo CSV'));
+      setEstudianteCreateError(getApiErrorMessage(e, 'No se pudo subir el archivo Excel'));
     } finally {
       setSavingEstudiante(false);
     }
@@ -1345,14 +1452,13 @@ export default function HomeScreen() {
   const handleCreateEstudiante = async () => {
     const nombres = (estudianteCreateForm.nombres || '').trim();
     const apellidos = (estudianteCreateForm.apellidos || '').trim();
-    const qr = (estudianteCreateForm.qr || '').trim();
-    const codigoEstudiante = (estudianteCreateForm.codigoEstudiante || '').trim();
+    const qr = buildAutoQrCode(nombres, apellidos, 'manual');
     const cursoId = Number(estudianteCreateCursoId);
     const materiasSeleccionadas = estudianteCreateMaterias.filter((materia) => (
       estudianteCreateMateriasDisponibles.some((item) => normalizeMateriaOption(item) === normalizeMateriaOption(materia))
     ));
-    if (!nombres || !apellidos || !qr) {
-      setEstudianteCreateError('Completa nombres, apellidos y QR');
+    if (!nombres || !apellidos) {
+      setEstudianteCreateError('Completa nombres y apellidos');
       return;
     }
     if (!Number.isFinite(cursoId) || cursoId <= 0) {
@@ -1366,7 +1472,7 @@ export default function HomeScreen() {
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId, materias: materiasSeleccionadas });
+      await createEstudiante({ nombres, apellidos, qr, cursoId, materias: materiasSeleccionadas });
       Alert.alert('Listo', 'Estudiante agregado correctamente');
       closeCreateEstudianteModal();
     } catch (e) {
@@ -2828,14 +2934,6 @@ export default function HomeScreen() {
                   </Text>
                 ) : null}
 
-                <TouchableOpacity style={styles.docenteCsvModelBtn} onPress={handleDownloadEstudianteCsvModelo} activeOpacity={0.85}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="download-outline" size={16} color="#dbeafe" />
-                    <Text style={styles.docenteCsvModelBtnText}>Descargar modelo CSV</Text>
-                  </View>
-                </TouchableOpacity>
-                <Text style={styles.docenteCsvModelHint}>Encabezados: nombres, apellidos, qr, codigoEstudiante</Text>
-
                 {docentePerfilError ? <Text style={[styles.errorText, styles.docentePerfilError]}>{docentePerfilError}</Text> : null}
 
                 {!docentePerfilLoading && !docentePerfilError && docentePerfilCursos.length === 0 ? (
@@ -2993,22 +3091,7 @@ export default function HomeScreen() {
                 editable={!savingEstudiante}
                 onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, apellidos: v }))}
               />
-              <TextInput
-                style={styles.courseInput}
-                placeholder="Codigo QR"
-                placeholderTextColor="#9ca3af"
-                value={estudianteCreateForm.qr}
-                editable={!savingEstudiante}
-                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, qr: v }))}
-              />
-              <TextInput
-                style={styles.courseInput}
-                placeholder="Codigo del estudiante"
-                placeholderTextColor="#9ca3af"
-                value={estudianteCreateForm.codigoEstudiante}
-                editable={!savingEstudiante}
-                onChangeText={(v) => setEstudianteCreateForm(prev => ({ ...prev, codigoEstudiante: v }))}
-              />
+              <Text style={styles.dataBullet}>El codigo QR se genera automaticamente al guardar.</Text>
               <TouchableOpacity
                 style={[styles.smallBtn, styles.outlineBtn, savingEstudiante && { opacity: 0.6 }]}
                 onPress={handleImportCsv}
@@ -3016,10 +3099,10 @@ export default function HomeScreen() {
               >
                 <View style={styles.btnRow}>
                   <Ionicons name="document-attach-outline" size={14} color="#e5e7eb" />
-                  <Text style={styles.smallBtnText}>Seleccionar archivo</Text>
+                  <Text style={styles.smallBtnText}>Seleccionar archivo Excel</Text>
                 </View>
               </TouchableOpacity>
-              <Text style={styles.dataBullet}>CSV encabezados: nombres,apellidos,qr,codigoEstudiante</Text>
+              <Text style={styles.dataBullet}>Excel (.xls/.xlsx) encabezados: nombre(s),apellidos (sin columnas extra)</Text>
               {selectedCsvFile ? (
                 <Text style={styles.dataBullet}>
                   Archivo: {selectedCsvFile.name} {selectedCsvFile.ext ? `(.${selectedCsvFile.ext})` : ''}
@@ -3034,7 +3117,7 @@ export default function HomeScreen() {
               >
                 <View style={styles.btnRow}>
                   <Ionicons name="cloud-upload-outline" size={14} color="#e5e7eb" />
-                  <Text style={styles.smallBtnText}>{savingEstudiante ? 'Subiendo...' : 'Subir archivo'}</Text>
+                  <Text style={styles.smallBtnText}>{savingEstudiante ? 'Subiendo...' : 'Subir archivo Excel'}</Text>
                 </View>
               </TouchableOpacity>
               {estudianteCreateError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{estudianteCreateError}</Text> : null}
@@ -4674,7 +4757,19 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.dataBox}>
-                <Text style={styles.dataTitle}>Estudiantes</Text>
+                <View style={styles.studentsHeaderRow}>
+                  <Text style={styles.dataTitle}>Estudiantes</Text>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.infoBtn, downloadingQrZip && { opacity: 0.6 }]}
+                    onPress={downloadEstudiantesQrZip}
+                    disabled={downloadingQrZip || estudiantesLoading || estudiantesFiltrados.length === 0}
+                  >
+                    <View style={styles.btnRow}>
+                      <Ionicons name="download-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>{downloadingQrZip ? 'Generando ZIP...' : 'Descargar QR (ZIP)'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.dataBullet}>
                   {estudianteMateriaFiltro === ALL_MATERIAS_OPTION
                     ? 'Puedes ver todo el curso o filtrar por una materia especifica.'
@@ -5521,6 +5616,37 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="fade"
+        visible={estudianteDeleteSuccessModal.visible}
+        onRequestClose={() => {
+          clearEstudianteDeleteSuccessTimeout();
+          setEstudianteDeleteSuccessModal({ visible: false, message: '' });
+        }}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.estudianteDeleteSuccessCard}>
+            <View style={styles.estudianteDeleteSuccessIconWrap}>
+              <Ionicons name="checkmark-done-outline" size={24} color="#86efac" />
+            </View>
+            <View style={styles.estudianteDeleteSuccessContent}>
+              <Text style={styles.estudianteDeleteSuccessTitle}>Eliminacion completada</Text>
+              <Text style={styles.estudianteDeleteSuccessText}>{estudianteDeleteSuccessModal.message}</Text>
+            </View>
+            <Pressable
+              style={styles.estudianteDeleteSuccessCloseBtn}
+              onPress={() => {
+                clearEstudianteDeleteSuccessTimeout();
+                setEstudianteDeleteSuccessModal({ visible: false, message: '' });
+              }}
+            >
+              <Ionicons name="close-outline" size={16} color="#cbd5e1" />
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
         visible={deletePeriodModal.visible}
         onRequestClose={() => setDeletePeriodModal({ visible: false, id: null })}
       >
@@ -5609,6 +5735,48 @@ export default function HomeScreen() {
                 onPress={() => handleDeleteCurso(deleteCursoModal.curso)}
               >
                 <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={deleteEstudianteConfirmModal.visible}
+        onRequestClose={() => {
+          if (deleteEstudianteConfirmModal.deleting) return;
+          setDeleteEstudianteConfirmModal({ visible: false, estudiante: null, deleting: false });
+        }}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={styles.deleteModalCard}>
+            <View style={styles.deleteModalIconWrap}>
+              <Ionicons name="warning-outline" size={24} color="#ef4444" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar estudiante</Text>
+            <Text style={styles.deleteModalText}>
+              Vas a eliminar "
+              {`${deleteEstudianteConfirmModal?.estudiante?.nombres || ''} ${deleteEstudianteConfirmModal?.estudiante?.apellidos || ''}`.trim() || 'este estudiante'}
+              ". Esta accion no se puede deshacer.
+            </Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={[styles.deleteModalCancelBtn, deleteEstudianteConfirmModal.deleting && { opacity: 0.6 }]}
+                disabled={deleteEstudianteConfirmModal.deleting}
+                onPress={() => setDeleteEstudianteConfirmModal({ visible: false, estudiante: null, deleting: false })}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteModalConfirmBtn, deleteEstudianteConfirmModal.deleting && { opacity: 0.6 }]}
+                disabled={deleteEstudianteConfirmModal.deleting}
+                onPress={handleConfirmDeleteEstudiante}
+              >
+                <Text style={styles.deleteModalConfirmText}>
+                  {deleteEstudianteConfirmModal.deleting ? 'Eliminando...' : 'Eliminar'}
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -5725,6 +5893,47 @@ const styles = StyleSheet.create({
   feedbackError: { color: '#fecaca', fontWeight: '700', fontSize: 13, marginTop: 6 },
   statusModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 20 },
   statusModalCard: { minWidth: 260, maxWidth: '90%', borderRadius: 14, paddingVertical: 16, paddingHorizontal: 18, backgroundColor: '#0f172a', borderWidth: 1, borderColor: 'rgba(34,197,94,0.45)', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  estudianteDeleteSuccessCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#0b1220',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.42)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.32,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    elevation: 8
+  },
+  estudianteDeleteSuccessIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(22,163,74,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.5)'
+  },
+  estudianteDeleteSuccessContent: { flex: 1, minWidth: 0, gap: 2 },
+  estudianteDeleteSuccessTitle: { color: '#dcfce7', fontSize: 14, fontWeight: '900' },
+  estudianteDeleteSuccessText: { color: '#bbf7d0', fontSize: 12.5, fontWeight: '700' },
+  estudianteDeleteSuccessCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(51,65,85,0.65)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)'
+  },
   resetPasswordModalCard: {
     width: '100%',
     maxWidth: 420,
@@ -5844,6 +6053,7 @@ const styles = StyleSheet.create({
   emptyText: { color: '#cbd5e1', textAlign: 'center', marginTop: 8 },
   dataBox: { width: '100%', alignSelf: 'stretch', marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 4 },
   dataTitle: { color: '#e5e7eb', fontWeight: '800', marginBottom: 2 },
+  studentsHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' },
   dataItem: { color: '#cbd5e1' },
   dataValue: { color: '#fff', fontWeight: '800' },
   dataBullet: { color: '#cbd5e1', fontSize: 12 },
@@ -5906,18 +6116,6 @@ const styles = StyleSheet.create({
   docentePerfilBadgeText: { color: '#dbeafe', fontSize: 11.5, fontWeight: '800' },
   docentePerfilSummary: { color: '#cbd5e1', fontSize: 13, lineHeight: 19 },
   docentePerfilError: { marginTop: 2 },
-  docenteCsvModelBtn: {
-    marginTop: 10,
-    alignSelf: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: 'rgba(37,99,235,0.28)',
-    borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.4)'
-  },
-  docenteCsvModelBtnText: { color: '#dbeafe', fontSize: 12.8, fontWeight: '800' },
-  docenteCsvModelHint: { color: '#93c5fd', fontSize: 11.5, marginTop: 6, textAlign: 'center' },
   docenteMateriaList: { gap: 10 },
   docenteMateriaCard: {
     padding: 12,

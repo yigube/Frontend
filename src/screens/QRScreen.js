@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } fro
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { registrarAsistencia, syncAsistenciasPendientes, getAsistenciasPendientesCount } from '../services/asistencias';
+import { api } from '../services/api';
 import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
 import { useAuth } from '../store/useAuth';
@@ -62,6 +63,7 @@ export default function QRScreen({ navigation }) {
   const [infoModal, setInfoModal] = useState({ visible: false, title: '', message: '' });
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [syncingPending, setSyncingPending] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const scanLockRef = useRef(false);
   const savingLockRef = useRef(false);
   const cameraActive = isFocused
@@ -158,6 +160,49 @@ export default function QRScreen({ navigation }) {
       await syncPendingIfAny();
       await refreshPendingCount();
     })();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    let intervalId = null;
+
+    const updateConnectivity = async () => {
+      if (typeof navigator !== 'undefined' && navigator?.onLine === false) {
+        if (isMounted) setIsOnline(false);
+        return;
+      }
+      try {
+        await api.get('/', { timeout: 1800 });
+        if (isMounted) setIsOnline(true);
+      } catch {
+        if (isMounted) setIsOnline(false);
+      }
+    };
+
+    updateConnectivity();
+    intervalId = setInterval(updateConnectivity, 8000);
+
+    if (typeof window !== 'undefined' && window?.addEventListener) {
+      const onOnline = () => {
+        if (isMounted) setIsOnline(true);
+      };
+      const onOffline = () => {
+        if (isMounted) setIsOnline(false);
+      };
+      window.addEventListener('online', onOnline);
+      window.addEventListener('offline', onOffline);
+      return () => {
+        isMounted = false;
+        if (intervalId) clearInterval(intervalId);
+        window.removeEventListener('online', onOnline);
+        window.removeEventListener('offline', onOffline);
+      };
+    }
+
+    return () => {
+      isMounted = false;
+      if (intervalId) clearInterval(intervalId);
+    };
   }, []);
 
   useFocusEffect(
@@ -363,6 +408,10 @@ export default function QRScreen({ navigation }) {
       />
 
       <View style={styles.overlay}>
+        <View style={styles.connectivityBadge}>
+          <View style={[styles.connectivityDot, isOnline ? styles.connectivityDotOnline : styles.connectivityDotOffline]} />
+          <Text style={styles.connectivityText}>{isOnline ? 'En linea' : 'Offline'}</Text>
+        </View>
         <Text style={styles.label}>Curso</Text>
         <Pressable
           style={styles.selectBox}
@@ -617,6 +666,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.15)'
   },
+  connectivityBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 10,
+    backgroundColor: 'rgba(15,23,42,0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)'
+  },
+  connectivityDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999
+  },
+  connectivityDotOnline: {
+    backgroundColor: '#22c55e'
+  },
+  connectivityDotOffline: {
+    backgroundColor: '#ef4444'
+  },
+  connectivityText: { color: '#e5e7eb', fontSize: 12, fontWeight: '800' },
   label: { color: '#fff', fontWeight: '700', marginBottom: 6 },
   secondaryLabel: { marginTop: 10 },
   selectBox: {

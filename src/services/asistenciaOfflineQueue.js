@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system';
 
 const STORAGE_KEY = 'asistencia_pending_queue_v1';
 const FILE_NAME = 'asistencia-pending-queue.json';
+const CLIENT_REQUEST_ID_MAX_LENGTH = 120;
 
 const canUseLocalStorage = () => (
   Platform.OS === 'web'
@@ -22,6 +23,21 @@ const safeParseQueue = (value) => {
   } catch {
     return [];
   }
+};
+
+const generateClientRequestId = () => {
+  const randomPart = `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+  return `att-${randomPart}`.slice(0, CLIENT_REQUEST_ID_MAX_LENGTH);
+};
+
+const normalizeClientRequestId = (value) => String(value || '')
+  .trim()
+  .slice(0, CLIENT_REQUEST_ID_MAX_LENGTH);
+
+const normalizePayload = (payload = {}) => {
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  const clientRequestId = normalizeClientRequestId(safePayload.clientRequestId) || generateClientRequestId();
+  return { ...safePayload, clientRequestId };
 };
 
 const readQueue = async () => {
@@ -58,7 +74,7 @@ const writeQueue = async (queue) => {
 const buildQueueItem = (payload = {}) => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
   createdAt: new Date().toISOString(),
-  payload
+  payload: normalizePayload(payload)
 });
 
 export async function enqueueAsistencia(payload) {
@@ -80,8 +96,12 @@ export async function getAsistenciaQueueCount() {
 export async function flushAsistenciaQueue(sendFn) {
   if (typeof sendFn !== 'function') return { sent: 0, pending: 0, dropped: 0 };
 
-  const queue = await readQueue();
+  const queue = (await readQueue()).map((item = {}) => ({
+    ...item,
+    payload: normalizePayload(item?.payload)
+  }));
   if (!queue.length) return { sent: 0, pending: 0, dropped: 0 };
+  await writeQueue(queue);
 
   let sent = 0;
   let dropped = 0;
@@ -113,4 +133,3 @@ export async function flushAsistenciaQueue(sendFn) {
   await writeQueue(pendingQueue);
   return { sent, pending: pendingQueue.length, dropped };
 }
-
