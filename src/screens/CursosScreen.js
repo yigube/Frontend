@@ -9,7 +9,6 @@ import {
   TextInput,
   Modal,
   Pressable,
-  Alert,
   RefreshControl,
   KeyboardAvoidingView,
   Platform
@@ -18,6 +17,7 @@ import ScreenBackground from '../components/ScreenBackground';
 import { getCursos, createCurso, updateCurso, deleteCurso } from '../services/cursos';
 import { useAuth } from '../store/useAuth';
 import { Ionicons } from '@expo/vector-icons';
+import { AppConfirmDialog, AppInfoDialog } from '../components/AppDialog';
 
 export default function CursosScreen() {
   const user = useAuth(s => s.user);
@@ -31,6 +31,12 @@ export default function CursosScreen() {
   const [formName, setFormName] = useState('');
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [feedbackModal, setFeedbackModal] = useState({ visible: false, title: '', message: '', tone: 'info' });
+  const [deleteModal, setDeleteModal] = useState({ visible: false, curso: null, loading: false });
+
+  const showFeedback = (title, message, tone = 'info') => {
+    setFeedbackModal({ visible: true, title, message, tone });
+  };
 
   const loadCursos = async (term = '') => {
     setError(null);
@@ -64,7 +70,10 @@ export default function CursosScreen() {
 
   const handleSave = async () => {
     const nombre = formName.trim();
-    if (!nombre) return Alert.alert('Nombre requerido', 'Escribe un nombre para el curso');
+    if (!nombre) {
+      showFeedback('Nombre requerido', 'Escribe un nombre para el curso', 'warning');
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
@@ -75,28 +84,28 @@ export default function CursosScreen() {
       setModalVisible(false);
       await loadCursos(search);
     } catch (e) {
-      Alert.alert('Error', e?.response?.data?.error || e?.message || 'No se pudo guardar');
+      showFeedback('Error', e?.response?.data?.error || e?.message || 'No se pudo guardar', 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = (curso) => {
-    Alert.alert('Eliminar curso', `Vas a eliminar "${curso.nombre}"`, [
-      { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteCurso(curso.id);
-            await loadCursos(search);
-          } catch (e) {
-            Alert.alert('Error', e?.response?.data?.error || e?.message || 'No se pudo eliminar');
-          }
-        }
-      }
-    ]);
+    setDeleteModal({ visible: true, curso, loading: false });
+  };
+
+  const confirmDeleteCurso = async () => {
+    const curso = deleteModal?.curso;
+    if (!curso?.id) return;
+    setDeleteModal((prev) => ({ ...prev, loading: true }));
+    try {
+      await deleteCurso(curso.id);
+      setDeleteModal({ visible: false, curso: null, loading: false });
+      await loadCursos(search);
+    } catch (e) {
+      setDeleteModal((prev) => ({ ...prev, loading: false }));
+      showFeedback('Error', e?.response?.data?.error || e?.message || 'No se pudo eliminar', 'error');
+    }
   };
 
   const renderItem = ({ item }) => (
@@ -204,6 +213,26 @@ export default function CursosScreen() {
           </KeyboardAvoidingView>
         </View>
       </Modal>
+
+      <AppInfoDialog
+        visible={feedbackModal.visible}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        tone={feedbackModal.tone}
+        onClose={() => setFeedbackModal({ visible: false, title: '', message: '', tone: 'info' })}
+      />
+
+      <AppConfirmDialog
+        visible={deleteModal.visible}
+        title="Eliminar curso"
+        message={`Vas a eliminar "${deleteModal?.curso?.nombre || 'este curso'}".`}
+        confirmLabel="Eliminar"
+        cancelLabel="Cancelar"
+        danger
+        loading={deleteModal.loading}
+        onCancel={() => setDeleteModal({ visible: false, curso: null, loading: false })}
+        onConfirm={confirmDeleteCurso}
+      />
     </ScreenBackground>
   );
 }
@@ -228,11 +257,26 @@ const styles = StyleSheet.create({
   error: { color: 'salmon', padding: 16, textAlign: 'center' },
   empty: { color: '#ccc', paddingVertical: 16, textAlign: 'center' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
-  modalCard: { backgroundColor: '#fff', borderRadius: 14, padding: 16, gap: 12 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
-  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff', color: '#111' },
+  modalCard: {
+    backgroundColor: 'rgba(15,23,42,0.96)',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.28)'
+  },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: '#f8fafc' },
+  input: {
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.4)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    color: '#f8fafc'
+  },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
-  outlineBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: '#d1d5db' },
-  outlineBtnText: { color: '#111', fontWeight: '600' },
+  outlineBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(148,163,184,0.45)' },
+  outlineBtnText: { color: '#e2e8f0', fontWeight: '700' },
   btnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 }
 });

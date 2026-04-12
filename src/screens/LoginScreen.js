@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, Image, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Modal, Pressable } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
 import { requestPasswordReset } from '../services/auth';
+import { AppInfoDialog } from '../components/AppDialog';
 
 export default function LoginScreen() {
   const { control, handleSubmit } = useForm({ defaultValues: { email: '', password: '' } });
@@ -14,6 +15,11 @@ export default function LoginScreen() {
   const [sendingTemporaryPassword, setSendingTemporaryPassword] = useState(false);
   const [resetForm, setResetForm] = useState({ email: '' });
   const [resetError, setResetError] = useState('');
+  const [feedbackModal, setFeedbackModal] = useState({ visible: false, title: '', message: '', tone: 'info' });
+
+  const showFeedback = (title, message, tone = 'info') => {
+    setFeedbackModal({ visible: true, title, message, tone });
+  };
 
   const openResetModal = () => {
     setResetError('');
@@ -39,7 +45,11 @@ export default function LoginScreen() {
     try {
       await requestPasswordReset(email);
       setResetModalVisible(false);
-      Alert.alert('Clave temporal enviada', 'Revisa tu correo. Ingresa con la clave temporal y luego cambiala desde la app.');
+      showFeedback(
+        'Clave temporal enviada',
+        'Revisa tu correo. Ingresa con la clave temporal y luego cambiala desde la app.',
+        'success'
+      );
     } catch (e) {
       setResetError(e?.response?.data?.error || e?.message || 'No se pudo enviar la clave temporal');
     } finally {
@@ -52,7 +62,7 @@ export default function LoginScreen() {
       await login(email, password);
     } catch (e) {
       const apiError = e?.response?.data?.error || e?.response?.data?.message;
-      Alert.alert('Error de autenticacion', apiError || e.message);
+      showFeedback('Error de autenticacion', apiError || e.message, 'error');
     }
   };
 
@@ -156,6 +166,14 @@ export default function LoginScreen() {
           </View>
         </View>
       </Modal>
+
+      <AppInfoDialog
+        visible={feedbackModal.visible}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        tone={feedbackModal.tone}
+        onClose={() => setFeedbackModal({ visible: false, title: '', message: '', tone: 'info' })}
+      />
     </View>
   );
 }

@@ -14,4 +14,4 @@
 - En web se usa `localStorage` para el token y en mobile `SecureStore`.
 - Si usas backend con CORS restringido, agrega el origen web (`http://localhost:8081` o el puerto que use Expo) a `CORS_ORIGINS`.
 - Interceptor Axios adjunta JWT automaticamente.
-- `attendance:created` se escucha en tiempo real.
+- Se escuchan eventos real-time `attendance:created` y `asistencia:registrada`.

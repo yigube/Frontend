@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Alert, TouchableOpacity, Modal, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { registrarAsistencia, syncAsistenciasPendientes, getAsistenciasPendientesCount } from '../services/asistencias';
@@ -8,31 +8,7 @@ import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
 import { useAuth } from '../store/useAuth';
 import { Ionicons } from '@expo/vector-icons';
-
-const getLocalDateISO = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
-const formatTimeLabel = (value) => {
-  const parsed = value ? new Date(value) : new Date();
-  if (Number.isNaN(parsed.getTime())) {
-    return new Date().toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-  }
-  return parsed.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
-};
-
-const normalizeMateriaOption = (value = '') => String(value || '').trim().toLowerCase();
-
-const buildEstadoFlags = (estado) => ({
-  presente: estado === 'presente' || estado === 'tarde',
-  tarde: estado === 'tarde',
-  afuera: estado === 'afuera',
-  ausente: estado === 'ausente'
-});
+import { buildEstadoFlags, formatTimeLabel, getLocalDateISO, normalizeMateriaOption } from './qr/qrUtils';
 
 export default function QRScreen({ navigation }) {
   const user = useAuth((state) => state.user);
@@ -118,7 +94,11 @@ export default function QRScreen({ navigation }) {
 
         if (safeCursos.length > 0) setCursoId(safeCursos[0].id);
       } catch (e) {
-        Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los cursos');
+        setErrorModal({
+          visible: true,
+          title: 'Error',
+          message: e?.response?.data?.error || 'No se pudieron cargar los cursos'
+        });
       } finally {
         setLoadingCursos(false);
       }
@@ -329,7 +309,11 @@ export default function QRScreen({ navigation }) {
       });
       if (response?.queued) {
         await refreshPendingCount();
-        Alert.alert('Sin internet estable', 'Asistencia guardada localmente. Se sincronizara automaticamente cuando vuelva la conexion.');
+        setInfoModal({
+          visible: true,
+          title: 'Sin internet estable',
+          message: 'Asistencia guardada localmente. Se sincronizara automaticamente cuando vuelva la conexion.'
+        });
         const retrySync = await syncPendingIfAny();
         if (Number(retrySync?.sent || 0) > 0) {
           await refreshPendingCount();
@@ -380,7 +364,11 @@ export default function QRScreen({ navigation }) {
     }
 
     if (materiasDisponibles.length > 0 && !String(materiaSeleccionada || '').trim()) {
-      Alert.alert('Materia requerida', 'Selecciona una materia antes de escanear.');
+      setInfoModal({
+        visible: true,
+        title: 'Materia requerida',
+        message: 'Selecciona una materia antes de escanear.'
+      });
       return;
     }
 
@@ -503,7 +491,11 @@ export default function QRScreen({ navigation }) {
                 const result = await syncPendingIfAny();
                 await refreshPendingCount();
                 if (Number(result?.sent || 0) > 0) {
-                  Alert.alert('Sincronizacion completa', `Se sincronizaron ${result.sent} registro(s).`);
+                  setInfoModal({
+                    visible: true,
+                    title: 'Sincronizacion completa',
+                    message: `Se sincronizaron ${result.sent} registro(s).`
+                  });
                 }
               }}
             >

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,6 +13,7 @@ import { useAuth } from '../store/useAuth';
 import { getColegios } from '../services/colegios';
 import { getPeriodos } from '../services/periodos';
 import { getDashboardReportes } from '../services/reportes';
+import { AppInfoDialog } from '../components/AppDialog';
 
 const DASHBOARD_ROLES = new Set(['admin', 'rector', 'coordinador']);
 
@@ -133,6 +133,11 @@ export default function ReportesScreen() {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [loading, setLoading] = useState(false);
   const [periodLoading, setPeriodLoading] = useState(false);
+  const [feedbackModal, setFeedbackModal] = useState({ visible: false, title: '', message: '', tone: 'info' });
+
+  const showFeedback = (title, message, tone = 'info') => {
+    setFeedbackModal({ visible: true, title, message, tone });
+  };
 
   const loadDashboard = async (schoolIdParam = selectedSchoolId, periodoIdParam = selectedPeriodoId, { silent = false } = {}) => {
     const schoolId = Number(schoolIdParam);
@@ -147,7 +152,7 @@ export default function ReportesScreen() {
       setDashboard(data);
     } catch (e) {
       setDashboard(null);
-      Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los reportes');
+      showFeedback('Error', e?.response?.data?.error || 'No se pudieron cargar los reportes', 'error');
     } finally {
       if (!silent) setLoading(false);
     }
@@ -177,7 +182,7 @@ export default function ReportesScreen() {
         }
       } catch (e) {
         if (!cancelled) {
-          Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los colegios');
+          showFeedback('Error', e?.response?.data?.error || 'No se pudieron cargar los colegios', 'error');
         }
       } finally {
         if (!cancelled) setBootstrapping(false);
@@ -215,7 +220,7 @@ export default function ReportesScreen() {
         if (!cancelled) {
           setPeriodos([]);
           setSelectedPeriodoId('all');
-          Alert.alert('Error', e?.response?.data?.error || 'No se pudieron cargar los periodos');
+          showFeedback('Error', e?.response?.data?.error || 'No se pudieron cargar los periodos', 'error');
         }
       } finally {
         if (!cancelled) setPeriodLoading(false);
@@ -535,6 +540,13 @@ export default function ReportesScreen() {
           </View>
         ) : null}
       </ScrollView>
+      <AppInfoDialog
+        visible={feedbackModal.visible}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        tone={feedbackModal.tone}
+        onClose={() => setFeedbackModal({ visible: false, title: '', message: '', tone: 'info' })}
+      />
     </ScreenBackground>
   );
 }

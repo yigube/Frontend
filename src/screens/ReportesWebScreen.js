@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { api } from '../services/api';
 import { getCursos } from '../services/cursos';
 import { getPeriodos } from '../services/periodos';
+import { AppInfoDialog } from '../components/AppDialog';
 
 export default function ReportesWebScreen() {
   const [loading, setLoading] = useState(true);
@@ -10,6 +11,11 @@ export default function ReportesWebScreen() {
   const [cursoId, setCursoId] = useState('');
   const [periodoId, setPeriodoId] = useState('');
   const [materia, setMateria] = useState('');
+  const [feedbackModal, setFeedbackModal] = useState({ visible: false, title: '', message: '', tone: 'info' });
+
+  const showFeedback = (title, message, tone = 'info') => {
+    setFeedbackModal({ visible: true, title, message, tone });
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -19,7 +25,7 @@ export default function ReportesWebScreen() {
         if (periodos?.length) setPeriodoId(String(periodos[0].id));
       } catch (e) {
         const apiError = e?.response?.data?.error || e?.response?.data?.message;
-        Alert.alert('Error', apiError || e.message);
+        showFeedback('Error', apiError || e.message, 'error');
       } finally {
         setLoading(false);
       }
@@ -29,7 +35,7 @@ export default function ReportesWebScreen() {
 
   const descargar = async () => {
     if (!cursoId || !periodoId) {
-      Alert.alert('Datos requeridos', 'Ingresa cursoId y periodoId');
+      showFeedback('Datos requeridos', 'Ingresa cursoId y periodoId', 'warning');
       return;
     }
     try {
@@ -48,7 +54,7 @@ export default function ReportesWebScreen() {
       URL.revokeObjectURL(blobUrl);
     } catch (e) {
       const apiError = e?.response?.data?.error || e?.response?.data?.message;
-      Alert.alert('Error', apiError || e.message);
+      showFeedback('Error', apiError || e.message, 'error');
     } finally {
       setDownloading(false);
     }
@@ -93,6 +99,13 @@ export default function ReportesWebScreen() {
           <Text style={styles.buttonText}>{downloading ? 'Descargando...' : 'Descargar'}</Text>
         </TouchableOpacity>
       </View>
+      <AppInfoDialog
+        visible={feedbackModal.visible}
+        title={feedbackModal.title}
+        message={feedbackModal.message}
+        tone={feedbackModal.tone}
+        onClose={() => setFeedbackModal({ visible: false, title: '', message: '', tone: 'info' })}
+      />
     </View>
   );
 }

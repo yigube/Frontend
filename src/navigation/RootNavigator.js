@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import LoginScreen from '../screens/LoginScreen';
 import QRWebScreen from '../screens/QRWebScreen';
 import { useAuth } from '../store/useAuth';
+import { getTabScreenNamesForRole } from './tabConfig';
 
 const Stack = Platform.OS === 'web' ? null : createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -22,14 +23,16 @@ const pillLabel = (label) => ({ focused }) => (
 
 function AppTabs() {
   const user = useAuth(s => s.user);
-  const isAdmin = user?.rol === 'admin';
-  const screens = [
-    { name: 'Inicio', component: HomeScreen },
-    { name: 'Cursos', component: CursosScreen },
-    ...(!isAdmin ? [{ name: 'Estudiantes', component: EstudiantesScreen }] : []),
-    { name: 'Reportes', component: ReportesScreen },
-    ...(!isAdmin ? [{ name: 'QR', component: QRComponent }] : [])
-  ];
+  const componentByName = {
+    Inicio: HomeScreen,
+    Cursos: CursosScreen,
+    Estudiantes: EstudiantesScreen,
+    Reportes: ReportesScreen,
+    QR: QRComponent
+  };
+  const screens = getTabScreenNamesForRole(user?.rol)
+    .map((name) => ({ name, component: componentByName[name] }))
+    .filter((screen) => Boolean(screen.component));
 
   if (Platform.OS === 'web') {
     return (
