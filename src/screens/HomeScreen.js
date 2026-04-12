@@ -3368,24 +3368,36 @@ export default function HomeScreen() {
                         <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Periodos activos</Text>
                       </View>
                     </TouchableOpacity>
+                    {isAdmin ? (
+                      <TouchableOpacity
+                        style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn]}
+                        onPress={logout}
+                        activeOpacity={0.85}
+                      >
+                        <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                          <Ionicons name="log-out-outline" size={18} color="#fff" />
+                          <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : null}
                   </>
                 ) : null}
-                {(isRectorCoordinador || isAdmin) ? (
-                  <View style={isRectorCoordinador ? styles.rectorGridLogoutRow : styles.adminGridLogoutRow}>
+                {isRectorCoordinador ? (
+                  <View style={styles.rectorGridLogoutRow}>
                     <TouchableOpacity
                       style={[
                         styles.actionBtn,
                         isRectorCoordinador && styles.actionBtnRector,
                         mobileActionBtnStyle,
                         styles.logoutActionBtn,
-                        isRectorCoordinador ? styles.rectorGridLogoutCentered : styles.adminGridLogoutCentered
+                        styles.rectorGridLogoutCentered
                       ]}
                       onPress={logout}
                       activeOpacity={0.85}
                     >
                       <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                         <Ionicons name="log-out-outline" size={18} color="#fff" />
-                        <Text style={[styles.actionBtnText, (isRectorCoordinador || isAdmin) && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                        <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
                       </View>
                     </TouchableOpacity>
                   </View>

@@ -23,7 +23,6 @@ const pillLabel = (label) => ({ focused }) => (
 
 function AppTabs() {
   const user = useAuth(s => s.user);
-  const hideWebTabBarForRole = ['rector', 'coordinador'].includes(user?.rol);
   const componentByName = {
     Inicio: HomeScreen,
     Cursos: CursosScreen,
@@ -40,7 +39,7 @@ function AppTabs() {
       <Tab.Navigator
         screenOptions={{
           headerShown: false,
-          tabBarStyle: [styles.webTabBar, hideWebTabBarForRole && styles.webTabBarHidden],
+          tabBarStyle: styles.webTabBarHidden,
           tabBarActiveTintColor: '#fff',
           tabBarInactiveTintColor: '#9ca3af',
           tabBarItemStyle: styles.webTabItem
