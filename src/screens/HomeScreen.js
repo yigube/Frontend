@@ -3371,16 +3371,24 @@ export default function HomeScreen() {
                   </>
                 ) : null}
                 {(isRectorCoordinador || isAdmin) ? (
-                  <TouchableOpacity
-                    style={[styles.actionBtn, isRectorCoordinador && styles.actionBtnRector, mobileActionBtnStyle, styles.logoutActionBtn]}
-                    onPress={logout}
-                    activeOpacity={0.85}
-                  >
-                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                      <Ionicons name="log-out-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, (isRectorCoordinador || isAdmin) && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
-                    </View>
-                  </TouchableOpacity>
+                  <View style={isRectorCoordinador ? styles.rectorGridLogoutRow : styles.adminGridLogoutRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.actionBtn,
+                        isRectorCoordinador && styles.actionBtnRector,
+                        mobileActionBtnStyle,
+                        styles.logoutActionBtn,
+                        isRectorCoordinador ? styles.rectorGridLogoutCentered : styles.adminGridLogoutCentered
+                      ]}
+                      onPress={logout}
+                      activeOpacity={0.85}
+                    >
+                      <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                        <Ionicons name="log-out-outline" size={18} color="#fff" />
+                        <Text style={[styles.actionBtnText, (isRectorCoordinador || isAdmin) && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
                 ) : null}
               </>
             )}

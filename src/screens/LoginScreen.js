@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Modal, Pressable } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Image, Modal, Pressable, Platform } from 'react-native';
 import { useForm, Controller } from 'react-hook-form';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../store/useAuth';
@@ -8,6 +8,7 @@ import { AppInfoDialog } from '../components/AppDialog';
 
 export default function LoginScreen() {
   const { control, handleSubmit } = useForm({ defaultValues: { email: '', password: '' } });
+  const passwordInputRef = useRef(null);
   const login = useAuth(s => s.login);
   const loading = useAuth(s => s.loading);
   const [showPassword, setShowPassword] = useState(false);
@@ -16,6 +17,7 @@ export default function LoginScreen() {
   const [resetForm, setResetForm] = useState({ email: '' });
   const [resetError, setResetError] = useState('');
   const [feedbackModal, setFeedbackModal] = useState({ visible: false, title: '', message: '', tone: 'info' });
+  const isWeb = Platform.OS === 'web';
 
   const showFeedback = (title, message, tone = 'info') => {
     setFeedbackModal({ visible: true, title, message, tone });
@@ -84,6 +86,12 @@ export default function LoginScreen() {
               placeholder="docente@colegio.edu"
               value={value}
               onChangeText={onChange}
+              returnKeyType="next"
+              onSubmitEditing={() => passwordInputRef.current?.focus?.()}
+              onKeyPress={(event) => {
+                if (!isWeb || event?.nativeEvent?.key !== 'Enter') return;
+                passwordInputRef.current?.focus?.();
+              }}
             />
           )}
         />
@@ -95,11 +103,18 @@ export default function LoginScreen() {
           render={({ field: { onChange, value } }) => (
             <View style={styles.passwordWrap}>
               <TextInput
+                ref={passwordInputRef}
                 style={styles.passwordInput}
                 secureTextEntry={!showPassword}
                 placeholder="******"
                 value={value}
                 onChangeText={onChange}
+                returnKeyType="go"
+                onSubmitEditing={handleSubmit(onSubmit)}
+                onKeyPress={(event) => {
+                  if (!isWeb || event?.nativeEvent?.key !== 'Enter') return;
+                  handleSubmit(onSubmit)();
+                }}
               />
               <TouchableOpacity
                 onPress={() => setShowPassword(prev => !prev)}
