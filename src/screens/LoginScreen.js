@@ -53,7 +53,18 @@ export default function LoginScreen() {
         'success'
       );
     } catch (e) {
-      setResetError(e?.response?.data?.error || e?.message || 'No se pudo enviar la clave temporal');
+      const status = e?.response?.status;
+      const apiError = e?.response?.data?.error;
+      if (status === 404) {
+        setResetModalVisible(false);
+        showFeedback(
+          'Correo no registrado',
+          apiError || 'El correo no se encuentra registrado en la base de datos.',
+          'warning'
+        );
+        return;
+      }
+      setResetError(apiError || e?.message || 'No se pudo enviar la clave temporal');
     } finally {
       setSendingTemporaryPassword(false);
     }
