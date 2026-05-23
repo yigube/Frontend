@@ -176,6 +176,9 @@ export default function HomeScreen() {
   const [showRectorPassword, setShowRectorPassword] = useState(false);
   const [hasRectorPassword, setHasRectorPassword] = useState(false);
   const [deleteColegioModal, setDeleteColegioModal] = useState({ visible: false, colegio: null });
+  const [rectorEditing, setRectorEditing] = useState(null);
+  const [rectorEditModalVisible, setRectorEditModalVisible] = useState(false);
+  const [deleteRectorModal, setDeleteRectorModal] = useState({ visible: false, rector: null });
   const [daneExistsModal, setDaneExistsModal] = useState({ visible: false, message: '' });
   const [colegioEditing, setColegioEditing] = useState(null);
   const [savingColegio, setSavingColegio] = useState(false);
@@ -1928,18 +1931,19 @@ export default function HomeScreen() {
   const startEditColegio = (colegio) => {
     const normalized = normalizeColegioItem(colegio);
     setColegiosListModalVisible(false);
+    setColegiosModalVisible(true);
     setColegioEditing(normalized);
     setColegioNombre(normalized?.nombre || '');
     setColegioCodigoDane(normalized?.codigoDane || '');
-    setRectorNombre(normalized?.rectorNombre || '');
-    setRectorApellido(normalized?.rectorApellido || '');
-    setRectorCorreo(normalized?.rectorCorreo || '');
-    setRectorTelefono(normalized?.rectorTelefono || '');
-    setRectorCedula(normalized?.rectorCedula || '');
-    setRectorCargo((normalized?.rectorCargo || 'rector') === 'coordinador' ? 'coordinador' : 'rector');
+    setRectorNombre('');
+    setRectorApellido('');
+    setRectorCorreo('');
+    setRectorTelefono('');
+    setRectorCedula('');
+    setRectorCargo('rector');
     setRectorPassword('');
     setShowRectorPassword(false);
-    setHasRectorPassword(Boolean(normalized?.rectorTienePassword));
+    setHasRectorPassword(false);
     setColegiosError('');
     hideColegiosSuccess({ animated: false });
     setTimeout(() => {
@@ -1956,17 +1960,19 @@ export default function HomeScreen() {
     const rectorTelefonoValue = rectorTelefono.trim();
     const rectorCedulaValue = rectorCedula.trim();
     const passwordDraft = rectorPassword.trim();
-    const payload = {
-      nombre,
-      codigoDane,
-      rectorCargo,
-      rectorNombre: rectorNombreValue,
-      rectorApellido: rectorApellidoValue,
-      rectorCorreo: rectorCorreoValue,
-      rectorTelefono: rectorTelefonoValue,
-      rectorCedula: rectorCedulaValue
-    };
-    if (passwordDraft) {
+    const payload = colegioEditing
+      ? { nombre, codigoDane }
+      : {
+          nombre,
+          codigoDane,
+          rectorCargo,
+          rectorNombre: rectorNombreValue,
+          rectorApellido: rectorApellidoValue,
+          rectorCorreo: rectorCorreoValue,
+          rectorTelefono: rectorTelefonoValue,
+          rectorCedula: rectorCedulaValue
+        };
+    if (!colegioEditing && passwordDraft) {
       payload.rectorPassword = passwordDraft;
     }
     if (!nombre) {
@@ -2060,6 +2066,122 @@ export default function HomeScreen() {
   const closeColegiosListModal = () => {
     setColegiosListModalVisible(false);
     setRectoresSearchTerm('');
+  };
+
+  const openRectorEditModal = (rector) => {
+    if (!rector?.colegio) return;
+    setRectorEditing(rector);
+    setRectorCargo((rector?.cargo || 'rector') === 'coordinador' ? 'coordinador' : 'rector');
+    setRectorNombre(rector?.nombre || '');
+    setRectorApellido(rector?.apellido || '');
+    setRectorCorreo(rector?.correo || '');
+    setRectorTelefono(rector?.telefono || '');
+    setRectorCedula(rector?.cedula || '');
+    setRectorPassword('');
+    setShowRectorPassword(false);
+    setColegiosError('');
+    hideColegiosSuccess({ animated: false });
+    setRectorEditModalVisible(true);
+  };
+
+  const closeRectorEditModal = () => {
+    if (savingColegio) return;
+    setRectorEditModalVisible(false);
+    setRectorEditing(null);
+    setRectorNombre('');
+    setRectorApellido('');
+    setRectorCorreo('');
+    setRectorTelefono('');
+    setRectorCedula('');
+    setRectorCargo('rector');
+    setRectorPassword('');
+    setShowRectorPassword(false);
+    setColegiosError('');
+    hideColegiosSuccess({ animated: false });
+  };
+
+  const handleSaveRector = async () => {
+    if (!rectorEditing?.colegio?.id) return;
+    const rectorNombreValue = rectorNombre.trim();
+    const rectorApellidoValue = rectorApellido.trim();
+    const rectorCorreoValue = rectorCorreo.trim();
+    const rectorTelefonoValue = rectorTelefono.trim();
+    const rectorCedulaValue = rectorCedula.trim();
+    const passwordDraft = rectorPassword.trim();
+    if (!rectorNombreValue) {
+      showAppAlert('Nombre requerido', 'Ingresa el nombre del directivo', 'warning');
+      return;
+    }
+    if (!rectorApellidoValue) {
+      showAppAlert('Apellido requerido', 'Ingresa el apellido del directivo', 'warning');
+      return;
+    }
+    if (!rectorCorreoValue) {
+      showAppAlert('Correo requerido', 'Ingresa el correo del directivo', 'warning');
+      return;
+    }
+    if (!rectorTelefonoValue) {
+      showAppAlert('Telefono requerido', 'Ingresa el telefono del directivo', 'warning');
+      return;
+    }
+    if (!rectorCedulaValue) {
+      showAppAlert('Cedula requerida', 'Ingresa la cedula del directivo', 'warning');
+      return;
+    }
+    setSavingColegio(true);
+    setColegiosError('');
+    hideColegiosSuccess({ animated: false });
+    try {
+      const payload = {
+        rectorCargo,
+        rectorNombre: rectorNombreValue,
+        rectorApellido: rectorApellidoValue,
+        rectorCorreo: rectorCorreoValue,
+        rectorTelefono: rectorTelefonoValue,
+        rectorCedula: rectorCedulaValue
+      };
+      if (passwordDraft) payload.rectorPassword = passwordDraft;
+      await updateColegio(rectorEditing.colegio.id, payload);
+      await loadColegios();
+      showColegiosSuccess('Directivo actualizado correctamente');
+      showAppAlert('Listo', 'Directivo actualizado correctamente', 'success');
+      setRectorEditModalVisible(false);
+      setRectorEditing(null);
+      setRectorPassword('');
+      setShowRectorPassword(false);
+    } catch (e) {
+      const apiError = getApiErrorMessage(e, 'No se pudo actualizar el directivo');
+      setColegiosError(apiError);
+      showAppAlert('Error', apiError, 'error');
+    } finally {
+      setSavingColegio(false);
+    }
+  };
+
+  const askDeleteRector = (rector) => {
+    setDeleteRectorModal({ visible: true, rector });
+  };
+
+  const handleDeleteRector = async (rector) => {
+    if (!rector?.colegio?.id) return;
+    setDeleteRectorModal({ visible: false, rector: null });
+    setColegiosLoading(true);
+    try {
+      await updateColegio(rector.colegio.id, {
+        rectorCargo: '',
+        rectorNombre: '',
+        rectorApellido: '',
+        rectorCorreo: '',
+        rectorTelefono: '',
+        rectorCedula: ''
+      });
+      await loadColegios();
+      showAppAlert('Listo', 'Directivo eliminado correctamente', 'success');
+    } catch (e) {
+      showAppAlert('Error', getApiErrorMessage(e, 'No se pudo eliminar el directivo'), 'error');
+    } finally {
+      setColegiosLoading(false);
+    }
   };
 
   const askDeleteColegio = (colegio) => {
@@ -3027,12 +3149,16 @@ export default function HomeScreen() {
       const nombreCompleto = [colegio?.rectorNombre, colegio?.rectorApellido].filter(Boolean).join(' ').trim();
       return {
         id: colegio.id,
+        cargo: cargoValue,
         cargoLabel,
         nombreCompleto,
+        nombre: colegio?.rectorNombre || '',
+        apellido: colegio?.rectorApellido || '',
         colegioNombre: colegio?.nombre || `Colegio ${colegio?.id}`,
         correo: colegio?.rectorCorreo || '',
         telefono: colegio?.rectorTelefono || '',
-        cedula: colegio?.rectorCedula || ''
+        cedula: colegio?.rectorCedula || '',
+        colegio
       };
     });
   const rectoresFiltrados = rectoresSearchNormalized
@@ -3328,6 +3454,14 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ) : null}
                 {isAdmin ? (
+                  <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#2563eb' }]} onPress={openColegiosListModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                      <Ionicons name="list-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, mobileActionTextStyle, mobileLongLabelTextStyle]}>Ver colegios</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {isAdmin ? (
                   <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#10b981' }]} onPress={openRectoresListModal}>
                     <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="people-circle-outline" size={18} color="#fff" />
@@ -3369,16 +3503,18 @@ export default function HomeScreen() {
                       </View>
                     </TouchableOpacity>
                     {isAdmin ? (
-                      <TouchableOpacity
-                        style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn]}
-                        onPress={logout}
-                        activeOpacity={0.85}
-                      >
-                        <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                          <Ionicons name="log-out-outline" size={18} color="#fff" />
-                          <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
-                        </View>
-                      </TouchableOpacity>
+                      <View style={styles.adminGridLogoutRow}>
+                        <TouchableOpacity
+                          style={[styles.actionBtn, mobileActionBtnStyle, styles.logoutActionBtn, styles.adminGridLogoutCentered]}
+                          onPress={logout}
+                          activeOpacity={0.85}
+                        >
+                          <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                            <Ionicons name="log-out-outline" size={18} color="#fff" />
+                            <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
                     ) : null}
                   </>
                 ) : null}
@@ -4538,136 +4674,115 @@ export default function HomeScreen() {
                 onChangeText={setColegioCodigoDane}
                 autoCapitalize="characters"
               />
-              <TextInput
-                style={styles.courseInput}
-                placeholder={`Nombre del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                placeholderTextColor="#9ca3af"
-                value={rectorNombre}
-                editable={!savingColegio}
-                onChangeText={setRectorNombre}
-              />
-              <TextInput
-                style={styles.courseInput}
-                placeholder={`Apellido del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                placeholderTextColor="#9ca3af"
-                value={rectorApellido}
-                editable={!savingColegio}
-                onChangeText={setRectorApellido}
-              />
-              <TextInput
-                style={styles.courseInput}
-                placeholder={`Correo del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                placeholderTextColor="#9ca3af"
-                value={rectorCorreo}
-                editable={!savingColegio}
-                onChangeText={setRectorCorreo}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-              <TextInput
-                style={styles.courseInput}
-                placeholder={`Telefono del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                placeholderTextColor="#9ca3af"
-                value={rectorTelefono}
-                editable={!savingColegio}
-                onChangeText={setRectorTelefono}
-                keyboardType="phone-pad"
-              />
-              <TextInput
-                style={styles.courseInput}
-                placeholder={`Cedula del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                placeholderTextColor="#9ca3af"
-                value={rectorCedula}
-                editable={!savingColegio}
-                onChangeText={setRectorCedula}
-                keyboardType="numeric"
-              />
-              <View style={styles.passwordInputWrap}>
-                <TextInput
-                  style={[styles.courseInput, styles.passwordInput]}
-                  placeholder={isEditingColegio
-                    ? `Nueva contrasena del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'} (opcional)`
-                    : `Contrasena del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                  placeholderTextColor="#9ca3af"
-                  value={rectorPassword}
-                  editable={!savingColegio}
-                  onChangeText={setRectorPassword}
-                  secureTextEntry={!showRectorPassword}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  style={styles.passwordEyeBtn}
-                  onPress={() => setShowRectorPassword((prev) => !prev)}
-                  disabled={savingColegio}
-                >
-                  <Ionicons name={showRectorPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
-                </TouchableOpacity>
-              </View>
-              {isEditingColegio && hasRectorPassword && !rectorPassword ? (
-                <Text style={styles.dataBullet}>Este usuario directivo ya tiene contrasena configurada. Escribe una nueva solo si deseas cambiarla.</Text>
+              {!isEditingColegio ? (
+                <>
+                  <TextInput
+                    style={styles.courseInput}
+                    placeholder={`Nombre del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
+                    placeholderTextColor="#9ca3af"
+                    value={rectorNombre}
+                    editable={!savingColegio}
+                    onChangeText={setRectorNombre}
+                  />
+                  <TextInput
+                    style={styles.courseInput}
+                    placeholder={`Apellido del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
+                    placeholderTextColor="#9ca3af"
+                    value={rectorApellido}
+                    editable={!savingColegio}
+                    onChangeText={setRectorApellido}
+                  />
+                  <TextInput
+                    style={styles.courseInput}
+                    placeholder={`Correo del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
+                    placeholderTextColor="#9ca3af"
+                    value={rectorCorreo}
+                    editable={!savingColegio}
+                    onChangeText={setRectorCorreo}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                  <TextInput
+                    style={styles.courseInput}
+                    placeholder={`Telefono del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
+                    placeholderTextColor="#9ca3af"
+                    value={rectorTelefono}
+                    editable={!savingColegio}
+                    onChangeText={setRectorTelefono}
+                    keyboardType="phone-pad"
+                  />
+                  <TextInput
+                    style={styles.courseInput}
+                    placeholder={`Cedula del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
+                    placeholderTextColor="#9ca3af"
+                    value={rectorCedula}
+                    editable={!savingColegio}
+                    onChangeText={setRectorCedula}
+                    keyboardType="numeric"
+                  />
+                  <View style={styles.passwordInputWrap}>
+                    <TextInput
+                      style={[styles.courseInput, styles.passwordInput]}
+                      placeholder={`Contrasena del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
+                      placeholderTextColor="#9ca3af"
+                      value={rectorPassword}
+                      editable={!savingColegio}
+                      onChangeText={setRectorPassword}
+                      secureTextEntry={!showRectorPassword}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                      style={styles.passwordEyeBtn}
+                      onPress={() => setShowRectorPassword((prev) => !prev)}
+                      disabled={savingColegio}
+                    >
+                      <Ionicons name={showRectorPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.fieldLabel}>Cargo del directivo</Text>
+                </>
               ) : null}
-              <Text style={styles.fieldLabel}>Cargo del directivo</Text>
               <View style={styles.colegioControlsGrid}>
-                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
-                  <TouchableOpacity
-                    style={[
-                      styles.smallBtn,
-                      styles.colegioControlGridBtn,
-                      styles.colegioRoleBtn,
-                      mobileColegioControlBtnStyle,
-                      rectorCargo === 'rector' && styles.colegioRoleBtnActive,
-                      savingColegio && { opacity: 0.6 }
-                    ]}
-                    onPress={() => setRectorCargo('rector')}
-                    disabled={savingColegio}
-                  >
-                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
-                      <Ionicons name="school-outline" size={14} color="#e5e7eb" />
-                      <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Rector</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[
-                      styles.smallBtn,
-                      styles.colegioControlGridBtn,
-                      styles.colegioRoleBtn,
-                      mobileColegioControlBtnStyle,
-                      rectorCargo === 'coordinador' && styles.colegioRoleBtnActive,
-                      savingColegio && { opacity: 0.6 }
-                    ]}
-                    onPress={() => setRectorCargo('coordinador')}
-                    disabled={savingColegio}
-                  >
-                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
-                      <Ionicons name="people-outline" size={14} color="#e5e7eb" />
-                      <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Coordinador</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioListBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
-                    onPress={openColegiosListModal}
-                    disabled={savingColegio}
-                  >
-                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
-                      <Ionicons name="list-outline" size={14} color="#e5e7eb" />
-                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Mostrar colegios</Text>
-                    </View>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioRectoresBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
-                    onPress={openRectoresListModal}
-                    disabled={savingColegio}
-                  >
-                    <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
-                      <Ionicons name="people-circle-outline" size={14} color="#e5e7eb" />
-                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Mostrar rectores</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
+                {!isEditingColegio ? (
+                  <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.smallBtn,
+                        styles.colegioControlGridBtn,
+                        styles.colegioRoleBtn,
+                        mobileColegioControlBtnStyle,
+                        rectorCargo === 'rector' && styles.colegioRoleBtnActive,
+                        savingColegio && { opacity: 0.6 }
+                      ]}
+                      onPress={() => setRectorCargo('rector')}
+                      disabled={savingColegio}
+                    >
+                      <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                        <Ionicons name="school-outline" size={14} color="#e5e7eb" />
+                        <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Rector</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.smallBtn,
+                        styles.colegioControlGridBtn,
+                        styles.colegioRoleBtn,
+                        mobileColegioControlBtnStyle,
+                        rectorCargo === 'coordinador' && styles.colegioRoleBtnActive,
+                        savingColegio && { opacity: 0.6 }
+                      ]}
+                      onPress={() => setRectorCargo('coordinador')}
+                      disabled={savingColegio}
+                    >
+                      <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                        <Ionicons name="people-outline" size={14} color="#e5e7eb" />
+                        <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Coordinador</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle, styles.colegioSaveRow]}>
                   <TouchableOpacity
                     style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioSaveBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
                     onPress={handleSaveColegio}
@@ -4726,6 +4841,7 @@ export default function HomeScreen() {
                       setRectorPassword('');
                       setShowRectorPassword(false);
                       setHasRectorPassword(false);
+                      setColegiosModalVisible(false);
                     }}
                     disabled={savingColegio}
                   >
@@ -4804,6 +4920,28 @@ export default function HomeScreen() {
                           <Text style={styles.rectorRegisteredMeta}>Correo: {rector.correo || 'No registrado'}</Text>
                           <Text style={styles.rectorRegisteredMeta}>Telefono: {rector.telefono || 'No registrado'}</Text>
                           <Text style={styles.rectorRegisteredMeta}>Cedula: {rector.cedula || 'No registrada'}</Text>
+                          <View style={styles.rectorRegisteredActions}>
+                            <TouchableOpacity
+                              style={[styles.smallBtn, styles.rectorModernActionBtn, styles.rectorEditBtn]}
+                              onPress={() => openRectorEditModal(rector)}
+                              activeOpacity={0.86}
+                            >
+                              <View style={[styles.btnRow, styles.rectorModernActionRow]}>
+                                <Ionicons name="create-outline" size={14} color="#eff6ff" />
+                                <Text style={[styles.smallBtnText, styles.rectorModernActionText]}>Editar</Text>
+                              </View>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.smallBtn, styles.rectorModernActionBtn, styles.rectorDeleteBtn]}
+                              onPress={() => askDeleteRector(rector)}
+                              activeOpacity={0.86}
+                            >
+                              <View style={[styles.btnRow, styles.rectorModernActionRow]}>
+                                <Ionicons name="trash-outline" size={14} color="#fff1f2" />
+                                <Text style={[styles.smallBtnText, styles.rectorModernActionText]}>Eliminar</Text>
+                              </View>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       ))
                     )}
@@ -4813,9 +4951,6 @@ export default function HomeScreen() {
                 ) : (
                   colegiosList.map((c) => {
                     const colegio = normalizeColegioItem(c);
-                    const cargoValue = (colegio?.rectorCargo || 'rector').toLowerCase();
-                    const cargoLabel = cargoValue === 'coordinador' ? 'Coordinador' : 'Rector';
-                    const hasRectorData = hasDirectivoData(colegio);
                     return (
                       <View
                         key={colegio.id}
@@ -4833,12 +4968,6 @@ export default function HomeScreen() {
                                 <View style={styles.colegioRegisteredMetaChip}>
                                   <Ionicons name="id-card-outline" size={12} color="#bfdbfe" />
                                   <Text style={styles.colegioRegisteredMetaChipText}>DANE {colegio.codigoDane}</Text>
-                                </View>
-                              ) : null}
-                              {hasRectorData ? (
-                                <View style={[styles.colegioRegisteredMetaChip, styles.colegioRegisteredRoleChip]}>
-                                  <Ionicons name="person-outline" size={12} color="#bbf7d0" />
-                                  <Text style={[styles.colegioRegisteredMetaChipText, styles.colegioRegisteredRoleChipText]}>{cargoLabel}</Text>
                                 </View>
                               ) : null}
                             </View>
@@ -4859,47 +4988,154 @@ export default function HomeScreen() {
                             </View>
                           </TouchableOpacity>
                         </View>
-
-                        {hasRectorData ? (
-                          <View style={styles.colegioRegisteredDirectivoBox}>
-                            <Text style={styles.colegioRegisteredDirectivoTitle}>Datos del directivo</Text>
-                            <View style={styles.colegioRegisteredInfoGrid}>
-                              <View style={styles.colegioRegisteredInfoItem}>
-                                <Text style={styles.colegioRegisteredInfoLabel}>Nombre</Text>
-                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorNombre || 'No registrado'}</Text>
-                              </View>
-                              <View style={styles.colegioRegisteredInfoItem}>
-                                <Text style={styles.colegioRegisteredInfoLabel}>Apellido</Text>
-                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorApellido || 'No registrado'}</Text>
-                              </View>
-                              <View style={styles.colegioRegisteredInfoItem}>
-                                <Text style={styles.colegioRegisteredInfoLabel}>Correo</Text>
-                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorCorreo || 'No registrado'}</Text>
-                              </View>
-                              <View style={styles.colegioRegisteredInfoItem}>
-                                <Text style={styles.colegioRegisteredInfoLabel}>Telefono</Text>
-                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorTelefono || 'No registrado'}</Text>
-                              </View>
-                              <View style={styles.colegioRegisteredInfoItem}>
-                                <Text style={styles.colegioRegisteredInfoLabel}>Cedula</Text>
-                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorCedula || 'No registrado'}</Text>
-                              </View>
-                              <View style={styles.colegioRegisteredInfoItem}>
-                                <Text style={styles.colegioRegisteredInfoLabel}>Contrasena</Text>
-                                <Text style={styles.colegioRegisteredInfoValue}>{colegio.rectorTienePassword ? 'Configurada' : 'Pendiente'}</Text>
-                              </View>
-                            </View>
-                          </View>
-                        ) : (
-                          <View style={styles.colegioRegisteredEmptyBox}>
-                            <Ionicons name="information-circle-outline" size={14} color="#93c5fd" />
-                            <Text style={styles.colegioRegisteredEmptyText}>Sin datos directivos registrados</Text>
-                          </View>
-                        )}
                       </View>
                     );
                   })
                 )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={rectorEditModalVisible}
+        onRequestClose={closeRectorEditModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.rectorEditModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.rectorEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Directivo</Text>
+                <Text style={styles.periodTitle}>Editar rector/coordinador</Text>
+              </View>
+              <Pressable onPress={closeRectorEditModal} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.rectorEditHero}>
+                <View style={styles.rectorEditIconWrap}>
+                  <Ionicons name="people-circle-outline" size={26} color="#d1fae5" />
+                </View>
+                <View style={styles.rectorEditHeroCopy}>
+                  <Text style={styles.rectorEditHeroTitle}>{rectorEditing?.nombreCompleto || 'Directivo'}</Text>
+                  <Text style={styles.rectorEditHeroMeta}>{rectorEditing?.colegioNombre || 'Institucion'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.rectorEditRoleRow}>
+                <TouchableOpacity
+                  style={[styles.rectorRolePill, rectorCargo === 'rector' && styles.rectorRolePillActive, savingColegio && { opacity: 0.6 }]}
+                  onPress={() => setRectorCargo('rector')}
+                  disabled={savingColegio}
+                >
+                  <Ionicons name="school-outline" size={15} color={rectorCargo === 'rector' ? '#ecfeff' : '#bfdbfe'} />
+                  <Text style={[styles.rectorRolePillText, rectorCargo === 'rector' && styles.rectorRolePillTextActive]}>Rector</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.rectorRolePill, rectorCargo === 'coordinador' && styles.rectorRolePillActive, savingColegio && { opacity: 0.6 }]}
+                  onPress={() => setRectorCargo('coordinador')}
+                  disabled={savingColegio}
+                >
+                  <Ionicons name="people-outline" size={15} color={rectorCargo === 'coordinador' ? '#ecfeff' : '#bfdbfe'} />
+                  <Text style={[styles.rectorRolePillText, rectorCargo === 'coordinador' && styles.rectorRolePillTextActive]}>Coordinador</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.rectorEditFormGrid}>
+                <TextInput
+                  style={styles.courseInput}
+                  placeholder="Nombre"
+                  placeholderTextColor="#9ca3af"
+                  value={rectorNombre}
+                  editable={!savingColegio}
+                  onChangeText={setRectorNombre}
+                />
+                <TextInput
+                  style={styles.courseInput}
+                  placeholder="Apellido"
+                  placeholderTextColor="#9ca3af"
+                  value={rectorApellido}
+                  editable={!savingColegio}
+                  onChangeText={setRectorApellido}
+                />
+                <TextInput
+                  style={styles.courseInput}
+                  placeholder="Correo"
+                  placeholderTextColor="#9ca3af"
+                  value={rectorCorreo}
+                  editable={!savingColegio}
+                  onChangeText={setRectorCorreo}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <TextInput
+                  style={styles.courseInput}
+                  placeholder="Telefono"
+                  placeholderTextColor="#9ca3af"
+                  value={rectorTelefono}
+                  editable={!savingColegio}
+                  onChangeText={setRectorTelefono}
+                  keyboardType="phone-pad"
+                />
+                <TextInput
+                  style={styles.courseInput}
+                  placeholder="Cedula"
+                  placeholderTextColor="#9ca3af"
+                  value={rectorCedula}
+                  editable={!savingColegio}
+                  onChangeText={setRectorCedula}
+                  keyboardType="numeric"
+                />
+                <View style={styles.passwordInputWrap}>
+                  <TextInput
+                    style={[styles.courseInput, styles.passwordInput]}
+                    placeholder="Nueva contrasena (opcional)"
+                    placeholderTextColor="#9ca3af"
+                    value={rectorPassword}
+                    editable={!savingColegio}
+                    onChangeText={setRectorPassword}
+                    secureTextEntry={!showRectorPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <TouchableOpacity
+                    style={styles.passwordEyeBtn}
+                    onPress={() => setShowRectorPassword((prev) => !prev)}
+                    disabled={savingColegio}
+                  >
+                    <Ionicons name={showRectorPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {colegiosError ? <Text style={[styles.dataBullet, { color: '#fca5a5' }]}>{colegiosError}</Text> : null}
+
+              <View style={styles.rectorEditActions}>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.rectorEditCancelBtn, savingColegio && { opacity: 0.6 }]}
+                  onPress={closeRectorEditModal}
+                  disabled={savingColegio}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="close-outline" size={15} color="#e5e7eb" />
+                    <Text style={[styles.smallBtnText, styles.rectorModernActionText]}>Cancelar</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallBtn, styles.rectorEditSaveBtn, savingColegio && { opacity: 0.6 }]}
+                  onPress={handleSaveRector}
+                  disabled={savingColegio}
+                >
+                  <View style={styles.btnRow}>
+                    <Ionicons name="save-outline" size={15} color="#ecfeff" />
+                    <Text style={[styles.smallBtnText, styles.rectorModernActionText]}>{savingColegio ? 'Guardando...' : 'Guardar cambios'}</Text>
+                  </View>
+                </TouchableOpacity>
               </View>
             </ScrollView>
           </View>
@@ -6895,6 +7131,39 @@ export default function HomeScreen() {
       <Modal
         transparent
         animationType="fade"
+        visible={deleteRectorModal.visible}
+        onRequestClose={() => setDeleteRectorModal({ visible: false, rector: null })}
+      >
+        <View style={styles.statusModalBackdrop}>
+          <View style={[styles.deleteModalCard, styles.deleteRectorModalCard]}>
+            <View style={styles.deleteRectorIconWrap}>
+              <Ionicons name="person-remove-outline" size={24} color="#fecaca" />
+            </View>
+            <Text style={styles.deleteModalTitle}>Eliminar directivo</Text>
+            <Text style={styles.deleteModalText}>
+              Vas a eliminar a "{deleteRectorModal?.rector?.nombreCompleto || 'este directivo'}" de {deleteRectorModal?.rector?.colegioNombre || 'la institucion'}. El colegio seguira registrado.
+            </Text>
+            <View style={styles.deleteModalActions}>
+              <TouchableOpacity
+                style={styles.deleteModalCancelBtn}
+                onPress={() => setDeleteRectorModal({ visible: false, rector: null })}
+              >
+                <Text style={styles.deleteModalCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.deleteModalConfirmBtn}
+                onPress={() => handleDeleteRector(deleteRectorModal.rector)}
+              >
+                <Text style={styles.deleteModalConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
         visible={deleteCursoModal.visible}
         onRequestClose={() => setDeleteCursoModal({ visible: false, curso: null })}
       >
@@ -7440,6 +7709,7 @@ const styles = StyleSheet.create({
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   colegioControlsGrid: { gap: 10 },
   colegioControlsGridRow: { width: '100%', justifyContent: 'space-between', alignItems: 'stretch', columnGap: 10, rowGap: 10, flexWrap: 'nowrap' },
+  colegioSaveRow: { justifyContent: 'center' },
   colegioControlGridBtn: { width: '48%', flexBasis: '48%', maxWidth: '48%', minWidth: 0, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 10, minHeight: 42 },
   colegioControlGridBtnRow: { width: '100%', minWidth: 0, justifyContent: 'center' },
   colegioControlGridBtnText: { flexShrink: 1, textAlign: 'center' },
@@ -7760,14 +8030,15 @@ const styles = StyleSheet.create({
   },
   colegioRegisteredActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignSelf: 'stretch',
-    flexWrap: 'nowrap',
+    flexWrap: 'wrap',
     gap: 8
   },
   colegioRegisteredActionBtn: {
-    flex: 1,
-    minWidth: 0,
+    width: '42%',
+    minWidth: 118,
+    maxWidth: 160,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8
@@ -7902,6 +8173,165 @@ const styles = StyleSheet.create({
   rectorRegisteredMeta: {
     color: '#cbd5e1',
     fontSize: 12
+  },
+  rectorRegisteredActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10
+  },
+  rectorModernActionBtn: {
+    minWidth: 118,
+    maxWidth: 170,
+    flexGrow: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 4
+  },
+  rectorModernActionRow: {
+    justifyContent: 'center'
+  },
+  rectorModernActionText: {
+    color: '#f8fafc',
+    fontWeight: '900',
+    fontSize: 12.5
+  },
+  rectorEditBtn: {
+    backgroundColor: '#2563eb',
+    borderColor: '#60a5fa'
+  },
+  rectorDeleteBtn: {
+    backgroundColor: '#dc2626',
+    borderColor: '#fb7185'
+  },
+  rectorEditModalCard: {
+    ...SHARED_ACTION_MODAL,
+    borderColor: 'rgba(45,212,191,0.32)',
+    backgroundColor: '#07131f'
+  },
+  rectorEditHeaderTitle: {
+    gap: 2,
+    flex: 1
+  },
+  rectorEditEyebrow: {
+    color: '#5eead4',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8
+  },
+  rectorEditHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: 'rgba(13,148,136,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(94,234,212,0.28)'
+  },
+  rectorEditIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(20,184,166,0.25)',
+    borderWidth: 1,
+    borderColor: 'rgba(153,246,228,0.42)'
+  },
+  rectorEditHeroCopy: {
+    flex: 1,
+    minWidth: 0
+  },
+  rectorEditHeroTitle: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '900'
+  },
+  rectorEditHeroMeta: {
+    color: '#99f6e4',
+    fontSize: 12.5,
+    fontWeight: '700',
+    marginTop: 2
+  },
+  rectorEditRoleRow: {
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+    flexWrap: 'wrap'
+  },
+  rectorRolePill: {
+    minWidth: 128,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: 'rgba(30,41,59,0.86)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.28)'
+  },
+  rectorRolePillActive: {
+    backgroundColor: '#0891b2',
+    borderColor: '#67e8f9'
+  },
+  rectorRolePillText: {
+    color: '#bfdbfe',
+    fontWeight: '900',
+    fontSize: 12.5
+  },
+  rectorRolePillTextActive: {
+    color: '#ecfeff'
+  },
+  rectorEditFormGrid: {
+    gap: 10
+  },
+  rectorEditActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+    marginTop: 4
+  },
+  rectorEditCancelBtn: {
+    minWidth: 136,
+    borderRadius: 12,
+    paddingVertical: 11,
+    backgroundColor: 'rgba(51,65,85,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.35)'
+  },
+  rectorEditSaveBtn: {
+    minWidth: 164,
+    borderRadius: 12,
+    paddingVertical: 11,
+    backgroundColor: '#0d9488',
+    borderWidth: 1,
+    borderColor: '#5eead4'
+  },
+  deleteRectorModalCard: {
+    borderColor: 'rgba(251,113,133,0.55)',
+    backgroundColor: '#1f1117'
+  },
+  deleteRectorIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 18,
+    backgroundColor: 'rgba(220,38,38,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(251,113,133,0.52)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10
   },
   docenteInlineCard: {
     paddingHorizontal: 12,
@@ -8162,10 +8592,10 @@ const styles = StyleSheet.create({
   logoutBtn: { width: '100%', alignSelf: 'stretch', marginTop: 8, borderRadius: 14, paddingVertical: 15, alignItems: 'center', backgroundColor: '#ef4444', shadowColor: '#000', shadowOpacity: 0.25, shadowOffset: { width: 0, height: 5 }, shadowRadius: 8, elevation: 4 },
   docenteGridLogoutRow: { width: '100%', alignItems: 'center' },
   docenteGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
-  rectorGridLogoutRow: { width: '100%', alignItems: 'center' },
-  rectorGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   adminGridLogoutRow: { width: '100%', alignItems: 'center' },
   adminGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
+  rectorGridLogoutRow: { width: '100%', alignItems: 'center' },
+  rectorGridLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   docenteFooterLogoutCentered: { width: '52%', maxWidth: 340, alignSelf: 'center' },
   logoutText: { color: '#fff', fontWeight: '800', letterSpacing: 0.3 }
 });
