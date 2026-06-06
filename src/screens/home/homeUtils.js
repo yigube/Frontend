@@ -1,5 +1,8 @@
 export const ALL_MATERIAS_OPTION = '__all_materias__';
 
+const MAX_PERIODS_PER_YEAR = 4;
+const PERIOD_DURATION_DAYS = 70;
+
 const getComparableDateKey = (value) => {
   const text = String(value || '').trim();
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -22,14 +25,28 @@ export const createDefaultPeriodForm = (periodList = []) => {
       }, safePeriodList[0])
     : null;
   const latestDateMatch = String(latestPeriodo?.fechaFin || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  const now = latestDateMatch
+  let now = latestDateMatch
     ? new Date(Number(latestDateMatch[1]), Number(latestDateMatch[2]) - 1, Number(latestDateMatch[3]))
     : new Date();
   if (latestPeriodo?.fechaFin) now.setDate(now.getDate() + 1);
+  const periodsInStartYear = safePeriodList.filter((periodo) => {
+    const match = String(periodo?.fechaInicio || periodo?.fechaFin || '').match(/^(\d{4})-/);
+    return match && Number(match[1]) === now.getFullYear();
+  }).length;
+  if (periodsInStartYear >= MAX_PERIODS_PER_YEAR) {
+    now = new Date(now.getFullYear() + 1, 0, 1);
+  }
   const end = new Date(now);
-  end.setDate(end.getDate() + 30);
+  end.setDate(end.getDate() + PERIOD_DURATION_DAYS - 1);
+  const periodNumber = Math.min(
+    safePeriodList.filter((periodo) => {
+      const match = String(periodo?.fechaInicio || periodo?.fechaFin || '').match(/^(\d{4})-/);
+      return match && Number(match[1]) === now.getFullYear();
+    }).length + 1,
+    MAX_PERIODS_PER_YEAR
+  );
   return {
-    nombre: `Periodo ${safePeriodList.length + 1 || 1}`,
+    nombre: `Periodo ${periodNumber || 1}`,
     startDay: now.getDate(),
     startMonth: now.getMonth() + 1,
     startYear: now.getFullYear(),

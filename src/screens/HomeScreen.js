@@ -64,6 +64,7 @@ export default function HomeScreen() {
   const [deleteSedeConfirmModal, setDeleteSedeConfirmModal] = useState({ visible: false, sede: null, deleting: false });
   const [deletePeriodModal, setDeletePeriodModal] = useState({ visible: false, id: null });
   const periodStatusTimeoutRef = useRef(null);
+  const periodModalScrollRef = useRef(null);
   const [quickModal, setQuickModal] = useState(null);
   const [cursoDocModalVisible, setCursoDocModalVisible] = useState(false);
   const [cursosAsignados, setCursosAsignados] = useState([]);
@@ -76,6 +77,7 @@ export default function HomeScreen() {
   const cursoDocSchoolRef = useRef(null);
   const [adminCursosModalVisible, setAdminCursosModalVisible] = useState(false);
   const [rectorCursosModalVisible, setRectorCursosModalVisible] = useState(false);
+  const [rectorSedesModalVisible, setRectorSedesModalVisible] = useState(false);
   const [deleteCursoModal, setDeleteCursoModal] = useState({ visible: false, curso: null });
   const [cursoCrudColegioId, setCursoCrudColegioId] = useState(null);
   const [cursoCrudPickerOpen, setCursoCrudPickerOpen] = useState(false);
@@ -96,6 +98,7 @@ export default function HomeScreen() {
   const [rectorCursoEditing, setRectorCursoEditing] = useState(null);
   const [savingCurso, setSavingCurso] = useState(false);
   const [sedeFormVisible, setSedeFormVisible] = useState(false);
+  const [returnToRectorSedesAfterForm, setReturnToRectorSedesAfterForm] = useState(false);
   const [sedeNombre, setSedeNombre] = useState('');
   const [sedeEditing, setSedeEditing] = useState(null);
   const [savingSede, setSavingSede] = useState(false);
@@ -186,9 +189,13 @@ export default function HomeScreen() {
   const [colegiosSuccess, setColegiosSuccess] = useState('');
   const colegioSuccessAnim = useRef(new Animated.Value(0)).current;
   const colegiosSuccessTimerRef = useRef(null);
+  const docenteCursosReturnTargetRef = useRef('create');
   const [docenteCrudModalVisible, setDocenteCrudModalVisible] = useState(false);
   const [adminDocenteEditModalVisible, setAdminDocenteEditModalVisible] = useState(false);
+  const [returnToDocenteListAfterEdit, setReturnToDocenteListAfterEdit] = useState(false);
   const [docenteCrudListModalVisible, setDocenteCrudListModalVisible] = useState(false);
+  const [docenteNivelModalVisible, setDocenteNivelModalVisible] = useState(false);
+  const [docenteCursosModalVisible, setDocenteCursosModalVisible] = useState(false);
   const [docenteForm, setDocenteForm] = useState({ nombre: '', email: '', password: '' });
   const [docenteNivel, setDocenteNivel] = useState('');
   const [docenteSedeId, setDocenteSedeId] = useState(null);
@@ -201,7 +208,6 @@ export default function HomeScreen() {
   const [docenteCursosDisponibles, setDocenteCursosDisponibles] = useState([]);
   const [docenteColegioId, setDocenteColegioId] = useState(null);
   const [docenteColegioPickerOpen, setDocenteColegioPickerOpen] = useState(false);
-  const [docenteAccessPreviewById, setDocenteAccessPreviewById] = useState({});
   const [docenteEditing, setDocenteEditing] = useState(null);
   const [savingDocente, setSavingDocente] = useState(false);
   const [docenteError, setDocenteError] = useState('');
@@ -510,6 +516,34 @@ export default function HomeScreen() {
     return getPeriodoComparableValue(parsed);
   };
 
+  const PERIOD_DURATION_DAYS = 70;
+  const MAX_PERIODS_PER_YEAR = 4;
+  const DAY_IN_MS = 1000 * 60 * 60 * 24;
+
+  const getPeriodoLocalDate = (value) => {
+    const { day, month, year } = parseDateParts(value);
+    const date = new Date(year, month - 1, day);
+    return Number.isFinite(date.getTime()) ? date : null;
+  };
+
+  const addPeriodoDays = (date, days) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+  };
+
+  const isSamePeriodoDay = (left, right) => (
+    left?.getFullYear() === right?.getFullYear()
+    && left?.getMonth() === right?.getMonth()
+    && left?.getDate() === right?.getDate()
+  );
+
+  const formatLocalPeriodDate = (date) => formatPeriodDate(buildDate({
+    day: date.getDate(),
+    month: date.getMonth() + 1,
+    year: date.getFullYear()
+  }));
+
   const getPeriodoRangeError = (fechaInicio, fechaFin) => {
     const startValue = getPeriodoComparableValue(fechaInicio);
     const endValue = getPeriodoComparableValue(fechaFin);
@@ -522,8 +556,24 @@ export default function HomeScreen() {
     const startValue = getPeriodoComparableValue(fechaInicio);
     const endValue = getPeriodoComparableValue(fechaFin);
     if (!Number.isFinite(startValue) || !Number.isFinite(endValue)) return '';
+    const startDate = getPeriodoLocalDate(fechaInicio);
+    const endDate = getPeriodoLocalDate(fechaFin);
+    if (!startDate || !endDate) return '';
+
+    const durationDays = Math.round((endDate - startDate) / DAY_IN_MS) + 1;
+    if (durationDays !== PERIOD_DURATION_DAYS) {
+      return 'Cada periodo debe durar exactamente 10 semanas';
+    }
 
     const otherPeriodos = (periodos || []).filter((item) => String(item?.id) !== String(editingPeriodo?.id || ''));
+    const startYear = startDate.getFullYear();
+    const periodosInStartYear = otherPeriodos.filter((item) => {
+      const itemStartDate = getPeriodoLocalDate(item?.fechaInicio);
+      return itemStartDate?.getFullYear() === startYear;
+    });
+    if (!editingPeriodo && periodosInStartYear.length >= MAX_PERIODS_PER_YEAR) {
+      return `Solo se permiten ${MAX_PERIODS_PER_YEAR} periodos por año`;
+    }
     if (!otherPeriodos.length) return '';
 
     const overlapping = otherPeriodos.find((item) => {
@@ -536,14 +586,17 @@ export default function HomeScreen() {
     }
 
     if (!editingPeriodo) {
-      const latestPeriodo = otherPeriodos.reduce((latest, current) => {
+      const latestPeriodoInYear = periodosInStartYear.reduce((latest, current) => {
         const latestEnd = getPeriodoComparableValue(latest?.fechaFin);
         const currentEnd = getPeriodoComparableValue(current?.fechaFin);
         return currentEnd > latestEnd ? current : latest;
-      }, otherPeriodos[0]);
-      const latestEnd = getPeriodoComparableValue(latestPeriodo?.fechaFin);
-      if (startValue <= latestEnd) {
-        return `El nuevo periodo debe iniciar despues de que termine ${latestPeriodo?.nombre || 'el ultimo periodo registrado'}`;
+      }, periodosInStartYear[0]);
+      if (latestPeriodoInYear) {
+        const latestEndDate = getPeriodoLocalDate(latestPeriodoInYear?.fechaFin);
+        const expectedStart = latestEndDate ? addPeriodoDays(latestEndDate, 1) : null;
+        if (expectedStart && !isSamePeriodoDay(startDate, expectedStart)) {
+          return `El nuevo periodo debe iniciar el ${formatLocalPeriodDate(expectedStart)}, despues de que termine ${latestPeriodoInYear?.nombre || 'el ultimo periodo registrado'}`;
+        }
       }
     }
 
@@ -645,6 +698,11 @@ export default function HomeScreen() {
       setEditingPeriodo(null);
     }
     setPeriodModalVisible(true);
+    if (periodo) {
+      setTimeout(() => {
+        periodModalScrollRef.current?.scrollTo({ y: 0, animated: true });
+      }, 120);
+    }
   };
 
   const closePeriodModal = () => {
@@ -939,6 +997,7 @@ export default function HomeScreen() {
     setAdminCursoSedePickerOpen(false);
     setCursoCrudPickerOpen(false);
     setSedeFormVisible(false);
+    setRectorSedesModalVisible(false);
     setSedeNombre('');
     setSedeEditing(null);
     setSedeError('');
@@ -992,6 +1051,7 @@ export default function HomeScreen() {
   const closeCursosModal = () => {
     setAdminCursosModalVisible(false);
     setRectorCursosModalVisible(false);
+    setRectorSedesModalVisible(false);
     setAdminCursoFormVisible(false);
     setAdminCursoEditing(null);
     setAdminCursoNombre('');
@@ -1009,6 +1069,31 @@ export default function HomeScreen() {
     setCursoCrudColegioId(null);
     setCursoCrudPickerOpen(false);
     setSedeFormVisible(false);
+    setSedeNombre('');
+    setSedeEditing(null);
+    setSedeError('');
+  };
+
+  const openRectorSedesModal = async () => {
+    const defaultSchoolId = Number(user?.schoolId) || null;
+    if (!defaultSchoolId) {
+      showAppAlert('Colegio requerido', 'No se encontro un colegio asociado a este usuario', 'warning');
+      return;
+    }
+    setCursoCrudColegioId(defaultSchoolId);
+    setSedeFormVisible(false);
+    setSedeNombre('');
+    setSedeEditing(null);
+    setSedeError('');
+    setRectorSedesModalVisible(true);
+    await loadSedesDisponibles(defaultSchoolId);
+  };
+
+  const closeRectorSedesModal = () => {
+    if (savingSede) return;
+    setRectorSedesModalVisible(false);
+    setSedeFormVisible(false);
+    setReturnToRectorSedesAfterForm(false);
     setSedeNombre('');
     setSedeEditing(null);
     setSedeError('');
@@ -1046,6 +1131,7 @@ export default function HomeScreen() {
   };
 
   const openSedeForm = (sede = null) => {
+    const shouldReturnToSedes = rectorSedesModalVisible;
     if (sede) {
       setSedeEditing(sede);
       setSedeNombre(String(sede?.nombre || ''));
@@ -1054,15 +1140,24 @@ export default function HomeScreen() {
       setSedeNombre('');
     }
     setSedeError('');
+    setReturnToRectorSedesAfterForm(shouldReturnToSedes);
+    if (shouldReturnToSedes) {
+      setRectorSedesModalVisible(false);
+    }
     setSedeFormVisible(true);
   };
 
   const closeSedeForm = () => {
     if (savingSede) return;
+    const shouldReturnToSedes = returnToRectorSedesAfterForm;
     setSedeFormVisible(false);
+    setReturnToRectorSedesAfterForm(false);
     setSedeNombre('');
     setSedeEditing(null);
     setSedeError('');
+    if (shouldReturnToSedes) {
+      setTimeout(() => setRectorSedesModalVisible(true), 0);
+    }
   };
 
   const handleSaveSede = async () => {
@@ -1086,9 +1181,14 @@ export default function HomeScreen() {
         await createSede({ nombre, schoolId });
       }
       await loadSedesDisponibles(schoolId);
+      const shouldReturnToSedes = returnToRectorSedesAfterForm;
       setSedeFormVisible(false);
+      setReturnToRectorSedesAfterForm(false);
       setSedeNombre('');
       setSedeEditing(null);
+      if (shouldReturnToSedes) {
+        setTimeout(() => setRectorSedesModalVisible(true), 0);
+      }
     } catch (e) {
       setSedeError(getApiErrorMessage(e, 'No se pudo guardar la sede'));
     } finally {
@@ -2445,11 +2545,49 @@ export default function HomeScreen() {
     docenteMateriasDraftRef.current = {};
     setDocenteMateriasDraft({});
     setDocenteCursosDisponibles([]);
+    setDocenteNivelModalVisible(false);
+    setDocenteCursosModalVisible(false);
     setDocenteColegioId(null);
     setDocenteColegioPickerOpen(false);
     setDocenteError('');
     setAdminDocentesSearchTerm('');
     docenteCrudSchoolRef.current = null;
+  };
+
+  const openDocenteNivelConfigModal = () => {
+    setDocenteCrudModalVisible(false);
+    setDocenteNivelPickerOpen(false);
+    setDocenteSedePickerOpen(false);
+    setTimeout(() => setDocenteNivelModalVisible(true), 0);
+  };
+
+  const closeDocenteNivelConfigModal = () => {
+    setDocenteNivelModalVisible(false);
+    setDocenteNivelPickerOpen(false);
+    setDocenteSedePickerOpen(false);
+    setTimeout(() => setDocenteCrudModalVisible(true), 0);
+  };
+
+  const openDocenteCursosConfigModal = (returnTarget = 'create') => {
+    docenteCursosReturnTargetRef.current = returnTarget;
+    if (returnTarget === 'edit') {
+      setAdminDocenteEditModalVisible(false);
+    } else {
+      setDocenteCrudModalVisible(false);
+    }
+    setTimeout(() => setDocenteCursosModalVisible(true), 0);
+  };
+
+  const closeDocenteCursosConfigModal = () => {
+    const returnTarget = docenteCursosReturnTargetRef.current;
+    setDocenteCursosModalVisible(false);
+    setTimeout(() => {
+      if (returnTarget === 'edit') {
+        setAdminDocenteEditModalVisible(true);
+      } else {
+        setDocenteCrudModalVisible(true);
+      }
+    }, 0);
   };
 
   const returnToDocenteCrudListModal = async (schoolIdParam = null) => {
@@ -2472,6 +2610,8 @@ export default function HomeScreen() {
     docenteMateriasDraftRef.current = {};
     setDocenteMateriasDraft({});
     setDocenteCursosDisponibles([]);
+    setDocenteNivelModalVisible(false);
+    setDocenteCursosModalVisible(false);
     setDocenteError('');
     setDocenteColegioPickerOpen(false);
   };
@@ -2655,7 +2795,7 @@ export default function HomeScreen() {
     }
   };
 
-  const openAdminDocenteEditModal = async (docente) => {
+  const openAdminDocenteEditModal = async (docente, options = {}) => {
     setDocenteEditing(docente);
     setDocenteForm({ nombre: docente.nombre || '', email: docente.email || '', password: '' });
     setDocenteNivel(docente?.nivel || '');
@@ -2669,16 +2809,19 @@ export default function HomeScreen() {
       setDocenteColegioId(targetSchoolId);
       docenteCrudSchoolRef.current = targetSchoolId;
     }
+    setReturnToDocenteListAfterEdit(Boolean(options.returnToList));
     setAdminDocenteEditModalVisible(true);
     setLoadingCursos(true);
     try {
-      await Promise.all([
+      const [, docentesActualizados] = await Promise.all([
         loadCursosDisponiblesDocente(targetSchoolId),
         loadDocentesActual(targetSchoolId),
         loadSedesDisponibles(targetSchoolId)
       ]);
-      const cursosAsignados = (docente.cursos || []).map((c) => c.id);
-      const materiasDraft = buildDocenteMateriasDraft(docente.cursos || []);
+      const docenteActualizado = (docentesActualizados || []).find((item) => String(item?.id) === String(docente?.id)) || docente;
+      const cursosAsignados = (docenteActualizado.cursos || []).map((c) => c.id);
+      const materiasDraft = buildDocenteMateriasDraft(docenteActualizado.cursos || []);
+      setDocenteEditing(docenteActualizado);
       setDocenteCursos(cursosAsignados);
       syncDocenteMateriasWithCursos(cursosAsignados, materiasDraft);
     } finally {
@@ -2687,7 +2830,9 @@ export default function HomeScreen() {
   };
 
   const closeAdminDocenteEditModal = () => {
+    const shouldReturnToList = returnToDocenteListAfterEdit;
     setAdminDocenteEditModalVisible(false);
+    setReturnToDocenteListAfterEdit(false);
     setDocenteEditing(null);
     setDocenteForm({ nombre: '', email: '', password: '' });
     setDocenteNivel('');
@@ -2698,6 +2843,13 @@ export default function HomeScreen() {
     setDocenteCursos([]);
     setDocenteMateriasState({});
     setDocenteError('');
+    if (shouldReturnToList) {
+      setDocenteCrudListModalVisible(true);
+      const schoolId = Number(docenteColegioId || user?.schoolId || null);
+      if (Number.isFinite(schoolId) && schoolId > 0) {
+        loadDocentesActual(schoolId);
+      }
+    }
   };
 
   const handleSaveDocente = async () => {
@@ -2712,6 +2864,11 @@ export default function HomeScreen() {
     const nombre = nombreInput;
 
     setDocenteError('');
+
+    if (isEditingDocente && loadingCursos) {
+      setDocenteError('Espera a que terminen de cargar los cursos del docente');
+      return;
+    }
 
     if (!email || (!isEditingDocente && !password)) {
       setDocenteError('Correo y contrasena son requeridos para crear un docente');
@@ -2736,6 +2893,21 @@ export default function HomeScreen() {
 
     if (!docenteNombreRegex.test(nombre)) {
       setDocenteError('El nombre solo puede contener letras y espacios');
+      return;
+    }
+
+    if (!docenteNivel) {
+      setDocenteError('Selecciona el nivel docente antes de crear el docente');
+      return;
+    }
+
+    if (!docenteSedeId) {
+      setDocenteError('Selecciona la sede del docente antes de crear el docente');
+      return;
+    }
+
+    if (selectedCursoIds.length === 0) {
+      setDocenteError('Asigna al menos un curso antes de crear el docente');
       return;
     }
 
@@ -2773,14 +2945,9 @@ export default function HomeScreen() {
       } else {
         savedDocente = await createDocente(payload);
       }
-      if (password) {
-        const previewDocenteId = Number(savedDocente?.id || editingDocenteId);
-        if (Number.isFinite(previewDocenteId) && previewDocenteId > 0) {
-          setDocenteAccessPreviewById((prev) => ({ ...prev, [previewDocenteId]: password }));
-        }
-      }
       await loadDocentesActual(payload.schoolId);
       if (isEditingDocente) {
+        const shouldReturnToList = returnToDocenteListAfterEdit;
         const cursosActualizados = (savedDocente?.cursos || []).map((curso) => curso.id);
         const materiasDraft = buildDocenteMateriasDraft(savedDocente?.cursos || []);
         setDocenteEditing(savedDocente || editingDocenteSnapshot);
@@ -2799,6 +2966,10 @@ export default function HomeScreen() {
           setDocenteMateriasState({});
           setDocenteError('');
           setAdminDocenteEditModalVisible(false);
+          setReturnToDocenteListAfterEdit(false);
+          if (shouldReturnToList) {
+            await returnToDocenteCrudListModal(payload.schoolId);
+          }
         } else {
           await returnToDocenteCrudListModal(payload.schoolId);
         }
@@ -2837,11 +3008,6 @@ export default function HomeScreen() {
     setDocentesLoading(true);
     try {
       await deleteDocente(docente.id);
-      setDocenteAccessPreviewById((prev) => {
-        const next = { ...prev };
-        delete next[docente.id];
-        return next;
-      });
       if (String(docenteEditing?.id) === String(docente.id)) {
         setDocenteEditing(null);
         setDocenteForm({ nombre: '', email: '', password: '' });
@@ -3251,11 +3417,6 @@ export default function HomeScreen() {
     if (!id) return 'Selecciona colegio';
     return colegiosOptions.find(c => String(c.id) === String(id))?.nombre || `Colegio ${id}`;
   };
-  const getDocenteAccessPreview = (docenteId) => {
-    const draftPassword = docenteAccessPreviewById?.[docenteId];
-    if (draftPassword) return draftPassword;
-    return 'Protegida (no visible por seguridad)';
-  };
   const resolveSedeNombre = (sedeId) => {
     const parsedId = Number(sedeId);
     if (!Number.isFinite(parsedId) || parsedId <= 0) return 'Sin sede';
@@ -3265,6 +3426,11 @@ export default function HomeScreen() {
     if (nivel === 'primaria') return 'Primaria';
     if (nivel === 'secundaria') return 'Secundaria';
     return 'Sin nivel';
+  };
+  const getNivelShortLabel = (nivel) => {
+    if (nivel === 'primaria') return 'Pri.';
+    if (nivel === 'secundaria') return 'Sec.';
+    return 'S/N';
   };
 
   function sortCursosForDisplay(items = []) {
@@ -3313,6 +3479,162 @@ export default function HomeScreen() {
 
     return uniques.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }
+
+  const closeRectorCursoForm = () => {
+    if (savingCurso) return;
+    setRectorCursoFormVisible(false);
+    setRectorCursoEditing(null);
+    setRectorCursoNombre('');
+    setRectorCursoNivel('');
+    setRectorCursoSedeId(null);
+    setRectorCursoNivelPickerOpen(false);
+    setRectorCursoSedePickerOpen(false);
+  };
+
+  const renderRectorCursoForm = () => (
+    <View style={styles.rectorCourseForm}>
+      <Text style={styles.fieldLabel}>{rectorCursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
+      <TextInput
+        style={styles.rectorCourseInput}
+        placeholder="Nombre del curso"
+        placeholderTextColor="#9ca3af"
+        value={rectorCursoNombre}
+        editable={!savingCurso}
+        onChangeText={setRectorCursoNombre}
+      />
+      <Text style={styles.fieldLabel}>Nivel</Text>
+      <TouchableOpacity
+        style={styles.selectBoxFull}
+        onPress={() => {
+          setRectorCursoNivelPickerOpen((prev) => !prev);
+          setRectorCursoSedePickerOpen(false);
+        }}
+        disabled={savingCurso}
+      >
+        <Text style={styles.selectText}>{rectorCursoNivel ? getNivelLabel(rectorCursoNivel) : 'Sin nivel'}</Text>
+      </TouchableOpacity>
+      {rectorCursoNivelPickerOpen ? (
+        <View style={styles.pickerList}>
+          <TouchableOpacity
+            style={[styles.pickerItem, !rectorCursoNivel && styles.pickerItemActive]}
+            onPress={() => {
+              setRectorCursoNivel('');
+              setRectorCursoNivelPickerOpen(false);
+            }}
+          >
+            <Text style={styles.dataItem}>Sin nivel</Text>
+          </TouchableOpacity>
+          {NIVEL_OPTIONS.map((nivel) => (
+            <TouchableOpacity
+              key={`rector-curso-nivel-${nivel.value}`}
+              style={[styles.pickerItem, rectorCursoNivel === nivel.value && styles.pickerItemActive]}
+              onPress={() => {
+                setRectorCursoNivel(nivel.value);
+                setRectorCursoNivelPickerOpen(false);
+              }}
+            >
+              <Text style={styles.dataItem}>{nivel.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+      <Text style={styles.fieldLabel}>Sede</Text>
+      <TouchableOpacity
+        style={styles.selectBoxFull}
+        onPress={() => {
+          setRectorCursoSedePickerOpen((prev) => !prev);
+          setRectorCursoNivelPickerOpen(false);
+        }}
+        disabled={savingCurso || sedesLoading}
+      >
+        <Text style={styles.selectText}>{rectorCursoSedeId ? resolveSedeNombre(rectorCursoSedeId) : 'Sin sede'}</Text>
+      </TouchableOpacity>
+      {rectorCursoSedePickerOpen ? (
+        <View style={styles.pickerList}>
+          <TouchableOpacity
+            style={[styles.pickerItem, !rectorCursoSedeId && styles.pickerItemActive]}
+            onPress={() => {
+              setRectorCursoSedeId(null);
+              setRectorCursoSedePickerOpen(false);
+            }}
+          >
+            <Text style={styles.dataItem}>Sin sede</Text>
+          </TouchableOpacity>
+          {sedesDisponibles.map((sede) => (
+            <TouchableOpacity
+              key={`rector-curso-sede-${sede.id}`}
+              style={[styles.pickerItem, Number(rectorCursoSedeId) === Number(sede.id) && styles.pickerItemActive]}
+              onPress={() => {
+                setRectorCursoSedeId(sede.id);
+                setRectorCursoSedePickerOpen(false);
+              }}
+            >
+              <Text style={styles.dataItem}>{sede.nombre}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : null}
+      <View style={styles.rectorCourseFormActions}>
+        <TouchableOpacity
+          style={[styles.smallBtn, styles.outlineBtn, styles.rectorCancelBtn, styles.rectorPairedActionBtn, savingCurso && { opacity: 0.6 }]}
+          onPress={closeRectorCursoForm}
+          disabled={savingCurso}
+        >
+          <View style={[styles.btnRow, styles.rectorCancelRow]}>
+            <Ionicons name="close-outline" size={14} color="#fecaca" />
+            <Text style={[styles.smallBtnText, styles.rectorCancelText]}>Cancelar</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.smallBtn, styles.createBtn, styles.rectorPairedActionBtn, savingCurso && { opacity: 0.6 }]}
+          onPress={handleSaveRectorCurso}
+          disabled={savingCurso}
+        >
+          <View style={[styles.btnRow, styles.rectorPairedActionRow]}>
+            <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+            <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderSedeForm = () => (
+    <View style={styles.rectorCourseForm}>
+      <Text style={styles.fieldLabel}>{sedeEditing ? 'Actualizar sede' : 'Nueva sede'}</Text>
+      <TextInput
+        style={styles.rectorCourseInput}
+        placeholder="Nombre de la sede"
+        placeholderTextColor="#9ca3af"
+        value={sedeNombre}
+        editable={!savingSede}
+        onChangeText={setSedeNombre}
+      />
+      {sedeError ? <Text style={styles.errorText}>{sedeError}</Text> : null}
+      <View style={styles.rectorCourseFormActions}>
+        <TouchableOpacity
+          style={[styles.smallBtn, styles.outlineBtn, styles.rectorCancelBtn, styles.rectorPairedActionBtn, savingSede && { opacity: 0.6 }]}
+          onPress={closeSedeForm}
+          disabled={savingSede}
+        >
+          <View style={[styles.btnRow, styles.rectorCancelRow]}>
+            <Ionicons name="close-outline" size={14} color="#fecaca" />
+            <Text style={[styles.smallBtnText, styles.rectorCancelText]}>Cancelar</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.smallBtn, styles.createBtn, styles.rectorPairedActionBtn, savingSede && { opacity: 0.6 }]}
+          onPress={handleSaveSede}
+          disabled={savingSede}
+        >
+          <View style={[styles.btnRow, styles.rectorPairedActionRow]}>
+            <Ionicons name="save-outline" size={14} color="#e5e7eb" />
+            <Text style={styles.smallBtnText}>{savingSede ? 'Guardando...' : 'Guardar sede'}</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   const colegioSeleccionadoNombre = resolveColegioNombre(colegioSeleccionado);
   const reportesColegioNombre = resolveColegioNombre(reportesColegioId || user?.schoolId);
@@ -3380,7 +3702,7 @@ export default function HomeScreen() {
                 <TouchableOpacity style={[styles.actionBtn, mobileActionBtnStyle, { backgroundColor: '#0ea5a4' }]} onPress={openManualChangePasswordModal}>
                   <View style={[styles.btnRow, mobileBtnRowStyle, mobileDocenteRowStyle]}>
                     <Ionicons name="key-outline" size={18} color="#fff" />
-                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Cambiar contrasena</Text>
+                    <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileDocenteTextStyle]}>Cambiar contraseña</Text>
                   </View>
                 </TouchableOpacity>
                 <View style={styles.docenteGridLogoutRow}>
@@ -3410,6 +3732,14 @@ export default function HomeScreen() {
                     <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="book-outline" size={18} color="#fff" />
                       <Text style={[styles.actionBtnText, isRectorCoordinador && styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>{isRectorCoordinador ? 'Crear cursos' : 'Crear cursos'}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {isRectorCoordinador ? (
+                  <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#059669' }]} onPress={openRectorSedesModal}>
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                      <Ionicons name="business-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Crear sedes</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
@@ -3490,7 +3820,19 @@ export default function HomeScreen() {
                   <TouchableOpacity style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, { backgroundColor: '#0ea5a4' }]} onPress={openManualChangePasswordModal}>
                     <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
                       <Ionicons name="key-outline" size={18} color="#fff" />
-                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cambiar contrasena</Text>
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cambiar contraseña</Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : null}
+                {isRectorCoordinador ? (
+                  <TouchableOpacity
+                    style={[styles.actionBtn, styles.actionBtnRector, mobileActionBtnStyle, styles.logoutActionBtn]}
+                    onPress={logout}
+                    activeOpacity={0.85}
+                  >
+                    <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
+                      <Ionicons name="log-out-outline" size={18} color="#fff" />
+                      <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
                     </View>
                   </TouchableOpacity>
                 ) : null}
@@ -3517,26 +3859,6 @@ export default function HomeScreen() {
                       </View>
                     ) : null}
                   </>
-                ) : null}
-                {isRectorCoordinador ? (
-                  <View style={styles.rectorGridLogoutRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.actionBtn,
-                        isRectorCoordinador && styles.actionBtnRector,
-                        mobileActionBtnStyle,
-                        styles.logoutActionBtn,
-                        styles.rectorGridLogoutCentered
-                      ]}
-                      onPress={logout}
-                      activeOpacity={0.85}
-                    >
-                      <View style={[styles.btnRow, mobileBtnRowStyle, mobileLongLabelRowStyle]}>
-                        <Ionicons name="log-out-outline" size={18} color="#fff" />
-                        <Text style={[styles.actionBtnText, styles.actionBtnTextCompact, mobileActionTextStyle, mobileLongLabelTextStyle]}>Cerrar sesion</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
                 ) : null}
               </>
             )}
@@ -3849,26 +4171,51 @@ export default function HomeScreen() {
       <Modal transparent animationType="slide" visible={periodModalVisible} onRequestClose={closePeriodModal}>
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.periodModalCard]}>
-            <ScrollView contentContainerStyle={[styles.modalContent, styles.periodModalContent]} showsVerticalScrollIndicator={false}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.periodTitle}>{editingPeriodo ? 'Editar periodo' : 'Crear periodo'}</Text>
-                <Pressable onPress={closePeriodModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
-                </Pressable>
+            <View style={[styles.modalHeader, styles.adminDocentesModalHeader]}>
+              <View style={styles.adminDocentesTitleBlock}>
+                <View style={styles.adminDocentesIconWrap}>
+                  <Ionicons name="calendar-outline" size={22} color="#ecfeff" />
+                </View>
+                <View style={styles.adminDocentesTitleCopy}>
+                  <Text style={styles.adminDocentesEyebrow}>Vista administrador</Text>
+                  <Text style={styles.adminDocentesTitle}>Ver periodos</Text>
+                </View>
               </View>
+              <Pressable onPress={closePeriodModal} style={[styles.closeBtn, styles.adminDocentesCloseBtn]}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+            <ScrollView
+              ref={periodModalScrollRef}
+              contentContainerStyle={[styles.modalContent, styles.periodModalContent, styles.adminDocentesModalContent]}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={[styles.courseForm, styles.adminPeriodPanel]}>
+                <View style={styles.adminPeriodHero}>
+                  <View style={styles.adminColegioAvatar}>
+                    <Ionicons name={editingPeriodo ? 'create-outline' : 'calendar-number-outline'} size={20} color="#ecfeff" />
+                  </View>
+                  <View style={styles.adminDocentesTitleCopy}>
+                    <Text style={styles.colegioRegisteredEyebrow}>{editingPeriodo ? 'Seleccionado' : 'Nuevo'}</Text>
+                    <Text style={styles.adminColegioCreateTitle}>{editingPeriodo ? 'Actualiza las fechas' : 'Configura fechas activas'}</Text>
+                  </View>
+                </View>
 
               {canAdminFilterPeriodSchools ? (
-                <View style={styles.dataBox}>
+                <View style={[styles.dataBox, styles.adminPeriodSchoolBox]}>
                   <Text style={styles.fieldLabel}>Colegio para periodos</Text>
                   <Pressable
-                    style={styles.selectBoxFull}
+                    style={[styles.selectBoxFull, styles.adminDocentesSelectBox]}
                     onPress={() => setPeriodSchoolPickerOpen((prev) => !prev)}
                   >
-                    <Text style={styles.selectText}>{periodSchoolId ? resolveColegioNombre(periodSchoolId) : 'Selecciona un colegio'}</Text>
-                    <Ionicons name={periodSchoolPickerOpen ? 'chevron-up-outline' : 'chevron-down-outline'} size={16} color="#cbd5e1" />
+                    <View style={styles.adminDocentesSelectRow}>
+                      <Ionicons name="business-outline" size={16} color="#67e8f9" />
+                      <Text style={[styles.selectText, styles.adminDocentesSelectText]}>{periodSchoolId ? resolveColegioNombre(periodSchoolId) : 'Selecciona un colegio'}</Text>
+                      <Ionicons name={periodSchoolPickerOpen ? 'chevron-up-outline' : 'chevron-down-outline'} size={16} color="#a5f3fc" />
+                    </View>
                   </Pressable>
                   {periodSchoolPickerOpen ? (
-                    <View style={styles.pickerList}>
+                    <View style={[styles.pickerList, styles.adminDocentesPickerList]}>
                       {colegiosLoading ? <Text style={styles.dataBullet}>Cargando colegios...</Text> : null}
                       {colegiosOptions.length === 0 ? (
                         <Text style={styles.dataBullet}>No hay colegios disponibles</Text>
@@ -3876,14 +4223,14 @@ export default function HomeScreen() {
                         colegiosOptions.map((c) => (
                           <Pressable
                             key={`period-school-${c.id}`}
-                            style={[styles.pickerItem, String(periodSchoolId) === String(c.id) && styles.pickerItemActive]}
+                            style={[styles.pickerItem, styles.adminDocentesPickerItem, String(periodSchoolId) === String(c.id) && styles.adminDocentesPickerItemActive]}
                             onPress={() => {
                               setPeriodSchoolId(c.id);
                               setEditingPeriodo(null);
                               setPeriodSchoolPickerOpen(false);
                             }}
                           >
-                            <Text style={styles.dataItem}>{c.nombre || `Colegio ${c.id}`}</Text>
+                            <Text style={[styles.dataItem, styles.adminDocentesPickerText]}>{c.nombre || `Colegio ${c.id}`}</Text>
                           </Pressable>
                         ))
                       )}
@@ -3892,138 +4239,167 @@ export default function HomeScreen() {
                 </View>
               ) : null}
 
-              <Text style={styles.fieldLabel}>Nombre</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Ej. Periodo 1"
-                placeholderTextColor="#9ca3af"
-                value={periodForm.nombre}
-                onChangeText={(txt) => setPeriodForm(prev => ({ ...prev, nombre: txt }))}
-                editable={canAdminFilterPeriodSchools ? Boolean(periodSchoolId) : true}
-              />
+              {(editingPeriodo || isRectorCoordinador) ? (
+                <View style={styles.adminPeriodEditBox}>
+                  <View style={styles.adminPeriodFormTitleCard}>
+                    <Text style={styles.adminPeriodFormTitleText} numberOfLines={1} adjustsFontSizeToFit>
+                      {String(periodForm?.nombre || editingPeriodo?.nombre || `Periodo ${periodos.length + 1 || 1}`).trim()}
+                    </Text>
+                  </View>
+                  <Text style={[styles.fieldLabel, styles.adminPeriodSectionLabel]}>Inicio</Text>
+                  <View style={styles.adminPeriodDateControls}>
+                    <View style={styles.adminPeriodDateRow}>
+                      <View style={[styles.stepper, styles.adminPeriodStepper]}>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('startDay', days, -1)}>
+                          <Text style={styles.stepperText}>-</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('startDay', days)}>
+                          <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{String(periodForm.startDay).padStart(2, '0')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('startDay', days, 1)}>
+                          <Text style={styles.stepperText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={[styles.stepper, styles.adminPeriodStepper]}>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('startMonth', months, -1)}>
+                          <Text style={styles.stepperText}>-</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox, styles.adminPeriodMonthBox]} onPress={() => cycleValue('startMonth', months)}>
+                          <Text style={[styles.selectText, styles.adminPeriodSelectText]} numberOfLines={1} adjustsFontSizeToFit>{monthNames[periodForm.startMonth - 1]}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('startMonth', months, 1)}>
+                          <Text style={styles.stepperText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={styles.adminPeriodDateRow}>
+                      <View style={[styles.stepper, styles.adminPeriodStepper]}>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('startYear', years, -1)}>
+                          <Text style={styles.stepperText}>-</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('startYear', years)}>
+                          <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{periodForm.startYear}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('startYear', years, 1)}>
+                          <Text style={styles.stepperText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('startHour', hours)}>
+                        <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{String(periodForm.startHour).padStart(2, '0')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('startMinute', minutes)}>
+                        <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{String(periodForm.startMinute).padStart(2, '0')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
 
-              <View style={{ gap: 10 }}>
-                <Text style={styles.fieldLabel}>Inicio</Text>
-                <View style={styles.inlineRow}>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startDay', days, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startDay', days)}>
-                      <Text style={styles.selectText}>{String(periodForm.startDay).padStart(2, '0')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startDay', days, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
-                    </TouchableOpacity>
+                  <Text style={[styles.fieldLabel, styles.adminPeriodSectionLabel]}>Fin</Text>
+                  <View style={styles.adminPeriodDateControls}>
+                    <View style={styles.adminPeriodDateRow}>
+                      <View style={[styles.stepper, styles.adminPeriodStepper]}>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('endDay', days, -1)}>
+                          <Text style={styles.stepperText}>-</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('endDay', days)}>
+                          <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{String(periodForm.endDay).padStart(2, '0')}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('endDay', days, 1)}>
+                          <Text style={styles.stepperText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={[styles.stepper, styles.adminPeriodStepper]}>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('endMonth', months, -1)}>
+                          <Text style={styles.stepperText}>-</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox, styles.adminPeriodMonthBox]} onPress={() => cycleValue('endMonth', months)}>
+                          <Text style={[styles.selectText, styles.adminPeriodSelectText]} numberOfLines={1} adjustsFontSizeToFit>{monthNames[periodForm.endMonth - 1]}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('endMonth', months, 1)}>
+                          <Text style={styles.stepperText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={styles.adminPeriodDateRow}>
+                      <View style={[styles.stepper, styles.adminPeriodStepper]}>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('endYear', years, -1)}>
+                          <Text style={styles.stepperText}>-</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('endYear', years)}>
+                          <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{periodForm.endYear}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.stepperBtn, styles.adminPeriodStepperBtn]} onPress={() => adjustValue('endYear', years, 1)}>
+                          <Text style={styles.stepperText}>+</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('endHour', hours)}>
+                        <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{String(periodForm.endHour).padStart(2, '0')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[styles.selectBox, styles.adminPeriodSelectBox]} onPress={() => cycleValue('endMinute', minutes)}>
+                        <Text style={[styles.selectText, styles.adminPeriodSelectText]}>{String(periodForm.endMinute).padStart(2, '0')}</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startMonth', months, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startMonth', months)}>
-                      <Text style={styles.selectText}>{monthNames[periodForm.startMonth - 1]}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startMonth', months, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startYear', years, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startYear', years)}>
-                      <Text style={styles.selectText}>{periodForm.startYear}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('startYear', years, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startHour', hours)}>
-                    <Text style={styles.selectText}>{String(periodForm.startHour).padStart(2, '0')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('startMinute', minutes)}>
-                    <Text style={styles.selectText}>{String(periodForm.startMinute).padStart(2, '0')}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
 
-              <View style={{ gap: 10 }}>
-                <Text style={styles.fieldLabel}>Fin</Text>
-                <View style={styles.inlineRow}>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endDay', days, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endDay', days)}>
-                      <Text style={styles.selectText}>{String(periodForm.endDay).padStart(2, '0')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endDay', days, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endMonth', months, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endMonth', months)}>
-                      <Text style={styles.selectText}>{monthNames[periodForm.endMonth - 1]}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endMonth', months, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.stepper}>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endYear', years, -1)}>
-                      <Text style={styles.stepperText}>-</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endYear', years)}>
-                      <Text style={styles.selectText}>{periodForm.endYear}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustValue('endYear', years, 1)}>
-                      <Text style={styles.stepperText}>+</Text>
+                  <View style={styles.adminPeriodEditActions}>
+                    {editingPeriodo ? (
+                      <TouchableOpacity
+                        style={[styles.smallBtn, styles.adminPeriodEditActionBtn, styles.adminPeriodEditCancelBtn, savingPeriodo && { opacity: 0.6 }]}
+                        onPress={() => {
+                          setEditingPeriodo(null);
+                          setPeriodForm(createDefaultPeriodForm(periodos));
+                          setPeriodFeedback({ type: '', message: '' });
+                        }}
+                        disabled={savingPeriodo}
+                      >
+                        <View style={[styles.btnRow, styles.rectorEditActionRow]}>
+                          <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                          <Text style={[styles.smallBtnText, styles.rectorEditActionText]}>Cancelar</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.periodSaveBtn, styles.adminPeriodEditActionBtn, !editingPeriodo && styles.adminPeriodCreateOnlyBtn, savingPeriodo && { opacity: 0.6 }]}
+                      onPress={handleSavePeriod}
+                      disabled={savingPeriodo}
+                    >
+                      <View style={[styles.btnRow, styles.rectorEditActionRow]}>
+                        <Ionicons name="save-outline" size={14} color="#fff" />
+                        <Text style={[styles.periodBtnText, styles.periodSaveBtnText, styles.rectorEditActionText]}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Guardar' : 'Agregar'}</Text>
+                      </View>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endHour', hours)}>
-                    <Text style={styles.selectText}>{String(periodForm.endHour).padStart(2, '0')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.selectBox} onPress={() => cycleValue('endMinute', minutes)}>
-                    <Text style={styles.selectText}>{String(periodForm.endMinute).padStart(2, '0')}</Text>
-                  </TouchableOpacity>
                 </View>
-              </View>
+              ) : null}
 
-              <TouchableOpacity style={[styles.periodBtn, styles.periodSaveBtn, (savingPeriodo || (canAdminFilterPeriodSchools && !periodSchoolId)) && { opacity: 0.6 }]} onPress={handleSavePeriod} disabled={savingPeriodo || (canAdminFilterPeriodSchools && !periodSchoolId)}>
-                <View style={styles.btnRow}>
-                  <Ionicons name="save-outline" size={14} color="#fff" />
-                  <Text style={[styles.periodBtnText, styles.periodSaveBtnText]}>{savingPeriodo ? 'Guardando...' : editingPeriodo ? 'Actualizar periodo' : 'Guardar periodo'}</Text>
-                </View>
-              </TouchableOpacity>
               {periodFeedback.type === 'error' && periodFeedback.message ? (
                 <Text style={periodFeedback.type === 'error' ? styles.feedbackError : styles.feedbackSuccess}>
                   {periodFeedback.message}
                 </Text>
               ) : null}
+              </View>
 
-              <View style={[styles.periodItemRow, { borderBottomWidth: 0 }]}>
-                <Text style={styles.periodTitle}>
+              <View style={styles.adminPeriodListTitleCard}>
+                <Text style={styles.adminPeriodListTitleText}>
                   Lista {periodSchoolId ? `- ${resolveColegioNombre(periodSchoolId)}` : ''}
                 </Text>
               </View>
-              {periodos.map(p => (
-                <View key={p.id} style={[styles.periodItemRow, styles.periodCard]}>
+              {periodos.map((p, idx) => (
+                <View key={p.id} style={[styles.periodItemRow, styles.periodCard, styles.adminPeriodCard]}>
                   <View style={styles.periodContent}>
                     <View style={styles.periodHeadingRow}>
-                      <Text style={styles.periodName}>{p.nombre}</Text>
+                      <View style={styles.periodNameBadge}>
+                        <Text style={styles.periodName} numberOfLines={1} adjustsFontSizeToFit>
+                          {p.nombre || `Periodo ${idx + 1}`}
+                        </Text>
+                      </View>
                     </View>
                     <Text style={styles.periodRange}>{formatPeriodSummary(p.fechaInicio, p.fechaFin)}</Text>
                     <View style={styles.periodDateGrid}>
                       <View style={styles.periodDateCard}>
-                        <Text style={styles.periodDateLabel}>Inicio</Text>
                         <Text style={styles.periodDateValue}>{formatPeriodDate(p.fechaInicio)}</Text>
                         <Text style={styles.periodDateTime}>Hora: {formatPeriodTime(p.fechaInicio)}</Text>
                       </View>
                       <View style={styles.periodDateCard}>
-                        <Text style={styles.periodDateLabel}>Fin</Text>
                         <Text style={styles.periodDateValue}>{formatPeriodDate(p.fechaFin)}</Text>
                         <Text style={styles.periodDateTime}>Hora: {formatPeriodTime(p.fechaFin)}</Text>
                       </View>
@@ -4033,16 +4409,16 @@ export default function HomeScreen() {
                         <Text style={styles.periodDurationText}>{getPeriodDurationLabel(p.fechaInicio, p.fechaFin)}</Text>
                       </View>
                       <View style={styles.periodActions}>
-                        <TouchableOpacity style={[styles.smallBtn, styles.updateBtn]} onPress={() => openPeriodModal(p)}>
+                        <TouchableOpacity style={[styles.smallBtn, styles.updateBtn, styles.adminColegioActionBtn, styles.adminColegioEditBtn, styles.colegioRegisteredActionBtn]} onPress={() => openPeriodModal(p)}>
                           <View style={styles.btnRow}>
-                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                            <Text style={styles.smallBtnText}>Editar</Text>
+                            <Ionicons name="create-outline" size={14} color="#ecfeff" />
+                            <Text style={[styles.smallBtnText, styles.adminDocenteActionText]}>Editar</Text>
                           </View>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn]} onPress={() => askDeletePeriod(p.id)}>
+                        <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn, styles.adminColegioActionBtn, styles.adminColegioDeleteBtn, styles.colegioRegisteredActionBtn]} onPress={() => askDeletePeriod(p.id)}>
                           <View style={styles.btnRow}>
-                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                            <Text style={styles.smallBtnText}>Eliminar</Text>
+                            <Ionicons name="trash-outline" size={14} color="#fff1f2" />
+                            <Text style={[styles.smallBtnText, styles.adminDocenteActionText]}>Eliminar</Text>
                           </View>
                         </TouchableOpacity>
                       </View>
@@ -4370,257 +4746,54 @@ export default function HomeScreen() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.modalHeader}>
-                <Text style={styles.periodTitle}>Cursos (Rector / Coordinador)</Text>
-                <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
-                </Pressable>
-              </View>
-
-              <View style={styles.courseActionsRow}>
-                <TouchableOpacity style={[styles.smallBtn, styles.createBtn]} onPress={() => openRectorCursoForm()}>
-                  <View style={styles.btnRow}>
-                    <Ionicons name="add-outline" size={14} color="#e5e7eb" />
-                    <Text style={styles.smallBtnText}>Nuevo</Text>
-                  </View>
-                </TouchableOpacity>
-                {loadingCursos ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
+                <Text style={[styles.periodTitle, styles.modalHeaderTitle]}>Cursos (Rector / Coordinador)</Text>
+                <View style={styles.modalHeaderActions}>
+                  <Pressable onPress={closeCursosModal} style={styles.closeBtn}>
+                    <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.dataBox}>
-                <View style={styles.courseActionsRow}>
-                  <Text style={styles.dataTitle}>Sedes</Text>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.createBtn, savingSede && { opacity: 0.6 }]}
-                    onPress={() => openSedeForm()}
-                    disabled={savingSede}
-                  >
+                <View style={styles.rectorCoursesListHeaderRow}>
+                  <Text style={styles.dataTitle}>Lista</Text>
+                  <TouchableOpacity style={[styles.smallBtn, styles.createBtn, styles.rectorCourseCreateBtn]} onPress={() => openRectorCursoForm()}>
                     <View style={styles.btnRow}>
                       <Ionicons name="add-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>Nueva sede</Text>
+                      <Text style={styles.smallBtnText}>Crear cursos</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
-                {sedeFormVisible ? (
-                  <View style={styles.rectorCourseForm}>
-                    <Text style={styles.fieldLabel}>{sedeEditing ? 'Actualizar sede' : 'Nueva sede'}</Text>
-                    <TextInput
-                      style={styles.rectorCourseInput}
-                      placeholder="Nombre de la sede"
-                      placeholderTextColor="#9ca3af"
-                      value={sedeNombre}
-                      editable={!savingSede}
-                      onChangeText={setSedeNombre}
-                    />
-                    {sedeError ? <Text style={styles.errorText}>{sedeError}</Text> : null}
-                    <View style={styles.rectorCourseFormActions}>
-                      <TouchableOpacity
-                        style={[styles.smallBtn, styles.outlineBtn, savingSede && { opacity: 0.6 }]}
-                        onPress={closeSedeForm}
-                        disabled={savingSede}
-                      >
-                        <View style={styles.btnRow}>
-                          <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Cancelar</Text>
-                        </View>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.smallBtn, styles.createBtn, savingSede && { opacity: 0.6 }]}
-                        onPress={handleSaveSede}
-                        disabled={savingSede}
-                      >
-                        <View style={styles.btnRow}>
-                          <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>{savingSede ? 'Guardando...' : 'Guardar sede'}</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ) : null}
-                {sedesLoading ? (
-                  <Text style={styles.dataBullet}>Cargando sedes...</Text>
-                ) : sedesDisponibles.length === 0 ? (
-                  <Text style={styles.dataBullet}>Sin sedes registradas.</Text>
-                ) : (
-                  sedesDisponibles.map((sede) => (
-                    <View key={`rector-sede-${sede.id}`} style={[styles.rectorCourseRow, styles.rectorCourseCardRow]}>
-                      <View style={styles.rectorCourseRowContent}>
-                        <Text style={styles.rectorCourseRowTitle}>{sede.nombre}</Text>
-                      </View>
-                      <View style={styles.rectorCourseRowActions}>
-                        <TouchableOpacity
-                          style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.updateBtn]}
-                          onPress={() => openSedeForm(sede)}
-                          disabled={savingSede}
-                        >
-                          <View style={styles.btnRow}>
-                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                            <Text style={styles.smallBtnText}>Editar</Text>
-                          </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.deleteBtn]}
-                          onPress={() => askDeleteSede(sede)}
-                          disabled={savingSede}
-                        >
-                          <View style={styles.btnRow}>
-                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                            <Text style={styles.smallBtnText}>Eliminar</Text>
-                          </View>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ))
-                )}
-              </View>
-
-              {rectorCursoFormVisible ? (
-                <View style={styles.rectorCourseForm}>
-                  <Text style={styles.fieldLabel}>{rectorCursoEditing ? 'Actualizar curso' : 'Nuevo curso'}</Text>
-                  <TextInput
-                    style={styles.rectorCourseInput}
-                    placeholder="Nombre del curso"
-                    placeholderTextColor="#9ca3af"
-                    value={rectorCursoNombre}
-                    editable={!savingCurso}
-                    onChangeText={setRectorCursoNombre}
-                  />
-                  <Text style={styles.fieldLabel}>Nivel</Text>
-                  <TouchableOpacity
-                    style={styles.selectBoxFull}
-                    onPress={() => {
-                      setRectorCursoNivelPickerOpen((prev) => !prev);
-                      setRectorCursoSedePickerOpen(false);
-                    }}
-                    disabled={savingCurso}
-                  >
-                    <Text style={styles.selectText}>{rectorCursoNivel ? getNivelLabel(rectorCursoNivel) : 'Sin nivel'}</Text>
-                  </TouchableOpacity>
-                  {rectorCursoNivelPickerOpen ? (
-                    <View style={styles.pickerList}>
-                      <TouchableOpacity
-                        style={[styles.pickerItem, !rectorCursoNivel && styles.pickerItemActive]}
-                        onPress={() => {
-                          setRectorCursoNivel('');
-                          setRectorCursoNivelPickerOpen(false);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>Sin nivel</Text>
-                      </TouchableOpacity>
-                      {NIVEL_OPTIONS.map((nivel) => (
-                        <TouchableOpacity
-                          key={`rector-curso-nivel-${nivel.value}`}
-                          style={[styles.pickerItem, rectorCursoNivel === nivel.value && styles.pickerItemActive]}
-                          onPress={() => {
-                            setRectorCursoNivel(nivel.value);
-                            setRectorCursoNivelPickerOpen(false);
-                          }}
-                        >
-                          <Text style={styles.dataItem}>{nivel.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
-                  <Text style={styles.fieldLabel}>Sede</Text>
-                  <TouchableOpacity
-                    style={styles.selectBoxFull}
-                    onPress={() => {
-                      setRectorCursoSedePickerOpen((prev) => !prev);
-                      setRectorCursoNivelPickerOpen(false);
-                    }}
-                    disabled={savingCurso || sedesLoading}
-                  >
-                    <Text style={styles.selectText}>{rectorCursoSedeId ? resolveSedeNombre(rectorCursoSedeId) : 'Sin sede'}</Text>
-                  </TouchableOpacity>
-                  {rectorCursoSedePickerOpen ? (
-                    <View style={styles.pickerList}>
-                      <TouchableOpacity
-                        style={[styles.pickerItem, !rectorCursoSedeId && styles.pickerItemActive]}
-                        onPress={() => {
-                          setRectorCursoSedeId(null);
-                          setRectorCursoSedePickerOpen(false);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>Sin sede</Text>
-                      </TouchableOpacity>
-                      {sedesDisponibles.map((sede) => (
-                        <TouchableOpacity
-                          key={`rector-curso-sede-${sede.id}`}
-                          style={[styles.pickerItem, Number(rectorCursoSedeId) === Number(sede.id) && styles.pickerItemActive]}
-                          onPress={() => {
-                            setRectorCursoSedeId(sede.id);
-                            setRectorCursoSedePickerOpen(false);
-                          }}
-                        >
-                          <Text style={styles.dataItem}>{sede.nombre}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
-                  <View style={styles.rectorCourseFormActions}>
-                    <TouchableOpacity
-                      style={[styles.smallBtn, styles.outlineBtn, savingCurso && { opacity: 0.6 }]}
-                      onPress={() => {
-                        if (!savingCurso) {
-                          setRectorCursoFormVisible(false);
-                          setRectorCursoEditing(null);
-                          setRectorCursoNombre('');
-                          setRectorCursoNivel('');
-                          setRectorCursoSedeId(null);
-                          setRectorCursoNivelPickerOpen(false);
-                          setRectorCursoSedePickerOpen(false);
-                        }
-                      }}
-                      disabled={savingCurso}
-                    >
-                      <View style={styles.btnRow}>
-                        <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                        <Text style={styles.smallBtnText}>Cancelar</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.smallBtn, styles.createBtn, savingCurso && { opacity: 0.6 }]}
-                      onPress={handleSaveRectorCurso}
-                      disabled={savingCurso}
-                    >
-                      <View style={styles.btnRow}>
-                        <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                        <Text style={styles.smallBtnText}>{savingCurso ? 'Guardando...' : 'Guardar'}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={styles.dataBox}>
-                <Text style={styles.dataTitle}>Lista</Text>
                 {loadingCursos ? (
                   <Text style={styles.dataBullet}>Cargando cursos...</Text>
                 ) : cursosAsignados.length === 0 ? (
                   <Text style={styles.dataBullet}>- No hay cursos</Text>
                 ) : (
                   sortCursosForDisplay(cursosAsignados).map((c) => (
-                    <View key={c.id} style={[styles.rectorCourseRow, styles.rectorCourseCardRow]}>
-                      <View style={styles.rectorCourseRowContent}>
-                        <Text style={styles.rectorCourseRowTitle}>{c.nombre}</Text>
-                        {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
-                        <Text style={styles.dataBullet}>Nivel: {getNivelLabel(c?.nivel)}</Text>
-                        <Text style={styles.dataBullet}>Sede: {resolveSedeNombre(c?.sedeId)}</Text>
+                    <React.Fragment key={c.id}>
+                      <View style={[styles.rectorCourseRow, styles.rectorCourseCardRow]}>
+                        <View style={styles.rectorCourseRowContent}>
+                          <Text style={styles.rectorCourseRowTitle}>{c.nombre}</Text>
+                          {c.grado ? <Text style={styles.dataBullet}>Grado: {c.grado}</Text> : null}
+                          <Text style={styles.dataBullet}>Nivel: {getNivelLabel(c?.nivel)}</Text>
+                          <Text style={styles.dataBullet}>Sede: {resolveSedeNombre(c?.sedeId)}</Text>
+                        </View>
+                        <View style={styles.rectorCourseRowActions}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.updateBtn]} onPress={() => openRectorCursoForm(c)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Editar</Text>
+                            </View>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
+                            <View style={styles.btnRow}>
+                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                            </View>
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                      <View style={styles.rectorCourseRowActions}>
-                        <TouchableOpacity style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.updateBtn]} onPress={() => openRectorCursoForm(c)}>
-                          <View style={styles.btnRow}>
-                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                            <Text style={styles.smallBtnText}>Editar</Text>
-                          </View>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
-                          <View style={styles.btnRow}>
-                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                            <Text style={styles.smallBtnText}>Eliminar</Text>
-                          </View>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
+                    </React.Fragment>
                   ))
                 )}
               </View>
@@ -4637,38 +4810,53 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.colegioModalCard]}>
+            <View style={[styles.modalHeader, styles.adminDocentesModalHeader]}>
+              <View style={styles.adminDocentesTitleBlock}>
+                <View style={styles.adminDocentesIconWrap}>
+                  <Ionicons name="business-outline" size={22} color="#ecfeff" />
+                </View>
+                <View style={styles.adminDocentesTitleCopy}>
+                  <Text style={styles.adminDocentesEyebrow}>Vista administrador</Text>
+                  <Text style={styles.adminDocentesTitle}>{isEditingColegio ? 'Editar colegio' : 'Crear colegios'}</Text>
+                </View>
+              </View>
+              <Pressable onPress={closeColegiosModal} style={[styles.closeBtn, styles.adminDocentesCloseBtn]}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
             <ScrollView
               ref={colegiosScrollRef}
-              contentContainerStyle={styles.modalContent}
+              contentContainerStyle={[styles.modalContent, styles.adminDocentesModalContent]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.modalHeader}>
-                <Text style={styles.periodTitle}>Colegios</Text>
-                <Pressable onPress={closeColegiosModal} style={styles.closeBtn}>
-                  <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
-                </Pressable>
+            <View style={[styles.courseForm, styles.adminColegioCreatePanel]}>
+              <View style={styles.adminColegioCreateHero}>
+                <View style={styles.adminColegioAvatar}>
+                  <Ionicons name={isEditingColegio ? 'create-outline' : 'add-circle-outline'} size={20} color="#ecfeff" />
+                </View>
+                <View style={styles.adminDocentesTitleCopy}>
+                  <Text style={styles.colegioRegisteredEyebrow}>{isEditingColegio ? 'Registro seleccionado' : 'Nueva institucion'}</Text>
+                  <Text style={styles.adminColegioCreateTitle}>{isEditingColegio ? 'Actualiza los datos del colegio' : 'Registra colegio y directivo'}</Text>
+                </View>
               </View>
-
-            <View style={styles.courseForm}>
-              <Text style={styles.fieldLabel}>{isEditingColegio ? 'Editar colegio' : 'Nuevo colegio'}</Text>
               {isEditingColegio ? (
                 <Text style={styles.dataBullet}>
                   Editando: {colegioEditing?.nombre || `Colegio ${colegioEditing?.id}`}
                 </Text>
               ) : null}
               <TextInput
-                style={styles.courseInput}
+                style={[styles.courseInput, styles.adminColegioInput]}
                 placeholder="Nombre del colegio"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor="#7dd3fc"
                 value={colegioNombre}
                 editable={!savingColegio}
                 onChangeText={setColegioNombre}
               />
               <TextInput
-                style={styles.courseInput}
+                style={[styles.courseInput, styles.adminColegioInput]}
                 placeholder="Codigo DANE de la institucion"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor="#7dd3fc"
                 value={colegioCodigoDane}
                 editable={!savingColegio}
                 onChangeText={setColegioCodigoDane}
@@ -4677,25 +4865,25 @@ export default function HomeScreen() {
               {!isEditingColegio ? (
                 <>
                   <TextInput
-                    style={styles.courseInput}
+                    style={[styles.courseInput, styles.adminColegioInput]}
                     placeholder={`Nombre del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor="#7dd3fc"
                     value={rectorNombre}
                     editable={!savingColegio}
                     onChangeText={setRectorNombre}
                   />
                   <TextInput
-                    style={styles.courseInput}
+                    style={[styles.courseInput, styles.adminColegioInput]}
                     placeholder={`Apellido del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor="#7dd3fc"
                     value={rectorApellido}
                     editable={!savingColegio}
                     onChangeText={setRectorApellido}
                   />
                   <TextInput
-                    style={styles.courseInput}
+                    style={[styles.courseInput, styles.adminColegioInput]}
                     placeholder={`Correo del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor="#7dd3fc"
                     value={rectorCorreo}
                     editable={!savingColegio}
                     onChangeText={setRectorCorreo}
@@ -4703,18 +4891,18 @@ export default function HomeScreen() {
                     autoCapitalize="none"
                   />
                   <TextInput
-                    style={styles.courseInput}
+                    style={[styles.courseInput, styles.adminColegioInput]}
                     placeholder={`Telefono del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor="#7dd3fc"
                     value={rectorTelefono}
                     editable={!savingColegio}
                     onChangeText={setRectorTelefono}
                     keyboardType="phone-pad"
                   />
                   <TextInput
-                    style={styles.courseInput}
+                    style={[styles.courseInput, styles.adminColegioInput]}
                     placeholder={`Cedula del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor="#7dd3fc"
                     value={rectorCedula}
                     editable={!savingColegio}
                     onChangeText={setRectorCedula}
@@ -4722,9 +4910,9 @@ export default function HomeScreen() {
                   />
                   <View style={styles.passwordInputWrap}>
                     <TextInput
-                      style={[styles.courseInput, styles.passwordInput]}
+                      style={[styles.courseInput, styles.passwordInput, styles.adminColegioInput]}
                       placeholder={`Contrasena del ${rectorCargo === 'coordinador' ? 'coordinador' : 'rector'}`}
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor="#7dd3fc"
                       value={rectorPassword}
                       editable={!savingColegio}
                       onChangeText={setRectorPassword}
@@ -4751,6 +4939,7 @@ export default function HomeScreen() {
                         styles.smallBtn,
                         styles.colegioControlGridBtn,
                         styles.colegioRoleBtn,
+                        styles.adminColegioRoleBtn,
                         mobileColegioControlBtnStyle,
                         rectorCargo === 'rector' && styles.colegioRoleBtnActive,
                         savingColegio && { opacity: 0.6 }
@@ -4768,29 +4957,67 @@ export default function HomeScreen() {
                         styles.smallBtn,
                         styles.colegioControlGridBtn,
                         styles.colegioRoleBtn,
+                        styles.adminColegioRoleBtn,
+                        styles.colegioCoordinatorRoleBtn,
                         mobileColegioControlBtnStyle,
                         rectorCargo === 'coordinador' && styles.colegioRoleBtnActive,
+                        rectorCargo === 'coordinador' && styles.colegioCoordinatorRoleBtnActive,
                         savingColegio && { opacity: 0.6 }
                       ]}
                       onPress={() => setRectorCargo('coordinador')}
                       disabled={savingColegio}
                     >
                       <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
-                        <Ionicons name="people-outline" size={14} color="#e5e7eb" />
+                        <Ionicons name="people-outline" size={14} color={rectorCargo === 'coordinador' ? '#ecfeff' : '#a5f3fc'} />
                         <Text style={[styles.smallBtnText, styles.colegioRoleBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Coordinador</Text>
                       </View>
                     </TouchableOpacity>
                   </View>
                 ) : null}
                 <View style={[styles.inlineRow, styles.colegioControlsGridRow, mobileColegioControlsRowStyle, styles.colegioSaveRow]}>
+                  {isEditingColegio ? (
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioCancelBtn, styles.adminColegioCancelBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
+                      onPress={() => {
+                        if (savingColegio) return;
+                        setColegioEditing(null);
+                        setColegioNombre('');
+                        setColegioCodigoDane('');
+                        setRectorNombre('');
+                        setRectorApellido('');
+                        setRectorCorreo('');
+                        setRectorTelefono('');
+                        setRectorCedula('');
+                        setRectorCargo('rector');
+                        setRectorPassword('');
+                        setShowRectorPassword(false);
+                        setHasRectorPassword(false);
+                        setColegiosModalVisible(false);
+                      }}
+                      disabled={savingColegio}
+                    >
+                      <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
+                        <Ionicons name="close-outline" size={14} color="#e5e7eb" />
+                        <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>Cancelar</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : null}
                   <TouchableOpacity
-                    style={[styles.smallBtn, styles.colegioControlGridBtn, styles.colegioSaveBtn, mobileColegioControlBtnStyle, savingColegio && { opacity: 0.6 }]}
+                    style={[
+                      styles.smallBtn,
+                      styles.colegioControlGridBtn,
+                      styles.colegioSaveBtn,
+                      styles.adminColegioSaveBtn,
+                      !isEditingColegio && styles.adminColegioCreateBtn,
+                      mobileColegioControlBtnStyle,
+                      savingColegio && { opacity: 0.6 }
+                    ]}
                     onPress={handleSaveColegio}
                     disabled={savingColegio}
                   >
                     <View style={[styles.btnRow, styles.colegioControlGridBtnRow, mobileColegioControlRowStyle]}>
                       <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>{savingColegio ? 'Guardando...' : isEditingColegio ? 'Guardar cambios' : 'Crear'}</Text>
+                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText, styles.colegioControlGridBtnText, mobileColegioControlTextStyle]}>{savingColegio ? 'Guardando...' : isEditingColegio ? 'Actualizar' : 'Crear'}</Text>
                     </View>
                   </TouchableOpacity>
                 </View>
@@ -4823,35 +5050,6 @@ export default function HomeScreen() {
                   <Text style={styles.colegioSuccessText}>{colegiosSuccess}</Text>
                 </Animated.View>
               ) : null}
-              {isEditingColegio ? (
-                <View style={[styles.courseFormActions, styles.colegioCancelActions]}>
-                  <TouchableOpacity
-                    style={[styles.smallBtn, styles.colegioCancelBtn, savingColegio && { opacity: 0.6 }]}
-                    onPress={() => {
-                      if (savingColegio) return;
-                      setColegioEditing(null);
-                      setColegioNombre('');
-                      setColegioCodigoDane('');
-                      setRectorNombre('');
-                      setRectorApellido('');
-                      setRectorCorreo('');
-                      setRectorTelefono('');
-                      setRectorCedula('');
-                      setRectorCargo('rector');
-                      setRectorPassword('');
-                      setShowRectorPassword(false);
-                      setHasRectorPassword(false);
-                      setColegiosModalVisible(false);
-                    }}
-                    disabled={savingColegio}
-                  >
-                    <View style={styles.btnRow}>
-                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                      <Text style={[styles.smallBtnText, styles.colegioActionBtnText]}>Cancelar edicion</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
             </View>
             </ScrollView>
           </View>
@@ -4866,38 +5064,49 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.colegioListModalCard]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>{colegiosListView === 'rectores' ? 'Rectores en el sistema' : 'Colegios en el sistema'}</Text>
-              <Pressable onPress={closeColegiosListModal} style={styles.closeBtn}>
+            <View style={[styles.modalHeader, styles.adminDocentesModalHeader]}>
+              <View style={styles.adminDocentesTitleBlock}>
+                <View style={styles.adminDocentesIconWrap}>
+                  <Ionicons name={colegiosListView === 'rectores' ? 'people-circle-outline' : 'business-outline'} size={22} color="#ecfeff" />
+                </View>
+                <View style={styles.adminDocentesTitleCopy}>
+                  <Text style={styles.adminDocentesEyebrow}>Vista administrador</Text>
+                  <Text style={styles.adminDocentesTitle}>{colegiosListView === 'rectores' ? 'Rectores en el sistema' : 'Ver colegios'}</Text>
+                </View>
+              </View>
+              <Pressable onPress={closeColegiosListModal} style={[styles.closeBtn, styles.adminDocentesCloseBtn]}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <View style={[styles.dataBox, styles.colegiosRegisteredBox]}>
+            <ScrollView contentContainerStyle={[styles.modalContent, styles.adminDocentesModalContent]} showsVerticalScrollIndicator={false}>
+              <View style={[styles.dataBox, styles.colegiosRegisteredBox, styles.adminColegiosPanel]}>
                 <View style={styles.colegiosRegisteredHeader}>
-                  <Text style={styles.dataTitle}>{colegiosListView === 'rectores' ? 'Directivos registrados' : 'Colegios registrados'}</Text>
+                  <View style={styles.adminDocentesSectionTitleRow}>
+                    <Ionicons name={colegiosListView === 'rectores' ? 'person-outline' : 'school-outline'} size={17} color="#67e8f9" />
+                    <Text style={styles.adminDocentesSectionTitle}>{colegiosListView === 'rectores' ? 'Directivos registrados' : 'Colegios registrados'}</Text>
+                  </View>
                   {colegiosLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                 </View>
                 {colegiosListView === 'rectores' ? (
                   <View style={styles.rectoresListWrap}>
-                    <View style={styles.docentesSearchBox}>
+                    <View style={[styles.docentesSearchBox, styles.adminDocentesSearchBox]}>
                       <Text style={styles.fieldLabel}>Filtrar rectores</Text>
-                      <View style={styles.docentesSearchInputWrap}>
-                        <Ionicons name="search-outline" size={16} color="#94a3b8" />
+                      <View style={[styles.docentesSearchInputWrap, styles.adminDocentesSearchInputWrap]}>
+                        <Ionicons name="search-outline" size={16} color="#67e8f9" />
                         <TextInput
-                          style={styles.docentesSearchInput}
+                          style={[styles.docentesSearchInput, styles.adminDocentesSearchInput]}
                           placeholder="Nombre, colegio, correo, telefono o cedula"
-                          placeholderTextColor="#94a3b8"
+                          placeholderTextColor="#7dd3fc"
                           value={rectoresSearchTerm}
                           onChangeText={setRectoresSearchTerm}
                         />
                         {rectoresSearchTerm ? (
                           <Pressable
                             onPress={() => setRectoresSearchTerm('')}
-                            style={styles.docentesSearchClearBtn}
+                            style={[styles.docentesSearchClearBtn, styles.adminDocentesClearBtn]}
                           >
-                            <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                            <Ionicons name="close-circle" size={18} color="#a5f3fc" />
                           </Pressable>
                         ) : null}
                       </View>
@@ -4908,21 +5117,30 @@ export default function HomeScreen() {
                       <Text style={styles.dataBullet}>No hay rectores que coincidan con el filtro.</Text>
                     ) : (
                       rectoresFiltrados.map((rector) => (
-                        <View key={`rector-list-${rector.id}`} style={styles.rectorRegisteredCard}>
+                        <View key={`rector-list-${rector.id}`} style={[styles.rectorRegisteredCard, styles.adminRectorRegisteredCard]}>
                           <View style={styles.rectorRegisteredTop}>
-                            <Text style={styles.rectorRegisteredName}>{rector.nombreCompleto || 'Sin nombre registrado'}</Text>
-                            <View style={styles.colegioRegisteredMetaChip}>
-                              <Ionicons name="person-outline" size={12} color="#bbf7d0" />
-                              <Text style={[styles.colegioRegisteredMetaChipText, styles.colegioRegisteredRoleChipText]}>{rector.cargoLabel}</Text>
+                            <View style={styles.adminRectorHeaderRow}>
+                              <View style={styles.adminRectorAvatar}>
+                                <Ionicons name="person-outline" size={18} color="#ecfeff" />
+                              </View>
+                              <View style={styles.adminDocentesTitleCopy}>
+                                <Text style={styles.rectorRegisteredName}>{rector.nombreCompleto || 'Sin nombre registrado'}</Text>
+                              </View>
+                            </View>
+                            <View style={[styles.colegioRegisteredMetaChip, styles.adminColegioMetaChip]}>
+                              <Ionicons name="person-outline" size={12} color="#67e8f9" />
+                              <Text style={[styles.colegioRegisteredMetaChipText, styles.adminColegioMetaChipText]}>{rector.cargoLabel}</Text>
                             </View>
                           </View>
-                          <Text style={styles.rectorRegisteredMeta}>Colegio: {rector.colegioNombre}</Text>
-                          <Text style={styles.rectorRegisteredMeta}>Correo: {rector.correo || 'No registrado'}</Text>
-                          <Text style={styles.rectorRegisteredMeta}>Telefono: {rector.telefono || 'No registrado'}</Text>
-                          <Text style={styles.rectorRegisteredMeta}>Cedula: {rector.cedula || 'No registrada'}</Text>
+                          <View style={styles.adminRectorMetaGrid}>
+                            <Text style={[styles.adminDocenteMetaPill, styles.adminRectorMetaLine]}>Colegio: {rector.colegioNombre}</Text>
+                            <Text style={[styles.adminDocenteMetaPill, styles.adminRectorMetaLine]}>Correo: {rector.correo || 'No registrado'}</Text>
+                            <Text style={[styles.adminDocenteMetaPill, styles.adminRectorMetaLine]}>Telefono: {rector.telefono || 'No registrado'}</Text>
+                            <Text style={[styles.adminDocenteMetaPill, styles.adminRectorMetaLine]}>Cedula: {rector.cedula || 'No registrada'}</Text>
+                          </View>
                           <View style={styles.rectorRegisteredActions}>
                             <TouchableOpacity
-                              style={[styles.smallBtn, styles.rectorModernActionBtn, styles.rectorEditBtn]}
+                              style={[styles.smallBtn, styles.rectorModernActionBtn, styles.rectorEditBtn, styles.adminColegioActionBtn]}
                               onPress={() => openRectorEditModal(rector)}
                               activeOpacity={0.86}
                             >
@@ -4932,7 +5150,7 @@ export default function HomeScreen() {
                               </View>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[styles.smallBtn, styles.rectorModernActionBtn, styles.rectorDeleteBtn]}
+                              style={[styles.smallBtn, styles.rectorModernActionBtn, styles.rectorDeleteBtn, styles.adminColegioActionBtn]}
                               onPress={() => askDeleteRector(rector)}
                               activeOpacity={0.86}
                             >
@@ -4956,35 +5174,46 @@ export default function HomeScreen() {
                         key={colegio.id}
                         style={[
                           styles.colegioRegisteredCard,
+                          styles.adminColegioRegisteredCard,
                           isEditingColegio && String(colegioEditing?.id) === String(colegio.id) && styles.colegioRegisteredCardActive
                         ]}
                       >
                         <View style={styles.colegioRegisteredTopRow}>
-                          <View style={styles.colegioRegisteredTitleWrap}>
-                            <Text style={styles.colegioRegisteredEyebrow}>Colegio</Text>
-                            <Text style={styles.colegioRegisteredName}>{colegio.nombre || `Colegio ${colegio.id}`}</Text>
-                            <View style={styles.colegioRegisteredMetaWrap}>
-                              {colegio.codigoDane ? (
-                                <View style={styles.colegioRegisteredMetaChip}>
-                                  <Ionicons name="id-card-outline" size={12} color="#bfdbfe" />
-                                  <Text style={styles.colegioRegisteredMetaChipText}>DANE {colegio.codigoDane}</Text>
-                                </View>
-                              ) : null}
+                          <View style={styles.adminColegioHeaderRow}>
+                            <View style={styles.adminColegioAvatar}>
+                              <Ionicons name="business-outline" size={19} color="#ecfeff" />
+                            </View>
+                            <View style={styles.colegioRegisteredTitleWrap}>
+                              <Text style={styles.colegioRegisteredEyebrow}>Colegio</Text>
+                              <Text style={styles.colegioRegisteredName}>{colegio.nombre || `Colegio ${colegio.id}`}</Text>
+                              <View style={styles.colegioRegisteredMetaWrap}>
+                                {colegio.codigoDane ? (
+                                  <View style={[styles.colegioRegisteredMetaChip, styles.adminColegioMetaChip]}>
+                                    <Ionicons name="id-card-outline" size={12} color="#67e8f9" />
+                                    <Text style={[styles.colegioRegisteredMetaChipText, styles.adminColegioMetaChipText]}>DANE {colegio.codigoDane}</Text>
+                                  </View>
+                                ) : (
+                                  <View style={[styles.colegioRegisteredMetaChip, styles.adminColegioMetaChip]}>
+                                    <Ionicons name="id-card-outline" size={12} color="#67e8f9" />
+                                    <Text style={[styles.colegioRegisteredMetaChipText, styles.adminColegioMetaChipText]}>Sin codigo DANE</Text>
+                                  </View>
+                                )}
+                              </View>
                             </View>
                           </View>
                         </View>
 
                         <View style={styles.colegioRegisteredActions}>
-                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn, styles.colegioRegisteredActionBtn]} onPress={() => startEditColegio(colegio)}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.updateBtn, styles.colegioRegisteredActionBtn, styles.adminColegioActionBtn, styles.adminColegioEditBtn]} onPress={() => startEditColegio(colegio)}>
                             <View style={[styles.btnRow, styles.colegioRegisteredActionBtnRow]}>
-                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Editar</Text>
+                              <Ionicons name="create-outline" size={14} color="#ecfeff" />
+                              <Text style={[styles.smallBtnText, styles.adminDocenteActionText]}>Editar</Text>
                             </View>
                           </TouchableOpacity>
-                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn, styles.colegioRegisteredActionBtn]} onPress={() => askDeleteColegio(colegio)}>
+                          <TouchableOpacity style={[styles.smallBtn, styles.deleteBtn, styles.colegioRegisteredActionBtn, styles.adminColegioActionBtn, styles.adminColegioDeleteBtn]} onPress={() => askDeleteColegio(colegio)}>
                             <View style={[styles.btnRow, styles.colegioRegisteredActionBtnRow]}>
-                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                              <Ionicons name="trash-outline" size={14} color="#fff1f2" />
+                              <Text style={[styles.smallBtnText, styles.adminDocenteActionText]}>Eliminar</Text>
                             </View>
                           </TouchableOpacity>
                         </View>
@@ -4992,6 +5221,240 @@ export default function HomeScreen() {
                     );
                   })
                 )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={docenteNivelModalVisible}
+        onRequestClose={closeDocenteNivelConfigModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.docenteConfigModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.docenteEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Docente</Text>
+                <Text style={styles.periodTitle}>Nivel docente</Text>
+              </View>
+              <Pressable
+                onPress={closeDocenteNivelConfigModal}
+                style={styles.closeBtn}
+              >
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.docenteConfigHero}>
+                <View style={styles.docenteConfigIconWrap}>
+                  <Ionicons name="school-outline" size={24} color="#dbeafe" />
+                </View>
+                <View style={styles.rectorCourseEditHeroCopy}>
+                  <Text style={styles.rectorCourseEditHeroTitle}>{docenteNivel ? getNivelLabel(docenteNivel) : 'Sin nivel'}</Text>
+                  <Text style={styles.rectorCourseEditHeroMeta}>{docenteSedeId ? resolveSedeNombre(docenteSedeId) : 'Sin sede asignada'}</Text>
+                </View>
+              </View>
+              <View style={styles.courseForm}>
+                <Text style={styles.fieldLabel}>Nivel del docente</Text>
+                <TouchableOpacity
+                  style={styles.selectBoxFull}
+                  onPress={() => {
+                    setDocenteNivelPickerOpen((prev) => !prev);
+                    setDocenteSedePickerOpen(false);
+                  }}
+                  disabled={savingDocente}
+                >
+                  <Text style={styles.selectText}>{docenteNivel ? getNivelLabel(docenteNivel) : 'Sin nivel'}</Text>
+                </TouchableOpacity>
+                {docenteNivelPickerOpen ? (
+                  <View style={styles.pickerList}>
+                    <TouchableOpacity
+                      style={[styles.pickerItem, !docenteNivel && styles.pickerItemActive]}
+                      onPress={() => {
+                        setDocenteNivel('');
+                        setDocenteNivelPickerOpen(false);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>Sin nivel</Text>
+                    </TouchableOpacity>
+                    {NIVEL_OPTIONS.map((nivel) => (
+                      <TouchableOpacity
+                        key={`docente-modal-nivel-${nivel.value}`}
+                        style={[styles.pickerItem, docenteNivel === nivel.value && styles.pickerItemActive]}
+                        onPress={() => {
+                          setDocenteNivel(nivel.value);
+                          setDocenteNivelPickerOpen(false);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{nivel.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                <Text style={styles.fieldLabel}>Sede del docente</Text>
+                <TouchableOpacity
+                  style={styles.selectBoxFull}
+                  onPress={() => {
+                    setDocenteSedePickerOpen((prev) => !prev);
+                    setDocenteNivelPickerOpen(false);
+                  }}
+                  disabled={savingDocente || sedesLoading}
+                >
+                  <Text style={styles.selectText}>{docenteSedeId ? resolveSedeNombre(docenteSedeId) : 'Sin sede'}</Text>
+                </TouchableOpacity>
+                {docenteSedePickerOpen ? (
+                  <View style={styles.pickerList}>
+                    <TouchableOpacity
+                      style={[styles.pickerItem, !docenteSedeId && styles.pickerItemActive]}
+                      onPress={() => {
+                        setDocenteSedeId(null);
+                        setDocenteSedePickerOpen(false);
+                      }}
+                    >
+                      <Text style={styles.dataItem}>Sin sede</Text>
+                    </TouchableOpacity>
+                    {sedesDisponibles.map((sede) => (
+                      <TouchableOpacity
+                        key={`docente-modal-sede-${sede.id}`}
+                        style={[styles.pickerItem, Number(docenteSedeId) === Number(sede.id) && styles.pickerItemActive]}
+                        onPress={() => {
+                          setDocenteSedeId(sede.id);
+                          setDocenteSedePickerOpen(false);
+                        }}
+                      >
+                        <Text style={styles.dataItem}>{sede.nombre}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={styles.docenteConfigActions}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.createBtn, styles.docenteConfigDoneBtn]}
+                    onPress={closeDocenteNivelConfigModal}
+                  >
+                    <View style={[styles.btnRow, styles.docenteCreateSaveRow]}>
+                      <Ionicons name="checkmark-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Listo</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={docenteCursosModalVisible}
+        onRequestClose={closeDocenteCursosConfigModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.docenteConfigModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.docenteEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Docente</Text>
+                <Text style={styles.periodTitle}>Asignar cursos</Text>
+              </View>
+              <Pressable
+                onPress={closeDocenteCursosConfigModal}
+                style={styles.closeBtn}
+              >
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.docenteConfigHero}>
+                <View style={styles.docenteConfigIconWrap}>
+                  <Ionicons name="library-outline" size={24} color="#dbeafe" />
+                </View>
+                <View style={styles.rectorCourseEditHeroCopy}>
+                  <Text style={styles.rectorCourseEditHeroTitle}>{docenteCursos.length} curso{docenteCursos.length === 1 ? '' : 's'} seleccionado{docenteCursos.length === 1 ? '' : 's'}</Text>
+                  <Text style={styles.rectorCourseEditHeroMeta}>Asigna cursos y materias antes de {docenteCursosReturnTargetRef.current === 'edit' ? 'actualizar' : 'crear'} el docente</Text>
+                </View>
+              </View>
+              <View style={styles.courseForm}>
+                {loadingCursos ? (
+                  <Text style={styles.dataBullet}>Cargando cursos...</Text>
+                ) : docenteCursosDisponibles.length === 0 ? (
+                  <Text style={styles.dataBullet}>No hay cursos disponibles para asignar.</Text>
+                ) : (
+                  <View style={styles.docenteCourseChecklist}>
+                    {docenteCursosDisponibles.map((curso) => {
+                      const isSelected = docenteCursos.includes(curso.id);
+                      return (
+                        <TouchableOpacity
+                          key={`docente-modal-curso-option-${curso.id}`}
+                          style={[styles.docenteCourseOption, isSelected && styles.docenteCourseOptionActive]}
+                          onPress={() => toggleDocenteCurso(curso.id)}
+                          disabled={savingDocente}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons
+                            name={isSelected ? 'checkbox-outline' : 'square-outline'}
+                            size={20}
+                            color={isSelected ? '#60a5fa' : '#cbd5e1'}
+                          />
+                          <View style={styles.docenteCourseOptionCopyMobile}>
+                            <Text
+                              style={[styles.docenteCourseOptionText, styles.docenteCourseOptionTextMobile, isSelected && styles.docenteCourseOptionTextActive]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {`${curso?.nombre || `Curso ${curso?.id}`} · ${getNivelShortLabel(curso?.nivel)}`}
+                            </Text>
+                            <Text
+                              style={styles.docenteCourseOptionMetaMobile}
+                              numberOfLines={2}
+                              ellipsizeMode="tail"
+                            >
+                              {`Sede: ${resolveSedeNombre(curso?.sedeId)}`}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+                {docenteCursos.length > 0 ? (
+                  <View style={styles.docenteMateriasByCursoWrap}>
+                    <Text style={styles.fieldLabel}>Materias por curso</Text>
+                    {docenteCursos
+                      .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso?.id) === String(cursoId)))
+                      .filter(Boolean)
+                      .map((curso) => (
+                        <View key={`docente-modal-materias-curso-${curso.id}`} style={styles.docenteMateriaCursoItem}>
+                          <Text style={styles.docenteMateriaCursoLabel}>{curso?.nombre || `Curso ${curso?.id}`}</Text>
+                          <TextInput
+                            style={[styles.courseInput, styles.docenteMateriaCursoInput]}
+                            placeholder="Ej: Matematicas, Etica"
+                            placeholderTextColor="#94a3b8"
+                            value={docenteMateriasDraft?.[curso.id] || ''}
+                            onChangeText={(txt) => updateDocenteMateriaDraft(curso.id, txt)}
+                            onBlur={(event) => commitDocenteMateriaDraft(curso.id, event?.nativeEvent?.text)}
+                            editable={!savingDocente}
+                            multiline
+                          />
+                          <Text style={styles.docenteMateriaCursoHint}>Separa varias materias con coma.</Text>
+                        </View>
+                      ))}
+                  </View>
+                ) : null}
+                <View style={styles.docenteConfigActions}>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.createBtn, styles.docenteConfigDoneBtn]}
+                    onPress={closeDocenteCursosConfigModal}
+                  >
+                    <View style={[styles.btnRow, styles.docenteCreateSaveRow]}>
+                      <Ionicons name="checkmark-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Listo</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
               </View>
             </ScrollView>
           </View>
@@ -5121,9 +5584,9 @@ export default function HomeScreen() {
                   onPress={closeRectorEditModal}
                   disabled={savingColegio}
                 >
-                  <View style={styles.btnRow}>
+                  <View style={[styles.btnRow, styles.rectorEditActionRow]}>
                     <Ionicons name="close-outline" size={15} color="#e5e7eb" />
-                    <Text style={[styles.smallBtnText, styles.rectorModernActionText]}>Cancelar</Text>
+                    <Text style={[styles.smallBtnText, styles.rectorModernActionText, styles.rectorEditActionText]}>Cancelar</Text>
                   </View>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -5131,11 +5594,155 @@ export default function HomeScreen() {
                   onPress={handleSaveRector}
                   disabled={savingColegio}
                 >
-                  <View style={styles.btnRow}>
+                  <View style={[styles.btnRow, styles.rectorEditActionRow]}>
                     <Ionicons name="save-outline" size={15} color="#ecfeff" />
-                    <Text style={[styles.smallBtnText, styles.rectorModernActionText]}>{savingColegio ? 'Guardando...' : 'Guardar cambios'}</Text>
+                    <Text style={[styles.smallBtnText, styles.rectorModernActionText, styles.rectorEditActionText]}>{savingColegio ? 'Guardando...' : 'Guardar'}</Text>
                   </View>
                 </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={(rectorCursosModalVisible || rectorSedesModalVisible || returnToRectorSedesAfterForm) && sedeFormVisible}
+        onRequestClose={closeSedeForm}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.rectorSedeModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.rectorCourseEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Sede</Text>
+                <Text style={styles.periodTitle}>{sedeEditing ? 'Editar sede' : 'Crear sede'}</Text>
+              </View>
+              <Pressable onPress={closeSedeForm} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.rectorSedeHero}>
+                <View style={styles.rectorSedeIconWrap}>
+                  <Ionicons name="business-outline" size={25} color="#dcfce7" />
+                </View>
+                <View style={styles.rectorCourseEditHeroCopy}>
+                  <Text style={styles.rectorCourseEditHeroTitle}>{sedeEditing?.nombre || 'Nueva sede'}</Text>
+                  <Text style={styles.rectorCourseEditHeroMeta}>Gestion de sedes institucionales</Text>
+                </View>
+              </View>
+              {renderSedeForm()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={rectorCursosModalVisible && rectorCursoFormVisible}
+        onRequestClose={closeRectorCursoForm}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.rectorCourseEditModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.rectorCourseEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Curso</Text>
+                <Text style={styles.periodTitle}>{rectorCursoEditing ? 'Editar curso' : 'Crear curso'}</Text>
+              </View>
+              <Pressable onPress={closeRectorCursoForm} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <View style={styles.rectorCourseEditHero}>
+                <View style={styles.rectorCourseEditIconWrap}>
+                  <Ionicons name="book-outline" size={25} color="#dbeafe" />
+                </View>
+                <View style={styles.rectorCourseEditHeroCopy}>
+                  <Text style={styles.rectorCourseEditHeroTitle}>{rectorCursoEditing?.nombre || 'Nuevo curso'}</Text>
+                  <Text style={styles.rectorCourseEditHeroMeta}>
+                    {rectorCursoEditing ? `${getNivelLabel(rectorCursoEditing?.nivel)} · ${resolveSedeNombre(rectorCursoEditing?.sedeId)}` : 'Configura nombre, nivel y sede'}
+                  </Text>
+                </View>
+              </View>
+              {renderRectorCursoForm()}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={rectorSedesModalVisible}
+        onRequestClose={closeRectorSedesModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.rectorSedesModalCard]}>
+            <View style={styles.modalHeader}>
+              <View style={styles.rectorCourseEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Sedes</Text>
+                <Text style={styles.periodTitle}>Crear sedes</Text>
+              </View>
+              <Pressable onPress={closeRectorSedesModal} style={styles.closeBtn}>
+                <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
+              </Pressable>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.dataBox}>
+                <View style={styles.rectorSedesHeaderRow}>
+                  <Text style={styles.dataTitle}>Sedes</Text>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.createBtn, styles.rectorSedeCreateBtn, savingSede && { opacity: 0.6 }]}
+                    onPress={() => openSedeForm()}
+                    disabled={savingSede}
+                  >
+                    <View style={styles.btnRow}>
+                      <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Crear sedes</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+                {sedesLoading ? (
+                  <Text style={styles.dataBullet}>Cargando sedes...</Text>
+                ) : sedesDisponibles.length === 0 ? (
+                  <Text style={styles.dataBullet}>Sin sedes registradas.</Text>
+                ) : (
+                  sedesDisponibles.map((sede) => (
+                    <View key={`rector-sede-${sede.id}`} style={[styles.rectorCourseRow, styles.rectorCourseCardRow]}>
+                      <View style={styles.rectorCourseRowContent}>
+                        <Text style={styles.rectorCourseRowTitle}>{sede.nombre}</Text>
+                      </View>
+                      <View style={styles.rectorCourseRowActions}>
+                        <TouchableOpacity
+                          style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.updateBtn]}
+                          onPress={() => openSedeForm(sede)}
+                          disabled={savingSede}
+                        >
+                          <View style={styles.btnRow}>
+                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Editar</Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.deleteBtn]}
+                          onPress={() => askDeleteSede(sede)}
+                          disabled={savingSede}
+                        >
+                          <View style={styles.btnRow}>
+                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Eliminar</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
               </View>
             </ScrollView>
           </View>
@@ -5150,34 +5757,46 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.docenteCrudModalCard]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>{isAdmin ? 'Ver docentes (Administrador)' : 'Crear docentes (Rector/Coordinador)'}</Text>
-              <Pressable onPress={closeDocenteCrudModal} style={styles.closeBtn}>
+            <View style={[styles.modalHeader, styles.adminDocentesModalHeader]}>
+              <View style={styles.adminDocentesTitleBlock}>
+                <View style={styles.adminDocentesIconWrap}>
+                  <Ionicons name="people-outline" size={22} color="#ecfeff" />
+                </View>
+                <View style={styles.adminDocentesTitleCopy}>
+                  <Text style={styles.adminDocentesEyebrow}>Vista administrador</Text>
+                  <Text style={styles.adminDocentesTitle}>{isAdmin ? 'Ver docentes' : 'Crear docentes'}</Text>
+                </View>
+              </View>
+              <Pressable onPress={closeDocenteCrudModal} style={[styles.closeBtn, styles.adminDocentesCloseBtn]}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={[styles.modalContent, styles.adminDocentesModalContent]} showsVerticalScrollIndicator={false}>
               {isAdmin ? (
                 <View style={styles.courseForm}>
                   {canAdminFilterDocenteSchools ? (
-                    <View style={styles.dataBox}>
+                    <View style={[styles.dataBox, styles.adminDocentesPanel]}>
                       <Text style={styles.fieldLabel}>Institucion</Text>
                       <TouchableOpacity
-                        style={styles.selectBoxFull}
+                        style={[styles.selectBoxFull, styles.adminDocentesSelectBox]}
                         onPress={() => setDocenteColegioPickerOpen((prev) => !prev)}
                         disabled={savingDocente || loadingCursos}
                       >
-                        <Text style={styles.selectText}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text>
+                        <View style={styles.adminDocentesSelectRow}>
+                          <Ionicons name="business-outline" size={16} color="#67e8f9" />
+                          <Text style={[styles.selectText, styles.adminDocentesSelectText]}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text>
+                          <Ionicons name={docenteColegioPickerOpen ? 'chevron-up-outline' : 'chevron-down-outline'} size={16} color="#a5f3fc" />
+                        </View>
                       </TouchableOpacity>
                       {docenteColegioPickerOpen ? (
-                        <View style={styles.pickerList}>
+                        <View style={[styles.pickerList, styles.adminDocentesPickerList]}>
                           {colegiosLoading ? <Text style={styles.dataBullet}>Cargando instituciones...</Text> : null}
                           {colegiosOptions.length > 0 ? (
                             colegiosOptions.map((colegio) => (
                               <TouchableOpacity
                                 key={`docente-crud-school-${colegio.id}`}
-                                style={[styles.pickerItem, String(docenteColegioId) === String(colegio.id) && styles.pickerItemActive]}
+                                style={[styles.pickerItem, styles.adminDocentesPickerItem, String(docenteColegioId) === String(colegio.id) && styles.adminDocentesPickerItemActive]}
                                 onPress={() => {
                                   setDocenteColegioId(colegio.id);
                                   setDocenteColegioPickerOpen(false);
@@ -5194,7 +5813,7 @@ export default function HomeScreen() {
                                   loadSedesDisponibles(colegio.id);
                                 }}
                               >
-                                <Text style={styles.dataItem}>{colegio.nombre || `Colegio ${colegio.id}`}</Text>
+                                <Text style={[styles.dataItem, styles.adminDocentesPickerText]}>{colegio.nombre || `Colegio ${colegio.id}`}</Text>
                               </TouchableOpacity>
                             ))
                           ) : (
@@ -5205,28 +5824,31 @@ export default function HomeScreen() {
                     </View>
                   ) : null}
 
-                  <View style={styles.dataBox}>
+                  <View style={[styles.dataBox, styles.adminDocentesPanel]}>
                     <View style={styles.courseActionsRow}>
-                      <Text style={styles.dataTitle}>Docentes de la institucion</Text>
+                      <View style={styles.adminDocentesSectionTitleRow}>
+                        <Ionicons name="school-outline" size={17} color="#67e8f9" />
+                        <Text style={styles.adminDocentesSectionTitle}>Docentes de la institucion</Text>
+                      </View>
                       {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                     </View>
-                    <View style={styles.docentesSearchBox}>
+                    <View style={[styles.docentesSearchBox, styles.adminDocentesSearchBox]}>
                       <Text style={styles.fieldLabel}>Filtrar docentes</Text>
-                      <View style={styles.docentesSearchInputWrap}>
-                        <Ionicons name="search-outline" size={16} color="#94a3b8" />
+                      <View style={[styles.docentesSearchInputWrap, styles.adminDocentesSearchInputWrap]}>
+                        <Ionicons name="search-outline" size={16} color="#67e8f9" />
                         <TextInput
-                          style={styles.docentesSearchInput}
+                          style={[styles.docentesSearchInput, styles.adminDocentesSearchInput]}
                           placeholder="Nombre, correo, curso o materia"
-                          placeholderTextColor="#94a3b8"
+                          placeholderTextColor="#7dd3fc"
                           value={adminDocentesSearchTerm}
                           onChangeText={setAdminDocentesSearchTerm}
                         />
                         {adminDocentesSearchTerm ? (
                           <Pressable
                             onPress={() => setAdminDocentesSearchTerm('')}
-                            style={styles.docentesSearchClearBtn}
+                            style={[styles.docentesSearchClearBtn, styles.adminDocentesClearBtn]}
                           >
-                            <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                            <Ionicons name="close-circle" size={18} color="#a5f3fc" />
                           </Pressable>
                         ) : null}
                       </View>
@@ -5237,12 +5859,20 @@ export default function HomeScreen() {
                       <Text style={styles.dataBullet}>No hay docentes que coincidan con el filtro.</Text>
                     ) : (
                       adminDocentesFiltrados.map((docenteItem) => (
-                        <View key={`crud-inline-docente-${docenteItem.id}`} style={styles.docenteInlineCard}>
-                          <Text style={styles.docenteInlineName}>{docenteItem.nombre || docenteItem.email || `Docente ${docenteItem.id}`}</Text>
-                          {docenteItem.email ? <Text style={styles.docenteInlineMeta}>Correo: {docenteItem.email}</Text> : null}
-                          <Text style={styles.docenteInlineMeta}>Nivel: {getNivelLabel(docenteItem?.nivel)}</Text>
-                          <Text style={styles.docenteInlineMeta}>Sede: {resolveSedeNombre(docenteItem?.sedeId)}</Text>
-                          <Text style={styles.docenteInlineMeta}>Clave de acceso: {getDocenteAccessPreview(docenteItem.id)}</Text>
+                        <View key={`crud-inline-docente-${docenteItem.id}`} style={[styles.docenteInlineCard, styles.adminDocenteInlineCard]}>
+                          <View style={styles.adminDocenteInlineHeader}>
+                            <View style={styles.adminDocenteAvatar}>
+                              <Ionicons name="person-outline" size={18} color="#ecfeff" />
+                            </View>
+                            <View style={styles.adminDocenteInlineTitleBlock}>
+                              <Text style={styles.docenteInlineName}>{docenteItem.nombre || docenteItem.email || `Docente ${docenteItem.id}`}</Text>
+                              {docenteItem.email ? <Text style={styles.docenteInlineMeta}>Correo: {docenteItem.email}</Text> : null}
+                            </View>
+                          </View>
+                          <View style={[styles.adminDocenteMetaGrid, isMobileApp && styles.adminDocenteMetaGridMobile]}>
+                            <Text style={[styles.adminDocenteMetaPill, isMobileApp && styles.adminDocenteMetaPillMobile]}>Nivel: {getNivelLabel(docenteItem?.nivel)}</Text>
+                            <Text style={[styles.adminDocenteMetaPill, isMobileApp && styles.adminDocenteMetaPillMobile]}>Sede: {resolveSedeNombre(docenteItem?.sedeId)}</Text>
+                          </View>
                           <Text style={styles.docenteInlineMeta}>
                             Cursos: {Array.isArray(docenteItem.cursos) && docenteItem.cursos.length ? docenteItem.cursos.map((curso) => curso?.nombre || `Curso ${curso?.id}`).join(', ') : 'Sin cursos asignados'}
                           </Text>
@@ -5258,35 +5888,35 @@ export default function HomeScreen() {
                                 .join(' | ')
                               : 'Sin materias asignadas'}
                           </Text>
-                          <View style={styles.docenteInlineActions}>
+                          <View style={[styles.docenteInlineActions, isMobileApp && styles.docenteInlineActionsMobile]}>
                             <TouchableOpacity
-                              style={[styles.smallBtn, styles.infoBtn]}
+                              style={[styles.smallBtn, styles.infoBtn, styles.adminDocenteActionBtn, styles.adminDocenteResetBtn, isMobileApp && styles.adminDocenteResetBtnMobile]}
                               onPress={() => handleResetDocentePassword(docenteItem)}
                               disabled={savingDocente}
                             >
-                              <View style={styles.btnRow}>
-                                <Ionicons name="key-outline" size={14} color="#e5e7eb" />
-                                <Text style={styles.smallBtnText}>Restablecer clave</Text>
+                              <View style={[styles.btnRow, isMobileApp && styles.adminDocenteResetBtnRowMobile]}>
+                                <Ionicons name="key-outline" size={14} color="#ecfeff" />
+                                <Text style={[styles.smallBtnText, styles.adminDocenteActionText, isMobileApp && styles.adminDocenteActionTextMobile]}>Clave</Text>
                               </View>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[styles.smallBtn, styles.updateBtn]}
+                              style={[styles.smallBtn, styles.updateBtn, styles.adminDocenteActionBtn, styles.adminDocenteEditBtn, isMobileApp && styles.adminDocenteInlineActionBtnMobile]}
                               onPress={() => openAdminDocenteEditModal(docenteItem)}
                               disabled={savingDocente}
                             >
-                              <View style={styles.btnRow}>
-                                <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                                <Text style={styles.smallBtnText}>Editar</Text>
+                              <View style={[styles.btnRow, isMobileApp && styles.adminDocenteActionRowMobile]}>
+                                <Ionicons name="create-outline" size={14} color="#ecfeff" />
+                                <Text style={[styles.smallBtnText, styles.adminDocenteActionText, isMobileApp && styles.adminDocenteActionTextMobile]}>Editar</Text>
                               </View>
                             </TouchableOpacity>
                             <TouchableOpacity
-                              style={[styles.smallBtn, styles.deleteBtn]}
+                              style={[styles.smallBtn, styles.deleteBtn, styles.adminDocenteActionBtn, styles.adminDocenteDeleteBtn, isMobileApp && styles.adminDocenteInlineActionBtnMobile]}
                               onPress={() => askDeleteDocente(docenteItem)}
                               disabled={savingDocente}
                             >
-                              <View style={styles.btnRow}>
-                                <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                                <Text style={styles.smallBtnText}>Eliminar</Text>
+                              <View style={[styles.btnRow, isMobileApp && styles.adminDocenteActionRowMobile]}>
+                                <Ionicons name="trash-outline" size={14} color="#fff1f2" />
+                                <Text style={[styles.smallBtnText, styles.adminDocenteActionText, isMobileApp && styles.adminDocenteActionTextMobile, isMobileApp && styles.adminDocenteDeleteTextMobile]}>Eliminar</Text>
                               </View>
                             </TouchableOpacity>
                           </View>
@@ -5297,223 +5927,51 @@ export default function HomeScreen() {
                 </View>
               ) : (
                 <View style={styles.courseForm}>
-                  <Text style={styles.fieldLabel}>{docenteEditing ? 'Editar docente' : 'Nuevo docente'}</Text>
-                  <TextInput
-                    style={styles.courseInput}
-                    placeholder="Nombre completo"
-                    placeholderTextColor="#9ca3af"
-                    value={docenteForm.nombre}
-                    onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, nombre: sanitizeDocenteNombreInput(txt) }))}
-                  />
-                  <TextInput
-                    style={styles.courseInput}
-                    placeholder="Correo"
-                    placeholderTextColor="#9ca3af"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={docenteForm.email}
-                    onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, email: normalizeDocenteEmailInput(txt) }))}
-                  />
-                  <View style={styles.passwordInputWrap}>
+                  <View style={styles.dataBox}>
+                    <Text style={styles.dataTitle}>{docenteEditing ? 'Editar docente' : 'Nuevo docente'}</Text>
                     <TextInput
-                      style={[styles.courseInput, styles.passwordInput]}
-                      placeholder={docenteEditing ? 'Nueva contrasena (opcional)' : 'Contrasena'}
+                      style={styles.courseInput}
+                      placeholder="Nombre completo"
                       placeholderTextColor="#9ca3af"
-                      secureTextEntry={!showDocentePassword}
-                      value={docenteForm.password}
-                      onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, password: txt }))}
-                      autoCapitalize="none"
-                      autoCorrect={false}
+                      value={docenteForm.nombre}
+                      onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, nombre: sanitizeDocenteNombreInput(txt) }))}
                     />
-                    <TouchableOpacity
-                      style={styles.passwordEyeBtn}
-                      onPress={() => setShowDocentePassword((prev) => !prev)}
-                      disabled={savingDocente}
-                    >
-                      <Ionicons name={showDocentePassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
-                    </TouchableOpacity>
+                    <TextInput
+                      style={styles.courseInput}
+                      placeholder="Correo"
+                      placeholderTextColor="#9ca3af"
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      value={docenteForm.email}
+                      onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, email: normalizeDocenteEmailInput(txt) }))}
+                    />
+                    <View style={styles.passwordInputWrap}>
+                      <TextInput
+                        style={[styles.courseInput, styles.passwordInput]}
+                        placeholder={docenteEditing ? 'Nueva contrasena (opcional)' : 'Contrasena'}
+                        placeholderTextColor="#9ca3af"
+                        secureTextEntry={!showDocentePassword}
+                        value={docenteForm.password}
+                        onChangeText={(txt) => setDocenteForm(prev => ({ ...prev, password: txt }))}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <TouchableOpacity
+                        style={styles.passwordEyeBtn}
+                        onPress={() => setShowDocentePassword((prev) => !prev)}
+                        disabled={savingDocente}
+                      >
+                        <Ionicons name={showDocentePassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <Text style={styles.fieldLabel}>Nivel del docente</Text>
-                  <TouchableOpacity
-                    style={styles.selectBoxFull}
-                    onPress={() => {
-                      setDocenteNivelPickerOpen((prev) => !prev);
-                      setDocenteSedePickerOpen(false);
-                    }}
-                    disabled={savingDocente}
-                  >
-                    <Text style={styles.selectText}>{docenteNivel ? getNivelLabel(docenteNivel) : 'Sin nivel'}</Text>
-                  </TouchableOpacity>
-                  {docenteNivelPickerOpen ? (
-                    <View style={styles.pickerList}>
-                      <TouchableOpacity
-                        style={[styles.pickerItem, !docenteNivel && styles.pickerItemActive]}
-                        onPress={() => {
-                          setDocenteNivel('');
-                          setDocenteNivelPickerOpen(false);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>Sin nivel</Text>
-                      </TouchableOpacity>
-                      {NIVEL_OPTIONS.map((nivel) => (
-                        <TouchableOpacity
-                          key={`docente-nivel-${nivel.value}`}
-                          style={[styles.pickerItem, docenteNivel === nivel.value && styles.pickerItemActive]}
-                          onPress={() => {
-                            setDocenteNivel(nivel.value);
-                            setDocenteNivelPickerOpen(false);
-                          }}
-                        >
-                          <Text style={styles.dataItem}>{nivel.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
-                  <Text style={styles.fieldLabel}>Sede del docente</Text>
-                  <TouchableOpacity
-                    style={styles.selectBoxFull}
-                    onPress={() => {
-                      setDocenteSedePickerOpen((prev) => !prev);
-                      setDocenteNivelPickerOpen(false);
-                    }}
-                    disabled={savingDocente || sedesLoading}
-                  >
-                    <Text style={styles.selectText}>{docenteSedeId ? resolveSedeNombre(docenteSedeId) : 'Sin sede'}</Text>
-                  </TouchableOpacity>
-                  {docenteSedePickerOpen ? (
-                    <View style={styles.pickerList}>
-                      <TouchableOpacity
-                        style={[styles.pickerItem, !docenteSedeId && styles.pickerItemActive]}
-                        onPress={() => {
-                          setDocenteSedeId(null);
-                          setDocenteSedePickerOpen(false);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>Sin sede</Text>
-                      </TouchableOpacity>
-                      {sedesDisponibles.map((sede) => (
-                        <TouchableOpacity
-                          key={`docente-sede-${sede.id}`}
-                          style={[styles.pickerItem, Number(docenteSedeId) === Number(sede.id) && styles.pickerItemActive]}
-                          onPress={() => {
-                            setDocenteSedeId(sede.id);
-                            setDocenteSedePickerOpen(false);
-                          }}
-                        >
-                          <Text style={styles.dataItem}>{sede.nombre}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  ) : null}
 
                   {docenteError ? <Text style={[styles.errorText, { marginTop: 4 }]}>{docenteError}</Text> : null}
 
-                  <View style={styles.dataBox}>
-                    <Text style={styles.fieldLabel}>Asignar cursos</Text>
-                    {loadingCursos ? (
-                      <Text style={styles.dataBullet}>Cargando cursos...</Text>
-                    ) : docenteCursosDisponibles.length === 0 ? (
-                      <Text style={styles.dataBullet}>No hay cursos disponibles para asignar.</Text>
-                    ) : (
-                      <View style={styles.docenteCourseChecklist}>
-                        {docenteCursosDisponibles.map((curso) => {
-                          const isSelected = docenteCursos.includes(curso.id);
-                          return (
-                            <TouchableOpacity
-                              key={`docente-curso-option-${curso.id}`}
-                              style={[styles.docenteCourseOption, isSelected && styles.docenteCourseOptionActive]}
-                              onPress={() => toggleDocenteCurso(curso.id)}
-                              disabled={savingDocente}
-                              activeOpacity={0.85}
-                            >
-                              <Ionicons
-                                name={isSelected ? 'checkbox-outline' : 'square-outline'}
-                                size={20}
-                                color={isSelected ? '#60a5fa' : '#cbd5e1'}
-                              />
-                              <Text style={[styles.docenteCourseOptionText, isSelected && styles.docenteCourseOptionTextActive]}>
-                                {`${curso?.nombre || `Curso ${curso?.id}`} · ${getNivelLabel(curso?.nivel)} · ${resolveSedeNombre(curso?.sedeId)}`}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    )}
-                    {docenteCursos.length > 0 ? (
-                      <View style={styles.docenteMateriasByCursoWrap}>
-                        <Text style={styles.fieldLabel}>Materias por curso</Text>
-                        {docenteCursos
-                          .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso?.id) === String(cursoId)))
-                          .filter(Boolean)
-                          .map((curso) => (
-                            <View key={`docente-materias-curso-${curso.id}`} style={styles.docenteMateriaCursoItem}>
-                              <Text style={styles.docenteMateriaCursoLabel}>{curso?.nombre || `Curso ${curso?.id}`}</Text>
-                              <TextInput
-                                style={[styles.courseInput, styles.docenteMateriaCursoInput]}
-                                placeholder="Ej: Matematicas, Etica"
-                                placeholderTextColor="#94a3b8"
-                                value={docenteMateriasDraft?.[curso.id] || ''}
-                                onChangeText={(txt) => updateDocenteMateriaDraft(curso.id, txt)}
-                                onBlur={(event) => commitDocenteMateriaDraft(curso.id, event?.nativeEvent?.text)}
-                                editable={!savingDocente}
-                                multiline
-                              />
-                              <Text style={styles.docenteMateriaCursoHint}>Separa varias materias con coma.</Text>
-                            </View>
-                          ))}
-                      </View>
-                    ) : null}
-                  </View>
-
-                  <View style={styles.dataBox}>
-                    <View style={styles.courseActionsRow}>
-                      <Text style={styles.dataTitle}>Docentes de la institucion</Text>
-                      {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
-                    </View>
-                    {docentes.length === 0 && !docentesLoading ? (
-                      <Text style={styles.dataBullet}>No hay docentes registrados para esta institucion.</Text>
-                    ) : (
-                      docentes.map((docenteItem) => (
-                        <View key={`crud-inline-docente-${docenteItem.id}`} style={styles.docenteInlineCard}>
-                          <Text style={styles.docenteInlineName}>{docenteItem.nombre || docenteItem.email || `Docente ${docenteItem.id}`}</Text>
-                          {docenteItem.email ? <Text style={styles.docenteInlineMeta}>Correo: {docenteItem.email}</Text> : null}
-                          <Text style={styles.docenteInlineMeta}>Nivel: {getNivelLabel(docenteItem?.nivel)}</Text>
-                          <Text style={styles.docenteInlineMeta}>Sede: {resolveSedeNombre(docenteItem?.sedeId)}</Text>
-                          <Text style={styles.docenteInlineMeta}>Clave de acceso: {getDocenteAccessPreview(docenteItem.id)}</Text>
-                          <Text style={styles.docenteInlineMeta}>
-                            Cursos: {Array.isArray(docenteItem.cursos) && docenteItem.cursos.length ? docenteItem.cursos.map((curso) => curso?.nombre || `Curso ${curso?.id}`).join(', ') : 'Sin cursos asignados'}
-                          </Text>
-                          <View style={styles.docenteInlineActions}>
-                            <TouchableOpacity
-                              style={[styles.smallBtn, styles.updateBtn]}
-                              onPress={() => startEditDocente(docenteItem)}
-                              disabled={savingDocente}
-                            >
-                              <View style={styles.btnRow}>
-                                <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                                <Text style={styles.smallBtnText}>Editar</Text>
-                              </View>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                              style={[styles.smallBtn, styles.deleteBtn]}
-                              onPress={() => askDeleteDocente(docenteItem)}
-                              disabled={savingDocente}
-                            >
-                              <View style={styles.btnRow}>
-                                <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                                <Text style={styles.smallBtnText}>Eliminar</Text>
-                              </View>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      ))
-                    )}
-                  </View>
-
-                  <View style={styles.courseFormActions}>
+                  <View style={[styles.courseFormActions, styles.docenteCreateActions]}>
                     {docenteEditing ? (
                       <TouchableOpacity
-                        style={[styles.smallBtn, styles.outlineBtn, savingDocente && { opacity: 0.6 }]}
+                        style={[styles.smallBtn, styles.outlineBtn, styles.docenteEditCancelBtnMobile, savingDocente && { opacity: 0.6 }]}
                         onPress={() => {
                           if (savingDocente) return;
                           setDocenteEditing(null);
@@ -5530,18 +5988,38 @@ export default function HomeScreen() {
                       >
                         <View style={styles.btnRow}>
                           <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                          <Text style={styles.smallBtnText}>Cancelar edicion</Text>
+                          <Text style={[styles.smallBtnText, styles.docenteEditCancelTextMobile]}>Cancelar edicion</Text>
                         </View>
                       </TouchableOpacity>
                     ) : null}
                     <TouchableOpacity
-                      style={[styles.smallBtn, styles.createBtn, savingDocente && { opacity: 0.6 }]}
+                      style={[styles.smallBtn, styles.infoBtn, styles.docenteCreateOptionBtn, savingDocente && { opacity: 0.6 }]}
+                      onPress={openDocenteNivelConfigModal}
+                      disabled={savingDocente}
+                    >
+                      <View style={[styles.btnRow, styles.docenteCreateSaveRow]}>
+                        <Ionicons name="school-outline" size={14} color="#e5e7eb" />
+                        <Text style={[styles.smallBtnText, styles.docenteCreateOptionText]}>Nivel docente</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.updateBtn, styles.docenteCreateOptionBtn, savingDocente && { opacity: 0.6 }]}
+                      onPress={() => openDocenteCursosConfigModal('create')}
+                      disabled={savingDocente}
+                    >
+                      <View style={[styles.btnRow, styles.docenteCreateSaveRow]}>
+                        <Ionicons name="library-outline" size={14} color="#e5e7eb" />
+                        <Text style={[styles.smallBtnText, styles.docenteCreateOptionText]}>Asignar cursos</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, styles.createBtn, styles.docenteCreateSaveBtn, savingDocente && { opacity: 0.6 }]}
                       onPress={handleSaveDocente}
                       disabled={savingDocente}
                     >
-                      <View style={styles.btnRow}>
+                      <View style={[styles.btnRow, styles.docenteCreateSaveRow]}>
                         <Ionicons name="save-outline" size={14} color="#e5e7eb" />
-                        <Text style={styles.smallBtnText}>{savingDocente ? 'Guardando...' : docenteEditing ? 'Actualizar' : 'Crear'}</Text>
+                        <Text style={[styles.smallBtnText, styles.docenteCreateSaveText]}>{savingDocente ? 'Guardando...' : docenteEditing ? 'Actualizar' : 'Crear'}</Text>
                       </View>
                     </TouchableOpacity>
                   </View>
@@ -5554,19 +6032,33 @@ export default function HomeScreen() {
 
       <Modal
         transparent
-        animationType="slide"
+        animationType="fade"
         visible={adminDocenteEditModalVisible}
         onRequestClose={closeAdminDocenteEditModal}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, styles.docenteCrudModalCard]}>
+          <View style={[styles.modalCard, styles.docenteEditModalCard]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Editar docente (Administrador)</Text>
+              <View style={styles.docenteEditHeaderTitle}>
+                <Text style={styles.rectorEditEyebrow}>Docente</Text>
+                <Text style={styles.periodTitle}>Editar docente</Text>
+              </View>
               <Pressable onPress={closeAdminDocenteEditModal} style={styles.closeBtn}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.docenteEditHero}>
+                <View style={styles.docenteEditIconWrap}>
+                  <Ionicons name="person-outline" size={25} color="#dbeafe" />
+                </View>
+                <View style={styles.rectorCourseEditHeroCopy}>
+                  <Text style={styles.rectorCourseEditHeroTitle}>{docenteEditing?.nombre || docenteEditing?.email || 'Docente'}</Text>
+                  <Text style={styles.rectorCourseEditHeroMeta}>
+                    {getNivelLabel(docenteEditing?.nivel)} · {resolveSedeNombre(docenteEditing?.sedeId)}
+                  </Text>
+                </View>
+              </View>
               <View style={styles.courseForm}>
                 <TextInput
                   style={styles.courseInput}
@@ -5603,150 +6095,123 @@ export default function HomeScreen() {
                     <Ionicons name={showDocentePassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#e5e7eb" />
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.fieldLabel}>Nivel del docente</Text>
-                <TouchableOpacity
-                  style={styles.selectBoxFull}
-                  onPress={() => {
-                    setDocenteNivelPickerOpen((prev) => !prev);
-                    setDocenteSedePickerOpen(false);
-                  }}
-                  disabled={savingDocente}
-                >
-                  <Text style={styles.selectText}>{docenteNivel ? getNivelLabel(docenteNivel) : 'Sin nivel'}</Text>
-                </TouchableOpacity>
-                {docenteNivelPickerOpen ? (
-                  <View style={styles.pickerList}>
-                    <TouchableOpacity
-                      style={[styles.pickerItem, !docenteNivel && styles.pickerItemActive]}
-                      onPress={() => {
-                        setDocenteNivel('');
-                        setDocenteNivelPickerOpen(false);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>Sin nivel</Text>
-                    </TouchableOpacity>
-                    {NIVEL_OPTIONS.map((nivel) => (
-                      <TouchableOpacity
-                        key={`admin-docente-nivel-${nivel.value}`}
-                        style={[styles.pickerItem, docenteNivel === nivel.value && styles.pickerItemActive]}
-                        onPress={() => {
-                          setDocenteNivel(nivel.value);
-                          setDocenteNivelPickerOpen(false);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>{nivel.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
-                <Text style={styles.fieldLabel}>Sede del docente</Text>
-                <TouchableOpacity
-                  style={styles.selectBoxFull}
-                  onPress={() => {
-                    setDocenteSedePickerOpen((prev) => !prev);
-                    setDocenteNivelPickerOpen(false);
-                  }}
-                  disabled={savingDocente || sedesLoading}
-                >
-                  <Text style={styles.selectText}>{docenteSedeId ? resolveSedeNombre(docenteSedeId) : 'Sin sede'}</Text>
-                </TouchableOpacity>
-                {docenteSedePickerOpen ? (
-                  <View style={styles.pickerList}>
-                    <TouchableOpacity
-                      style={[styles.pickerItem, !docenteSedeId && styles.pickerItemActive]}
-                      onPress={() => {
-                        setDocenteSedeId(null);
-                        setDocenteSedePickerOpen(false);
-                      }}
-                    >
-                      <Text style={styles.dataItem}>Sin sede</Text>
-                    </TouchableOpacity>
-                    {sedesDisponibles.map((sede) => (
-                      <TouchableOpacity
-                        key={`admin-docente-sede-${sede.id}`}
-                        style={[styles.pickerItem, Number(docenteSedeId) === Number(sede.id) && styles.pickerItemActive]}
-                        onPress={() => {
-                          setDocenteSedeId(sede.id);
-                          setDocenteSedePickerOpen(false);
-                        }}
-                      >
-                        <Text style={styles.dataItem}>{sede.nombre}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ) : null}
                 {docenteError ? <Text style={[styles.errorText, { marginTop: 4 }]}>{docenteError}</Text> : null}
 
-                <View style={styles.dataBox}>
-                  <Text style={styles.fieldLabel}>Asignar cursos</Text>
+                <View style={[styles.docenteSummaryCard, styles.adminDocenteSummaryCard]}>
+                  <View style={styles.docenteSummaryHeader}>
+                    <Text style={styles.docenteSummaryName}>Cursos y materias</Text>
+                    <Text style={styles.docenteSummaryEmail}>
+                      {docenteCursos.length > 0
+                        ? `${docenteCursos.length} curso${docenteCursos.length === 1 ? '' : 's'} seleccionado${docenteCursos.length === 1 ? '' : 's'}`
+                        : 'Sin cursos asignados'}
+                    </Text>
+                  </View>
+                  {docenteCursos.length > 0 ? (
+                    <View style={styles.docenteCursoList}>
+                      {docenteCursos
+                        .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso?.id) === String(cursoId)))
+                        .filter(Boolean)
+                        .map((curso) => (
+                          <View key={`docente-edit-resumen-curso-${curso.id}`} style={styles.docenteCursoChip}>
+                            <Text style={styles.docenteCursoChipTitle}>{curso?.nombre || `Curso ${curso?.id}`}</Text>
+                            <Text style={styles.docenteCursoChipMeta}>
+                              {parseMateriasTexto(docenteMateriasDraft?.[curso.id]).length
+                                ? parseMateriasTexto(docenteMateriasDraft?.[curso.id]).join(', ')
+                                : 'Sin materias'}
+                            </Text>
+                          </View>
+                        ))}
+                    </View>
+                  ) : null}
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.updateBtn, styles.docenteCreateOptionBtn, savingDocente && { opacity: 0.6 }]}
+                    onPress={() => openDocenteCursosConfigModal('edit')}
+                    disabled={savingDocente || loadingCursos}
+                  >
+                    <View style={[styles.btnRow, styles.docenteCreateSaveRow]}>
+                      <Ionicons name="library-outline" size={14} color="#e5e7eb" />
+                      <Text style={[styles.smallBtnText, styles.docenteCreateOptionText]}>Cursos y materias</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.docenteCourseChecklist}>
                   {loadingCursos ? (
                     <Text style={styles.dataBullet}>Cargando cursos...</Text>
                   ) : docenteCursosDisponibles.length === 0 ? (
                     <Text style={styles.dataBullet}>No hay cursos disponibles para asignar.</Text>
                   ) : (
-                    <View style={styles.docenteCourseChecklist}>
-                      {docenteCursosDisponibles.map((curso) => {
-                        const isSelected = docenteCursos.includes(curso.id);
-                        return (
-                          <TouchableOpacity
-                            key={`admin-docente-curso-option-${curso.id}`}
-                            style={[styles.docenteCourseOption, isSelected && styles.docenteCourseOptionActive]}
-                            onPress={() => toggleDocenteCurso(curso.id)}
-                            disabled={savingDocente}
-                            activeOpacity={0.85}
-                          >
-                            <Ionicons
-                              name={isSelected ? 'checkbox-outline' : 'square-outline'}
-                              size={20}
-                              color={isSelected ? '#60a5fa' : '#cbd5e1'}
-                            />
-                            <Text style={[styles.docenteCourseOptionText, isSelected && styles.docenteCourseOptionTextActive]}>
-                              {`${curso?.nombre || `Curso ${curso?.id}`} · ${getNivelLabel(curso?.nivel)} · ${resolveSedeNombre(curso?.sedeId)}`}
+                    docenteCursosDisponibles.map((curso) => {
+                      const isSelected = docenteCursos.includes(curso.id);
+                      return (
+                        <TouchableOpacity
+                          key={`docente-edit-curso-option-${curso.id}`}
+                          style={[styles.docenteCourseOption, isSelected && styles.docenteCourseOptionActive]}
+                          onPress={() => toggleDocenteCurso(curso.id)}
+                          disabled={savingDocente}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons
+                            name={isSelected ? 'checkbox-outline' : 'square-outline'}
+                            size={20}
+                            color={isSelected ? '#60a5fa' : '#cbd5e1'}
+                          />
+                          <View style={styles.docenteCourseOptionCopyMobile}>
+                            <Text
+                              style={[styles.docenteCourseOptionText, styles.docenteCourseOptionTextMobile, isSelected && styles.docenteCourseOptionTextActive]}
+                              numberOfLines={1}
+                              ellipsizeMode="tail"
+                            >
+                              {`${curso?.nombre || `Curso ${curso?.id}`} · ${getNivelShortLabel(curso?.nivel)}`}
                             </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  )}
-                  {docenteCursos.length > 0 ? (
-                    <View style={styles.docenteMateriasByCursoWrap}>
-                      <Text style={styles.fieldLabel}>Materias por curso</Text>
-                      {docenteCursos
-                        .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso?.id) === String(cursoId)))
-                        .filter(Boolean)
-                        .map((curso) => (
-                          <View key={`admin-docente-materias-curso-${curso.id}`} style={styles.docenteMateriaCursoItem}>
-                            <Text style={styles.docenteMateriaCursoLabel}>{curso?.nombre || `Curso ${curso?.id}`}</Text>
-                            <TextInput
-                              style={[styles.courseInput, styles.docenteMateriaCursoInput]}
-                              placeholder="Ej: Matematicas, Etica"
-                              placeholderTextColor="#94a3b8"
-                              value={docenteMateriasDraft?.[curso.id] || ''}
-                              onChangeText={(txt) => updateDocenteMateriaDraft(curso.id, txt)}
-                              onBlur={(event) => commitDocenteMateriaDraft(curso.id, event?.nativeEvent?.text)}
-                              editable={!savingDocente}
-                              multiline
-                            />
-                            <Text style={styles.docenteMateriaCursoHint}>Separa varias materias con coma.</Text>
+                            <Text style={styles.docenteCourseOptionMetaMobile} numberOfLines={2} ellipsizeMode="tail">
+                              {`Sede: ${resolveSedeNombre(curso?.sedeId)}`}
+                            </Text>
                           </View>
-                        ))}
-                    </View>
-                  ) : null}
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
                 </View>
 
-                <View style={styles.courseFormActions}>
+                {docenteCursos.length > 0 ? (
+                  <View style={styles.docenteMateriasByCursoWrap}>
+                    <Text style={styles.fieldLabel}>Materias por curso</Text>
+                    {docenteCursos
+                      .map((cursoId) => docenteCursosDisponibles.find((curso) => String(curso?.id) === String(cursoId)))
+                      .filter(Boolean)
+                      .map((curso) => (
+                        <View key={`docente-edit-materias-curso-${curso.id}`} style={styles.docenteMateriaCursoItem}>
+                          <Text style={styles.docenteMateriaCursoLabel}>{curso?.nombre || `Curso ${curso?.id}`}</Text>
+                          <TextInput
+                            style={[styles.courseInput, styles.docenteMateriaCursoInput]}
+                            placeholder="Ej: Matematicas, Etica"
+                            placeholderTextColor="#94a3b8"
+                            value={docenteMateriasDraft?.[curso.id] || ''}
+                            onChangeText={(txt) => updateDocenteMateriaDraft(curso.id, txt)}
+                            onBlur={(event) => commitDocenteMateriaDraft(curso.id, event?.nativeEvent?.text)}
+                            editable={!savingDocente}
+                            multiline
+                          />
+                          <Text style={styles.docenteMateriaCursoHint}>Separa varias materias con coma.</Text>
+                        </View>
+                      ))}
+                  </View>
+                ) : null}
+
+                <View style={[styles.courseFormActions, styles.docenteEditActionsCentered]}>
                   <TouchableOpacity
-                    style={[styles.smallBtn, styles.outlineBtn, savingDocente && { opacity: 0.6 }]}
+                    style={[styles.smallBtn, styles.outlineBtn, styles.docenteEditCancelBtnMobile, savingDocente && { opacity: 0.6 }]}
                     onPress={closeAdminDocenteEditModal}
                     disabled={savingDocente}
                   >
                     <View style={styles.btnRow}>
                       <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>Cancelar</Text>
+                      <Text style={[styles.smallBtnText, styles.docenteEditCancelTextMobile]}>Cancelar</Text>
                     </View>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.smallBtn, styles.createBtn, savingDocente && { opacity: 0.6 }]}
+                    style={[styles.smallBtn, styles.createBtn, styles.docenteEditUpdateBtnMobile, savingDocente && { opacity: 0.6 }]}
                     onPress={handleSaveDocente}
                     disabled={savingDocente}
                   >
@@ -5770,28 +6235,42 @@ export default function HomeScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.docentesModalCard]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>Docentes del colegio</Text>
-              <Pressable onPress={closeDocenteCrudListModal} style={styles.closeBtn}>
+            <View style={[styles.modalHeader, styles.adminDocentesModalHeader]}>
+              <View style={styles.adminDocentesTitleBlock}>
+                <View style={styles.adminDocentesIconWrap}>
+                  <Ionicons name="people-circle-outline" size={22} color="#ecfeff" />
+                </View>
+                <View style={styles.adminDocentesTitleCopy}>
+                  <Text style={styles.adminDocentesEyebrow}>Listado</Text>
+                  <Text style={styles.adminDocentesTitle}>Docentes del colegio</Text>
+                </View>
+              </View>
+              <Pressable onPress={closeDocenteCrudListModal} style={[styles.closeBtn, styles.adminDocentesCloseBtn]}>
                 <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
               </Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
-              <Text style={styles.fieldLabel}>Colegio: <Text style={styles.dataValue}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text></Text>
-              <View style={styles.dataBox}>
+            <ScrollView contentContainerStyle={[styles.modalContent, styles.adminDocentesModalContent]} showsVerticalScrollIndicator={false}>
+              <View style={styles.adminDocentesSchoolBadge}>
+                <Ionicons name="business-outline" size={16} color="#67e8f9" />
+                <Text style={styles.adminDocentesSchoolBadgeText}>{resolveColegioNombre(docenteColegioId || user?.schoolId)}</Text>
+              </View>
+              <View style={[styles.dataBox, styles.adminDocentesPanel]}>
                 <View style={styles.courseActionsRow}>
-                  <Text style={styles.dataTitle}>Docentes del colegio</Text>
+                  <View style={styles.adminDocentesSectionTitleRow}>
+                    <Ionicons name="school-outline" size={17} color="#67e8f9" />
+                    <Text style={styles.adminDocentesSectionTitle}>Docentes del colegio</Text>
+                  </View>
                   {docentesLoading ? <Text style={styles.dataBullet}>Cargando...</Text> : null}
                 </View>
-                <View style={styles.docentesSearchBox}>
+                <View style={[styles.docentesSearchBox, styles.adminDocentesSearchBox]}>
                   <Text style={styles.fieldLabel}>Buscar docente</Text>
-                  <View style={styles.docentesSearchInputWrap}>
-                    <Ionicons name="search-outline" size={16} color="#94a3b8" />
+                  <View style={[styles.docentesSearchInputWrap, styles.adminDocentesSearchInputWrap]}>
+                    <Ionicons name="search-outline" size={16} color="#67e8f9" />
                     <TextInput
-                      style={styles.docentesSearchInput}
+                      style={[styles.docentesSearchInput, styles.adminDocentesSearchInput]}
                       placeholder="Escribe nombre o apellido"
-                      placeholderTextColor="#94a3b8"
+                      placeholderTextColor="#7dd3fc"
                       value={docentesSearchTerm}
                       onFocus={() => setDocentesSearchOpen(true)}
                       onChangeText={(text) => {
@@ -5805,15 +6284,15 @@ export default function HomeScreen() {
                           setDocentesSearchTerm('');
                           setDocentesSearchOpen(false);
                         }}
-                        style={styles.docentesSearchClearBtn}
+                        style={[styles.docentesSearchClearBtn, styles.adminDocentesClearBtn]}
                       >
-                        <Ionicons name="close-circle" size={16} color="#94a3b8" />
+                        <Ionicons name="close-circle" size={18} color="#a5f3fc" />
                       </Pressable>
                     ) : null}
                   </View>
 
                   {docentesSearchOpen && docentesSearchNormalized ? (
-                    <View style={styles.docentesSearchSuggestions}>
+                    <View style={[styles.docentesSearchSuggestions, styles.adminDocentesSuggestions]}>
                       {docentesSearchSuggestions.length > 0 ? (
                         docentesSearchSuggestions.map((docente) => (
                           <TouchableOpacity
@@ -5843,35 +6322,34 @@ export default function HomeScreen() {
                   <Text style={styles.dataBullet}>- No hay docentes que coincidan con la busqueda</Text>
                 ) : (
                   docentesFiltrados.map((d) => (
-                    <View key={d.id} style={styles.docenteSummaryCard}>
+                    <View key={d.id} style={[styles.docenteSummaryCard, styles.adminDocenteSummaryCard]}>
                       <View style={[styles.docenteSummaryTopRow, isMobileApp && styles.docenteSummaryTopRowMobile]}>
                         <View style={[styles.docenteSummaryHeader, isMobileApp && styles.docenteSummaryHeaderMobile]}>
                           <Text style={styles.docenteSummaryName}>{d.nombre || d.email || `Docente ${d.id}`}</Text>
                           {d.email ? <Text style={styles.docenteSummaryEmail}>{d.email}</Text> : null}
                           <Text style={styles.docenteSummaryEmail}>Nivel: {getNivelLabel(d?.nivel)}</Text>
                           <Text style={styles.docenteSummaryEmail}>Sede: {resolveSedeNombre(d?.sedeId)}</Text>
-                          <Text style={styles.docenteSummaryEmail}>Clave de acceso: {getDocenteAccessPreview(d.id)}</Text>
                         </View>
                         <View style={[styles.docenteSummaryActions, isMobileApp && styles.docenteSummaryActionsMobile]}>
                           <TouchableOpacity
-                            style={[styles.smallBtn, styles.updateBtn, isMobileApp && styles.docenteSummaryActionBtnMobile]}
+                            style={[styles.smallBtn, styles.updateBtn, styles.adminDocenteActionBtn, styles.adminDocenteEditBtn, isMobileApp && styles.docenteSummaryActionBtnMobile]}
                             onPress={() => {
                               closeDocenteCrudListModal();
-                              startEditDocente(d);
+                              setTimeout(() => openAdminDocenteEditModal(d, { returnToList: true }), 0);
                             }}
                           >
                             <View style={styles.btnRow}>
-                              <Ionicons name="create-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Editar</Text>
+                              <Ionicons name="create-outline" size={14} color="#ecfeff" />
+                              <Text style={[styles.smallBtnText, styles.adminDocenteActionText]}>Editar</Text>
                             </View>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={[styles.smallBtn, styles.deleteBtn, isMobileApp && styles.docenteSummaryActionBtnMobile]}
+                            style={[styles.smallBtn, styles.deleteBtn, styles.adminDocenteActionBtn, styles.adminDocenteDeleteBtn, isMobileApp && styles.docenteSummaryActionBtnMobile]}
                             onPress={() => askDeleteDocente(d)}
                           >
                             <View style={styles.btnRow}>
-                              <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
-                              <Text style={styles.smallBtnText}>Eliminar</Text>
+                              <Ionicons name="trash-outline" size={14} color="#fff1f2" />
+                              <Text style={[styles.smallBtnText, styles.adminDocenteActionText]}>Eliminar</Text>
                             </View>
                           </TouchableOpacity>
                         </View>
@@ -6805,7 +7283,7 @@ export default function HomeScreen() {
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, styles.changePasswordModalCard]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.periodTitle}>{isForcedPasswordChange ? 'Cambio obligatorio de clave' : 'Cambiar contrasena'}</Text>
+              <Text style={styles.periodTitle}>{isForcedPasswordChange ? 'Cambio obligatorio de clave' : 'Cambiar contraseña'}</Text>
               {!isForcedPasswordChange ? (
                 <Pressable onPress={closeManualChangePasswordModal} style={styles.closeBtn}>
                   <View style={styles.btnRow}><Ionicons name="close-outline" size={16} color="#fecaca" /><Text style={styles.closeBtnText}>Cerrar</Text></View>
@@ -6878,15 +7356,15 @@ export default function HomeScreen() {
                     </View>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity style={[styles.smallBtn, styles.outlineBtn, changingPassword && { opacity: 0.6 }]} onPress={closeManualChangePasswordModal} disabled={changingPassword}>
-                    <View style={styles.btnRow}>
-                      <Ionicons name="close-outline" size={14} color="#e5e7eb" />
-                      <Text style={styles.smallBtnText}>Cancelar</Text>
+                  <TouchableOpacity style={[styles.smallBtn, styles.outlineBtn, styles.rectorCancelBtn, styles.rectorPairedActionBtn, changingPassword && { opacity: 0.6 }]} onPress={closeManualChangePasswordModal} disabled={changingPassword}>
+                    <View style={[styles.btnRow, styles.rectorCancelRow]}>
+                      <Ionicons name="close-outline" size={14} color="#fecaca" />
+                      <Text style={[styles.smallBtnText, styles.rectorCancelText]}>Cancelar</Text>
                     </View>
                   </TouchableOpacity>
                 )}
-                <TouchableOpacity style={[styles.smallBtn, styles.createBtn, changingPassword && { opacity: 0.6 }]} onPress={handleSubmitForcedPasswordChange} disabled={changingPassword}>
-                  <View style={styles.btnRow}>
+                <TouchableOpacity style={[styles.smallBtn, styles.createBtn, styles.rectorPairedActionBtn, changingPassword && { opacity: 0.6 }]} onPress={handleSubmitForcedPasswordChange} disabled={changingPassword}>
+                  <View style={[styles.btnRow, styles.rectorPairedActionRow]}>
                     <Ionicons name="save-outline" size={14} color="#e5e7eb" />
                     <Text style={styles.smallBtnText}>{changingPassword ? 'Actualizando...' : 'Actualizar clave'}</Text>
                   </View>
@@ -7362,8 +7840,24 @@ const styles = StyleSheet.create({
   logoutActionBtn: { backgroundColor: '#ef4444' },
   periodBtn: { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', backgroundColor: '#7c3aed', shadowColor: '#000', shadowOpacity: 0.2, shadowOffset: { width: 0, height: 4 }, shadowRadius: 6, elevation: 3 },
   periodBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  periodSaveBtn: { alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 10, minWidth: 168, borderRadius: 12, marginTop: 8 },
-  periodSaveBtnText: { fontSize: 13.5 },
+  periodSaveBtn: {
+    alignSelf: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    minWidth: 168,
+    borderRadius: 999,
+    marginTop: 8,
+    backgroundColor: '#0891b2',
+    borderWidth: 1,
+    borderColor: '#67e8f9',
+    shadowColor: '#22d3ee',
+    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 12,
+    elevation: 4
+  },
+  periodSaveBtnText: { fontSize: 13.5, fontWeight: '900' },
   feedbackSuccess: { color: '#bbf7d0', fontWeight: '700', fontSize: 13, marginTop: 6 },
   feedbackError: { color: '#fecaca', fontWeight: '700', fontSize: 13, marginTop: 6 },
   statusModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 20 },
@@ -7690,18 +8184,132 @@ const styles = StyleSheet.create({
   sharedActionModalCard: { ...SHARED_ACTION_MODAL },
   modalCardWide: { ...SHARED_ACTION_MODAL },
   reportesModalCard: { width: Platform.OS === 'web' ? '52%' : '92%', maxWidth: 780, maxHeight: '82%', alignSelf: 'center' },
-  periodModalCard: { ...SHARED_ACTION_MODAL },
+  periodModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#061724',
+    borderColor: 'rgba(34,211,238,0.34)',
+    shadowColor: '#0891b2',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 22,
+    elevation: 8
+  },
   cursoModalCard: { ...SHARED_ACTION_MODAL },
-  docenteCrudModalCard: { ...SHARED_ACTION_MODAL, marginTop: -12 },
-  docentesModalCard: { ...SHARED_ACTION_MODAL },
+  docenteCrudModalCard: {
+    ...SHARED_ACTION_MODAL,
+    marginTop: -12,
+    backgroundColor: '#061724',
+    borderColor: 'rgba(34,211,238,0.34)',
+    shadowColor: '#0891b2',
+    shadowOpacity: 0.26,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 22,
+    elevation: 8
+  },
+  docenteEditModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#081426',
+    borderColor: 'rgba(96,165,250,0.34)'
+  },
+  docenteEditHeaderTitle: { flex: 1, gap: 2 },
+  docenteEditHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: 'rgba(37,99,235,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.32)'
+  },
+  docenteEditIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(37,99,235,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.46)'
+  },
+  docentesModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#061724',
+    borderColor: 'rgba(34,211,238,0.34)',
+    shadowColor: '#0891b2',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 22,
+    elevation: 8
+  },
+  rectorSedesModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#071f1a',
+    borderColor: 'rgba(74,222,128,0.32)'
+  },
   changePasswordModalCard: { ...SHARED_ACTION_MODAL, maxWidth: 520 },
   quickInfoModalCard: { ...SHARED_ACTION_MODAL },
-  colegioModalCard: { ...SHARED_ACTION_MODAL },
-  colegioListModalCard: { ...SHARED_ACTION_MODAL },
+  colegioModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#061724',
+    borderColor: 'rgba(34,211,238,0.34)',
+    shadowColor: '#0891b2',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 22,
+    elevation: 8
+  },
+  colegioListModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#061724',
+    borderColor: 'rgba(34,211,238,0.34)',
+    shadowColor: '#0891b2',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 12 },
+    shadowRadius: 22,
+    elevation: 8
+  },
   modalContent: { padding: 16, gap: 12 },
   periodModalContent: { padding: 14, gap: 10 },
   cursoModalContent: { padding: 14, gap: 10 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  adminDocentesModalHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(103,232,249,0.18)',
+    backgroundColor: 'rgba(8,47,73,0.48)',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    gap: 10
+  },
+  adminDocentesTitleBlock: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 },
+  adminDocentesIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,233,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.46)'
+  },
+  adminDocentesTitleCopy: { flex: 1, minWidth: 0, gap: 2 },
+  adminDocentesEyebrow: { color: '#67e8f9', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.8 },
+  adminDocentesTitle: { color: '#f8fafc', fontSize: 18, fontWeight: '900' },
+  adminDocentesCloseBtn: {
+    backgroundColor: 'rgba(127,29,29,0.42)',
+    borderColor: 'rgba(248,113,113,0.6)',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
+  },
+  adminDocentesModalContent: { padding: 16, gap: 14 },
+  modalHeaderTitle: { flex: 1, minWidth: 0 },
+  modalHeaderActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
   closeBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(127,29,29,0.3)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(248,113,113,0.45)' },
   closeBtnText: { color: '#fecaca', fontWeight: '700' },
   fieldLabel: { color: '#cbd5e1', fontWeight: '700', fontSize: 13 },
@@ -7726,20 +8334,244 @@ const styles = StyleSheet.create({
   periodTitle: { color: '#e5e7eb', fontWeight: '800', fontSize: 14, marginBottom: 4 },
   periodItemRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
   periodCard: { padding: 14, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', borderBottomWidth: 1, borderBottomColor: 'rgba(148,163,184,0.16)', marginTop: 8 },
-  periodContent: { flex: 1, gap: 8 },
-  periodHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  periodName: { color: '#fff', fontWeight: '900', fontSize: 15 },
-  periodRange: { color: '#cbd5e1', fontSize: 12.5, lineHeight: 18 },
-  periodDateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  periodDateCard: { minWidth: 150, flexGrow: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(30,41,59,0.9)', borderWidth: 1, borderColor: 'rgba(99,102,241,0.22)' },
-  periodDateLabel: { color: '#94a3b8', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-  periodDateValue: { color: '#f8fafc', fontSize: 13, fontWeight: '800', marginTop: 4 },
-  periodDateTime: { color: '#cbd5e1', fontSize: 11.5, fontWeight: '700', marginTop: 4 },
-  periodFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
-  periodDurationChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: 'rgba(99,102,241,0.16)', borderWidth: 1, borderColor: 'rgba(129,140,248,0.3)' },
-  periodDurationText: { color: '#c7d2fe', fontSize: 11, fontWeight: '900' },
-  periodMeta: { color: '#a5f3fc', fontSize: 12, marginTop: 2 },
-  periodActions: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', flexWrap: 'wrap', justifyContent: 'flex-end' },
+  adminPeriodPanel: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(8,47,73,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.22)',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 14,
+    elevation: 4
+  },
+  adminPeriodHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 11,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(14,116,144,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.24)'
+  },
+  adminPeriodFieldBlock: {
+    gap: 10,
+    alignItems: 'center',
+    alignSelf: 'stretch'
+  },
+  adminPeriodNameLabel: {
+    alignSelf: 'stretch',
+    marginBottom: -2,
+    color: '#cbd5e1',
+    fontSize: 15,
+    fontWeight: '900'
+  },
+  adminPeriodNameInput: {
+    minHeight: 58,
+    borderRadius: 18,
+    backgroundColor: '#083d5a',
+    borderColor: '#1f9ac1',
+    borderWidth: 1,
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '900',
+    paddingHorizontal: 16
+  },
+  adminPeriodSectionLabel: {
+    alignSelf: 'center',
+    color: '#cbd5e1',
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginTop: 4
+  },
+  adminPeriodDateControls: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    flexDirection: 'column',
+    maxWidth: '100%',
+    gap: 8
+  },
+  adminPeriodDateRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignSelf: 'stretch',
+    maxWidth: '100%',
+    overflow: 'hidden'
+  },
+  adminPeriodStepper: {
+    gap: 6,
+    flexShrink: 0
+  },
+  adminPeriodStepperBtn: {
+    width: 34,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: 'rgba(30,58,77,0.92)',
+    borderColor: 'rgba(125,211,252,0.18)'
+  },
+  adminPeriodSelectBox: {
+    minWidth: 66,
+    height: 46,
+    borderRadius: 13,
+    paddingHorizontal: 8,
+    paddingVertical: 0,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(30,58,77,0.92)',
+    borderColor: 'rgba(125,211,252,0.18)'
+  },
+  adminPeriodMonthBox: {
+    minWidth: 74,
+    maxWidth: 82
+  },
+  adminPeriodSelectText: {
+    color: '#f8fafc',
+    fontSize: 15.5,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  adminPeriodEditBox: {
+    alignSelf: 'stretch',
+    gap: 12,
+    padding: 12,
+    borderRadius: 18,
+    backgroundColor: 'rgba(7,89,133,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.24)'
+  },
+  adminPeriodFormTitleCard: {
+    width: '100%',
+    minHeight: 56,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: '#083d5a',
+    borderWidth: 1,
+    borderColor: '#1f9ac1'
+  },
+  adminPeriodFormTitleText: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'left'
+  },
+  adminPeriodEditActions: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    maxWidth: 280,
+    marginTop: 2
+  },
+  adminPeriodEditActionBtn: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 42,
+    marginTop: 0,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 9
+  },
+  adminPeriodCreateOnlyBtn: {
+    maxWidth: 180,
+    alignSelf: 'center'
+  },
+  adminPeriodEditCancelBtn: {
+    backgroundColor: '#dc2626',
+    borderWidth: 1,
+    borderColor: '#fb7185',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
+  },
+  adminPeriodSchoolBox: {
+    marginTop: 0,
+    borderRadius: 16,
+    backgroundColor: 'rgba(15,23,42,0.54)',
+    borderColor: 'rgba(103,232,249,0.18)'
+  },
+  adminPeriodListHeader: {
+    marginTop: 2,
+    paddingHorizontal: 2,
+    borderBottomWidth: 0
+  },
+  adminPeriodListTitleCard: {
+    width: '100%',
+    minHeight: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: '#083d5a',
+    borderWidth: 1,
+    borderColor: '#1f9ac1',
+    marginTop: 2
+  },
+  adminPeriodListTitleText: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  adminPeriodCard: {
+    width: '100%',
+    alignSelf: 'stretch',
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: '#082f49',
+    borderColor: 'rgba(34,211,238,0.42)',
+    shadowColor: '#0891b2',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 9 },
+    shadowRadius: 16,
+    elevation: 5
+  },
+  periodContent: { flex: 1, gap: 12, alignItems: 'center', alignSelf: 'stretch' },
+  periodHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, alignSelf: 'stretch' },
+  periodNameBadge: {
+    minHeight: 46,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(14,165,233,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.42)',
+    alignSelf: 'center',
+    maxWidth: '100%'
+  },
+  periodName: { color: '#fff', fontWeight: '900', fontSize: 16, textAlign: 'center', flexShrink: 1 },
+  periodRange: { color: '#bae6fd', fontSize: 12.5, lineHeight: 18, textAlign: 'center', fontWeight: '700' },
+  periodDateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'center', alignSelf: 'stretch' },
+  periodDateCard: { minWidth: 136, flex: 1, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 16, backgroundColor: 'rgba(12,74,110,0.78)', borderWidth: 1, borderColor: 'rgba(125,211,252,0.26)', alignItems: 'center' },
+  periodDateLabel: { color: '#7dd3fc', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5, textAlign: 'center' },
+  periodDateValue: { color: '#f8fafc', fontSize: 13.5, fontWeight: '900', marginTop: 5, textAlign: 'center' },
+  periodDateTime: { color: '#dbeafe', fontSize: 11.5, fontWeight: '800', marginTop: 4, textAlign: 'center' },
+  periodFooterRow: { flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, alignSelf: 'stretch' },
+  periodDurationChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(16,185,129,0.16)', borderWidth: 1, borderColor: 'rgba(52,211,153,0.34)', alignItems: 'center' },
+  periodDurationText: { color: '#bbf7d0', fontSize: 11, fontWeight: '900', textAlign: 'center' },
+  periodMeta: { color: '#a5f3fc', fontSize: 12, marginTop: 2, textAlign: 'center' },
+  periodActions: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', flexWrap: 'nowrap', justifyContent: 'center' },
   smallBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   updateBtn: { backgroundColor: 'rgba(56,189,248,0.2)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.5)' },
   deleteBtn: { backgroundColor: 'rgba(239,68,68,0.18)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.5)' },
@@ -7874,6 +8706,74 @@ const styles = StyleSheet.create({
   },
   docenteMateriaEmptyText: { color: '#cbd5e1', fontSize: 13, fontWeight: '700', textAlign: 'center' },
   docentesSearchBox: { marginTop: 10, gap: 6 },
+  adminDocentesPanel: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(8,47,73,0.46)',
+    borderColor: 'rgba(103,232,249,0.22)',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 14,
+    elevation: 4
+  },
+  adminDocentesSchoolBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(14,116,144,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.28)'
+  },
+  adminDocentesSchoolBadgeText: { color: '#ecfeff', fontSize: 12.5, fontWeight: '800' },
+  adminDocentesSelectBox: {
+    borderRadius: 15,
+    backgroundColor: 'rgba(14,116,144,0.24)',
+    borderColor: 'rgba(103,232,249,0.36)',
+    paddingVertical: 12
+  },
+  adminDocentesSelectRow: { flexDirection: 'row', alignItems: 'center', gap: 9, width: '100%' },
+  adminDocentesSelectText: { flex: 1, color: '#ecfeff' },
+  adminDocentesPickerList: {
+    borderRadius: 15,
+    backgroundColor: 'rgba(6,24,38,0.98)',
+    borderColor: 'rgba(103,232,249,0.24)',
+    overflow: 'hidden'
+  },
+  adminDocentesPickerItem: { paddingVertical: 12, paddingHorizontal: 12 },
+  adminDocentesPickerItemActive: {
+    backgroundColor: 'rgba(14,165,233,0.22)',
+    borderLeftWidth: 3,
+    borderLeftColor: '#22d3ee'
+  },
+  adminDocentesPickerText: { color: '#dffafe', fontWeight: '700' },
+  adminDocentesSectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
+  adminDocentesSectionTitle: { color: '#ecfeff', fontSize: 15, fontWeight: '900' },
+  adminDocentesSearchBox: { marginTop: 2 },
+  adminDocentesSearchInputWrap: {
+    minHeight: 48,
+    borderRadius: 16,
+    backgroundColor: 'rgba(2,132,199,0.16)',
+    borderColor: 'rgba(103,232,249,0.34)'
+  },
+  adminDocentesSearchInput: { color: '#ecfeff', fontWeight: '700' },
+  adminDocentesClearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,47,73,0.72)'
+  },
+  adminDocentesSuggestions: {
+    backgroundColor: 'rgba(6,24,38,0.98)',
+    borderColor: 'rgba(103,232,249,0.24)'
+  },
   docentesSearchInputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -8002,6 +8902,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.6)',
     borderColor: 'rgba(96,165,250,0.16)'
   },
+  adminColegiosPanel: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(8,47,73,0.46)',
+    borderColor: 'rgba(103,232,249,0.22)',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 14,
+    elevation: 4
+  },
   colegiosRegisteredHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -8017,31 +8928,104 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(96,165,250,0.18)',
     gap: 12
   },
+  adminColegioRegisteredCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderColor: 'rgba(34,211,238,0.24)',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 12,
+    elevation: 3
+  },
   colegioRegisteredCardActive: {
-    backgroundColor: 'rgba(37,99,235,0.14)',
-    borderColor: 'rgba(96,165,250,0.4)'
+    backgroundColor: 'rgba(14,165,233,0.16)',
+    borderColor: 'rgba(103,232,249,0.5)'
   },
   colegioRegisteredTopRow: {
     gap: 8
   },
   colegioRegisteredTitleWrap: {
-    width: '100%',
+    flex: 1,
+    minWidth: 0,
     gap: 6
+  },
+  adminColegioHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 11, width: '100%' },
+  adminColegioAvatar: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,233,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.44)'
+  },
+  adminColegioCreatePanel: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(8,47,73,0.46)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.22)',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 14,
+    elevation: 4
+  },
+  adminColegioCreateHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: 'rgba(14,116,144,0.24)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.24)'
+  },
+  adminColegioCreateTitle: { color: '#ecfeff', fontSize: 15, fontWeight: '900' },
+  adminColegioInput: {
+    minHeight: 46,
+    borderRadius: 15,
+    color: '#ecfeff',
+    fontWeight: '700',
+    backgroundColor: 'rgba(2,132,199,0.16)',
+    borderColor: 'rgba(103,232,249,0.34)'
   },
   colegioRegisteredActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     alignSelf: 'stretch',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: 8
   },
   colegioRegisteredActionBtn: {
-    width: '42%',
-    minWidth: 118,
-    maxWidth: 160,
+    flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8
+  },
+  adminColegioActionBtn: {
+    minHeight: 38,
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 9,
+    elevation: 3
+  },
+  adminColegioEditBtn: {
+    backgroundColor: '#2563eb',
+    borderColor: '#60a5fa'
+  },
+  adminColegioDeleteBtn: {
+    backgroundColor: '#dc2626',
+    borderColor: '#fb7185'
   },
   colegioRegisteredActionBtnRow: {
     width: '100%',
@@ -8075,6 +9059,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(96,165,250,0.28)'
   },
+  adminColegioMetaChip: {
+    backgroundColor: 'rgba(14,116,144,0.3)',
+    borderColor: 'rgba(103,232,249,0.26)'
+  },
   colegioRegisteredRoleChip: {
     backgroundColor: 'rgba(34,197,94,0.14)',
     borderColor: 'rgba(74,222,128,0.28)'
@@ -8084,6 +9072,7 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '800'
   },
+  adminColegioMetaChipText: { color: '#cffafe' },
   colegioRegisteredRoleChipText: {
     color: '#dcfce7'
   },
@@ -8158,12 +9147,37 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(52,211,153,0.22)',
     gap: 4
   },
+  adminRectorRegisteredCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderColor: 'rgba(34,211,238,0.24)',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 12,
+    elevation: 3
+  },
   rectorRegisteredTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8
   },
+  adminRectorHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 11, flex: 1, minWidth: 0 },
+  adminRectorAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,233,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.44)'
+  },
+  adminRectorMetaGrid: { gap: 8, marginTop: 2, alignSelf: 'stretch' },
+  adminRectorMetaLine: { alignSelf: 'stretch', width: '100%' },
   rectorRegisteredName: {
     color: '#f8fafc',
     fontSize: 14.5,
@@ -8176,15 +9190,16 @@ const styles = StyleSheet.create({
   },
   rectorRegisteredActions: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    flexWrap: 'nowrap',
     gap: 8,
     marginTop: 10
   },
   rectorModernActionBtn: {
-    minWidth: 118,
-    maxWidth: 170,
-    flexGrow: 1,
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 'none',
     borderRadius: 12,
     borderWidth: 1,
     paddingVertical: 10,
@@ -8298,22 +9313,51 @@ const styles = StyleSheet.create({
   rectorEditActions: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
+    alignSelf: 'center',
+    width: '100%',
+    maxWidth: 280,
+    gap: 8,
+    flexWrap: 'nowrap',
     marginTop: 4
   },
+  rectorEditActionRow: {
+    width: '100%',
+    minWidth: 0,
+    justifyContent: 'center'
+  },
+  rectorEditActionText: {
+    flexShrink: 1,
+    textAlign: 'center'
+  },
   rectorEditCancelBtn: {
-    minWidth: 136,
-    borderRadius: 12,
-    paddingVertical: 11,
-    backgroundColor: 'rgba(51,65,85,0.9)',
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 42,
+    borderRadius: 999,
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dc2626',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.35)'
+    borderColor: '#fb7185',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
   },
   rectorEditSaveBtn: {
-    minWidth: 164,
-    borderRadius: 12,
-    paddingVertical: 11,
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 42,
+    borderRadius: 999,
+    paddingVertical: 9,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#0d9488',
     borderWidth: 1,
     borderColor: '#5eead4'
@@ -8343,26 +9387,71 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 4
   },
+  adminDocenteInlineCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderColor: 'rgba(34,211,238,0.24)',
+    gap: 9,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 12,
+    elevation: 3
+  },
+  adminDocenteInlineHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
+  adminDocenteAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,233,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.44)'
+  },
+  adminDocenteInlineTitleBlock: { flex: 1, minWidth: 0, gap: 2 },
+  adminDocenteMetaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 2 },
+  adminDocenteMetaGridMobile: { flexWrap: 'nowrap', alignItems: 'stretch' },
+  adminDocenteMetaPill: {
+    color: '#cffafe',
+    fontSize: 11.5,
+    fontWeight: '800',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(14,116,144,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(103,232,249,0.26)',
+    overflow: 'hidden'
+  },
+  adminDocenteMetaPillMobile: { flex: 1, textAlign: 'center' },
   docenteInlineActions: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  docenteInlineActionsMobile: { justifyContent: 'center', alignItems: 'center', width: '100%', flexWrap: 'nowrap', gap: 6 },
   docenteInlineName: { color: '#f8fafc', fontSize: 14.5, fontWeight: '800' },
   docenteInlineMeta: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
   docenteCourseChecklist: { marginTop: 6, gap: 8 },
   docenteCourseOption: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
     backgroundColor: 'rgba(30,41,59,0.88)',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.25)'
+    borderColor: 'rgba(148,163,184,0.25)',
+    overflow: 'hidden',
+    alignSelf: 'stretch'
   },
   docenteCourseOptionActive: {
     backgroundColor: 'rgba(30,58,138,0.35)',
     borderColor: 'rgba(96,165,250,0.62)'
   },
   docenteCourseOptionText: { color: '#cbd5e1', fontSize: 15, fontWeight: '600' },
+  docenteCourseOptionCopyMobile: { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, maxWidth: '100%', overflow: 'hidden', gap: 3 },
+  docenteCourseOptionTextMobile: { width: '100%', minWidth: 0, flexShrink: 1, fontSize: 13, lineHeight: 18, overflow: 'hidden' },
+  docenteCourseOptionMetaMobile: { width: '100%', minWidth: 0, flexShrink: 1, color: '#a5f3fc', fontSize: 12, lineHeight: 17, fontWeight: '700', overflow: 'hidden' },
   docenteCourseOptionTextActive: { color: '#eff6ff', fontWeight: '800' },
   docenteMateriasByCursoWrap: { marginTop: 10, gap: 10 },
   docenteMateriaCursoItem: {
@@ -8378,6 +9467,17 @@ const styles = StyleSheet.create({
   docenteMateriaCursoInput: { minHeight: 44, textAlignVertical: 'top' },
   docenteMateriaCursoHint: { color: '#93c5fd', fontSize: 11.5, fontStyle: 'italic' },
   docenteSummaryCard: { padding: 12, borderRadius: 14, backgroundColor: 'rgba(15,23,42,0.55)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)', marginTop: 10, gap: 10 },
+  adminDocenteSummaryCard: {
+    padding: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    borderColor: 'rgba(34,211,238,0.24)',
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 12,
+    elevation: 3
+  },
   docenteSummaryTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' },
   docenteSummaryTopRowMobile: { flexDirection: 'column', alignItems: 'stretch', gap: 10 },
   docenteSummaryHeader: { gap: 4, flex: 1, minWidth: 0 },
@@ -8388,11 +9488,13 @@ const styles = StyleSheet.create({
   docenteSummaryName: { color: '#f8fafc', fontSize: 16, fontWeight: '800' },
   docenteSummaryEmail: { color: '#94a3b8', fontSize: 13 },
   docenteCursoList: { gap: 8 },
-  docenteCursoChip: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(30,41,59,0.9)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.2)', gap: 4 },
-  docenteCursoChipEmpty: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: 'rgba(30,41,59,0.5)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)' },
+  docenteCursoChip: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: 'rgba(8,47,73,0.48)', borderWidth: 1, borderColor: 'rgba(103,232,249,0.2)', gap: 4 },
+  docenteCursoChipEmpty: { paddingHorizontal: 12, paddingVertical: 10, borderRadius: 13, backgroundColor: 'rgba(30,41,59,0.5)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.16)' },
   docenteCursoChipTitle: { color: '#e2e8f0', fontSize: 14, fontWeight: '700' },
   docenteCursoChipMeta: { color: '#cbd5e1', fontSize: 12, lineHeight: 18 },
   courseActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  rectorSedesHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 },
+  rectorSedeCreateBtn: { alignSelf: 'flex-end' },
   courseForm: { marginBottom: 10, gap: 8 },
   courseInput: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#fff', backgroundColor: 'rgba(255,255,255,0.08)' },
   adminCourseForm: { marginBottom: 10, gap: 8 },
@@ -8434,8 +9536,206 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   courseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
+  docenteEditActionsCentered: {
+    width: '100%',
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  docenteEditCancelBtnMobile: {
+    backgroundColor: '#dc2626',
+    borderWidth: 1,
+    borderColor: '#fb7185',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 3
+  },
+  docenteEditCancelTextMobile: { color: '#fff1f2', fontWeight: '900' },
+  docenteEditUpdateBtnMobile: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    shadowColor: '#10b981',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 3
+  },
+  docenteCreateActions: { justifyContent: 'center', alignItems: 'center' },
+  docenteCreateOptionBtn: { minWidth: 132, minHeight: 40, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12 },
+  docenteCreateOptionText: { textAlign: 'center', fontSize: 12, fontWeight: '800' },
+  docenteCreateSaveBtn: { minWidth: 118, minHeight: 40, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 14 },
+  docenteCreateSaveRow: { width: '100%', justifyContent: 'center' },
+  docenteCreateSaveText: { minWidth: 44, textAlign: 'center', fontSize: 12.5, fontWeight: '800' },
+  adminDocenteActionBtn: {
+    minHeight: 38,
+    borderRadius: 999,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 9,
+    elevation: 3
+  },
+  adminDocenteResetBtn: {
+    backgroundColor: '#0891b2',
+    borderColor: '#22d3ee'
+  },
+  adminDocenteResetBtnMobile: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    paddingHorizontal: 6
+  },
+  adminDocenteInlineActionBtnMobile: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    paddingHorizontal: 6
+  },
+  adminDocenteResetBtnRowMobile: { width: '100%', minWidth: 0, justifyContent: 'center' },
+  adminDocenteActionRowMobile: { width: '100%', minWidth: 0, justifyContent: 'center' },
+  adminDocenteEditBtn: {
+    backgroundColor: '#2563eb',
+    borderColor: '#60a5fa'
+  },
+  adminDocenteDeleteBtn: {
+    backgroundColor: '#dc2626',
+    borderColor: '#fb7185'
+  },
+  adminDocenteActionText: { color: '#f8fafc', fontWeight: '900', fontSize: 12 },
+  adminDocenteActionTextMobile: { flexShrink: 1, textAlign: 'center', fontSize: 9.8 },
+  adminDocenteDeleteTextMobile: { marginTop: 5, lineHeight: 12, transform: [{ translateY: 3 }] },
+  docenteConfigModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#081426',
+    borderColor: 'rgba(34,211,238,0.32)'
+  },
+  docenteConfigHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: 'rgba(14,165,233,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.32)'
+  },
+  docenteConfigIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(14,165,233,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.42)'
+  },
+  docenteConfigActions: { flexDirection: 'row', justifyContent: 'center', marginTop: 10 },
+  docenteConfigDoneBtn: { minWidth: 120, alignItems: 'center', justifyContent: 'center' },
   adminCourseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
-  rectorCourseFormActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' },
+  rectorCourseFormActions: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'nowrap', alignSelf: 'stretch' },
+  rectorCancelBtn: {
+    borderRadius: 999,
+    backgroundColor: '#dc2626',
+    borderWidth: 1,
+    borderColor: '#fb7185',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
+  },
+  rectorPairedActionBtn: {
+    flex: 1,
+    flexBasis: 0,
+    maxWidth: 168,
+    minWidth: 0,
+    minHeight: 42,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 9,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  rectorPairedActionRow: {
+    width: '100%',
+    minWidth: 0,
+    justifyContent: 'center'
+  },
+  rectorCancelRow: {
+    width: '100%',
+    justifyContent: 'center'
+  },
+  rectorCancelText: {
+    color: '#fff1f2',
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  rectorCourseCreateBtn: { minWidth: 168, alignItems: 'center' },
+  rectorCoursesListHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 },
+  rectorCourseEditModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#071426',
+    borderColor: 'rgba(96,165,250,0.34)'
+  },
+  rectorCourseEditHeaderTitle: { flex: 1, gap: 2 },
+  rectorCourseEditHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: 'rgba(37,99,235,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.32)'
+  },
+  rectorCourseEditIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(37,99,235,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.46)'
+  },
+  rectorCourseEditHeroCopy: { flex: 1, minWidth: 0 },
+  rectorCourseEditHeroTitle: { color: '#f8fafc', fontSize: 16, fontWeight: '900' },
+  rectorCourseEditHeroMeta: { color: '#bfdbfe', fontSize: 12.5, fontWeight: '700', marginTop: 2 },
+  rectorSedeModalCard: {
+    ...SHARED_ACTION_MODAL,
+    backgroundColor: '#071f1a',
+    borderColor: 'rgba(74,222,128,0.32)'
+  },
+  rectorSedeHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderRadius: 16,
+    padding: 14,
+    backgroundColor: 'rgba(22,163,74,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.32)'
+  },
+  rectorSedeIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(22,163,74,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.46)'
+  },
   outlineBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent' },
   infoBtn: { backgroundColor: 'rgba(59,130,246,0.18)', borderWidth: 1, borderColor: 'rgba(96,165,250,0.45)' },
   createBtn: { backgroundColor: 'rgba(16,185,129,0.25)', borderWidth: 1, borderColor: 'rgba(16,185,129,0.6)' },
@@ -8449,11 +9749,33 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2
   },
+  adminColegioRoleBtn: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(14,116,144,0.2)',
+    borderColor: 'rgba(103,232,249,0.3)'
+  },
   colegioRoleBtnActive: {
-    backgroundColor: 'rgba(37,99,235,0.28)',
-    borderColor: 'rgba(96,165,250,0.65)',
-    shadowColor: '#2563eb',
+    backgroundColor: '#0891b2',
+    borderColor: '#67e8f9',
+    shadowColor: '#22d3ee',
     shadowOpacity: 0.22
+  },
+  colegioCoordinatorRoleBtn: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(8,145,178,0.22)',
+    borderColor: 'rgba(103,232,249,0.42)',
+    shadowColor: '#06b6d4',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 5 },
+    shadowRadius: 10,
+    elevation: 3
+  },
+  colegioCoordinatorRoleBtnActive: {
+    backgroundColor: '#0891b2',
+    borderColor: '#67e8f9',
+    shadowColor: '#22d3ee',
+    shadowOpacity: 0.28,
+    elevation: 5
   },
   colegioRoleBtnText: {
     color: '#f8fafc'
@@ -8488,6 +9810,19 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 5
   },
+  adminColegioSaveBtn: {
+    borderRadius: 999,
+    backgroundColor: '#0891b2',
+    borderColor: '#67e8f9',
+    shadowColor: '#22d3ee',
+    shadowOpacity: 0.3
+  },
+  adminColegioCreateBtn: {
+    backgroundColor: '#f59e0b',
+    borderColor: '#fbbf24',
+    shadowColor: '#f59e0b',
+    shadowOpacity: 0.34
+  },
   colegioCancelBtn: {
     backgroundColor: 'rgba(127,29,29,0.92)',
     borderWidth: 1,
@@ -8497,6 +9832,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 8,
     elevation: 3
+  },
+  adminColegioCancelBtn: {
+    borderRadius: 999,
+    backgroundColor: '#dc2626',
+    borderColor: '#fb7185'
   },
   colegioCancelActions: {
     justifyContent: 'center'
