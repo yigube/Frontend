@@ -2,5 +2,8 @@
   "plugins": [
     "expo-secure-store",
     "expo-asset"
-  ]
+  ],
+  "android": {
+    "package": "com.yigube.asistenciafrontendexpo54"
+  }
 }

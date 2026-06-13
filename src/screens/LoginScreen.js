@@ -106,7 +106,7 @@ export default function LoginScreen() {
             />
           )}
         />
-        <Text style={styles.label}>Contrasena</Text>
+        <Text style={styles.label}>Contraseña</Text>
         <Controller
           control={control}
           name="password"
@@ -127,13 +127,15 @@ export default function LoginScreen() {
                   handleSubmit(onSubmit)();
                 }}
               />
-              <TouchableOpacity
-                onPress={() => setShowPassword(prev => !prev)}
-                style={styles.eyeBtn}
-                accessibilityRole="button"
-              >
-                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#374151" />
-              </TouchableOpacity>
+              {!isWeb ? (
+                <TouchableOpacity
+                  onPress={() => setShowPassword(prev => !prev)}
+                  style={styles.eyeBtn}
+                  accessibilityRole="button"
+                >
+                  <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={18} color="#374151" />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         />

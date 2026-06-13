@@ -1,8 +1,8 @@
 export const getTabScreenNamesForRole = (role) => {
-  const isAdmin = role === 'admin';
+  const isDocente = role === 'docente';
   const names = ['Inicio', 'Cursos'];
-  if (!isAdmin) names.push('Estudiantes');
+  if (isDocente) names.push('Estudiantes');
   names.push('Reportes');
-  if (!isAdmin) names.push('QR');
+  if (isDocente) names.push('QR');
   return names;
 };

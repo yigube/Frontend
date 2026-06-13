@@ -1,0 +1,60 @@
+export default function buildHomeReportViewConfig({
+  schoolState,
+  courseState,
+  docenteState,
+  estudianteState,
+  periodState,
+  reportesState,
+  passwordState,
+  feedbackState,
+  derived,
+  handlers
+}) {
+  return {
+    reportes: {
+      ...reportesState,
+      pad2: derived.pad2,
+      currentYear: derived.currentYear,
+      reportesColegioNombre: derived.reportesColegioNombre,
+      reportesCursoNombre: derived.reportesCursoNombre,
+      canAdminFilterReportSchools: derived.canAdminFilterReportSchools,
+      colegiosLoading: schoolState.colegiosLoading,
+      colegiosOptions: schoolState.colegiosOptions,
+      monthNames: derived.monthNames,
+      reportMonthOptions: derived.reportMonthOptions,
+      reportDayOptions: derived.reportDayOptions,
+      handleGenerateInasistenciaReport: handlers.reportes.handleGenerateInasistenciaReport,
+      resetReportesFilters: handlers.reportes.resetReportesFilters,
+      closeReportesModal: handlers.reportes.closeReportesModal
+    },
+    globalModals: {
+      ...feedbackState,
+      ...passwordState,
+      deletePeriodModal: periodState.deletePeriodModal,
+      setDeletePeriodModal: periodState.setDeletePeriodModal,
+      deleteColegioModal: schoolState.deleteColegioModal,
+      setDeleteColegioModal: schoolState.setDeleteColegioModal,
+      deleteRectorModal: schoolState.deleteRectorModal,
+      setDeleteRectorModal: schoolState.setDeleteRectorModal,
+      daneExistsModal: schoolState.daneExistsModal,
+      setDaneExistsModal: schoolState.setDaneExistsModal,
+      deleteCursoModal: courseState.deleteCursoModal,
+      setDeleteCursoModal: courseState.setDeleteCursoModal,
+      deleteEstudianteConfirmModal: estudianteState.deleteEstudianteConfirmModal,
+      setDeleteEstudianteConfirmModal: estudianteState.setDeleteEstudianteConfirmModal,
+      estudiantesExistentesModal: estudianteState.estudiantesExistentesModal,
+      setEstudiantesExistentesModal: estudianteState.setEstudiantesExistentesModal,
+      deleteDocenteModal: docenteState.deleteDocenteModal,
+      setDeleteDocenteModal: docenteState.setDeleteDocenteModal,
+      closeManualChangePasswordModal: passwordState.closeManualChangePasswordModal,
+      handleSubmitForcedPasswordChange: passwordState.handleSubmitForcedPasswordChange,
+      handleDeletePeriod: handlers.periodos.handleDeletePeriod,
+      handleDeleteColegio: handlers.colegios.handleDeleteColegio,
+      handleDeleteRector: handlers.colegios.handleDeleteRector,
+      handleDeleteCurso: handlers.cursos.handleDeleteCurso,
+      handleConfirmDeleteEstudiante: handlers.estudiantes.handleConfirmDeleteEstudiante,
+      handleDeleteDocente: handlers.docentes.handleDeleteDocente,
+      handleConfirmDeleteSede: handlers.cursos.handleConfirmDeleteSede
+    }
+  };
+}

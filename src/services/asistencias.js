@@ -1,5 +1,10 @@
 import { api } from './api';
-import { enqueueAsistencia, flushAsistenciaQueue, getAsistenciaQueueCount } from './asistenciaOfflineQueue';
+import {
+  enqueueAsistencia,
+  flushAsistenciaQueue,
+  getAsistenciaQueueCount,
+  getAsistenciaQueueStatus
+} from './asistenciaOfflineQueue';
 const CLIENT_REQUEST_ID_MAX_LENGTH = 120;
 
 const isTemporaryConnectivityError = (error) => {
@@ -57,4 +62,8 @@ export async function syncAsistenciasPendientes() {
 
 export async function getAsistenciasPendientesCount() {
   return getAsistenciaQueueCount();
+}
+
+export async function getAsistenciasPendientesStatus() {
+  return getAsistenciaQueueStatus();
 }

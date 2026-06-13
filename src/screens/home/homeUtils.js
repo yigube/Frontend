@@ -128,3 +128,108 @@ export const hasDirectivoData = (colegio = {}) => Boolean(
   || colegio?.rectorCedula
   || colegio?.rectorTienePassword
 );
+
+export const resolveColegioNombre = (colegiosOptions = [], id) => {
+  if (!id) return 'Selecciona colegio';
+  return (Array.isArray(colegiosOptions) ? colegiosOptions : []).find((colegio) => String(colegio?.id) === String(id))?.nombre || `Colegio ${id}`;
+};
+
+export const resolveSedeNombre = (sedesDisponibles = [], sedeId) => {
+  const parsedId = Number(sedeId);
+  if (!Number.isFinite(parsedId) || parsedId <= 0) return 'Sin sede';
+  return (Array.isArray(sedesDisponibles) ? sedesDisponibles : []).find((item) => Number(item?.id) === parsedId)?.nombre || `Sede ${parsedId}`;
+};
+
+export const getNivelLabel = (nivel) => {
+  if (nivel === 'primaria') return 'Primaria';
+  if (nivel === 'secundaria') return 'Secundaria';
+  return 'Sin nivel';
+};
+
+export const getNivelShortLabel = (nivel) => {
+  if (nivel === 'primaria') return 'Pri.';
+  if (nivel === 'secundaria') return 'Sec.';
+  return 'S/N';
+};
+
+export const sortCursosForDisplay = (items = []) => [...items].sort((a, b) => {
+  const aName = String(a?.nombre || '').trim();
+  const bName = String(b?.nombre || '').trim();
+  return aName.localeCompare(bName, undefined, { numeric: true, sensitivity: 'base' });
+});
+
+export const buildDocenteMateriasDraft = (cursos = []) => {
+  const nextValue = {};
+  (Array.isArray(cursos) ? cursos : []).forEach((curso) => {
+    nextValue[curso.id] = Array.isArray(curso?.materias) ? curso.materias.join(', ') : '';
+  });
+  return nextValue;
+};
+
+export const syncDocenteMateriasDraftWithCursos = (cursoIds = [], sourceDraft = {}) => {
+  const nextValue = {};
+  (Array.isArray(cursoIds) ? cursoIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .forEach((cursoId) => {
+      nextValue[cursoId] = sourceDraft?.[cursoId] || '';
+    });
+  return nextValue;
+};
+
+export const parseMateriasTexto = (value) => Array.from(
+  new Set(
+    String(value || '')
+      .split(/[,\n]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+  )
+);
+
+export const buildDocenteMateriasPorCursoPayload = (cursoIds = [], materiasDraft = {}) => {
+  const payload = {};
+  (Array.isArray(cursoIds) ? cursoIds : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0)
+    .forEach((cursoId) => {
+      payload[cursoId] = parseMateriasTexto(materiasDraft?.[cursoId]);
+    });
+  return payload;
+};
+
+export const normalizeMateriaOption = (value = '') => String(value || '').trim().toLowerCase();
+
+export const getMateriasDisponiblesByCurso = (cursoId, docentePerfilCursos = []) => {
+  const curso = (Array.isArray(docentePerfilCursos) ? docentePerfilCursos : []).find((item) => String(item?.id) === String(cursoId));
+  const uniques = [];
+  const seen = new Set();
+  (Array.isArray(curso?.materias) ? curso.materias : [])
+    .map((materia) => String(materia || '').trim())
+    .filter(Boolean)
+    .forEach((materia) => {
+      const key = normalizeMateriaOption(materia);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      uniques.push(materia);
+    });
+  return uniques.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+};
+
+export const getEstudianteMateriaOptionsByCurso = (cursoId, docentePerfilCursos = [], estudianteList = []) => {
+  const uniques = [];
+  const seen = new Set();
+  const pushMateria = (materia) => {
+    const value = String(materia || '').trim();
+    const key = normalizeMateriaOption(value);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    uniques.push(value);
+  };
+
+  getMateriasDisponiblesByCurso(cursoId, docentePerfilCursos).forEach(pushMateria);
+  (Array.isArray(estudianteList) ? estudianteList : []).forEach((estudiante) => {
+    (Array.isArray(estudiante?.materias) ? estudiante.materias : []).forEach(pushMateria);
+  });
+
+  return uniques.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+};

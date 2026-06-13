@@ -2,7 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Pressable } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
-import { registrarAsistencia, syncAsistenciasPendientes, getAsistenciasPendientesCount } from '../services/asistencias';
+import {
+  registrarAsistencia,
+  syncAsistenciasPendientes,
+  getAsistenciasPendientesCount,
+  getAsistenciasPendientesStatus
+} from '../services/asistencias';
 import { api } from '../services/api';
 import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
@@ -38,6 +43,7 @@ export default function QRScreen({ navigation }) {
   const [duplicateModal, setDuplicateModal] = useState({ visible: false, title: '', message: '' });
   const [infoModal, setInfoModal] = useState({ visible: false, title: '', message: '' });
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [pendingSyncStatus, setPendingSyncStatus] = useState({ lastError: '', nextRetryAt: null });
   const [syncingPending, setSyncingPending] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const scanLockRef = useRef(false);
@@ -118,8 +124,15 @@ export default function QRScreen({ navigation }) {
 
   const refreshPendingCount = async () => {
     try {
-      const count = await getAsistenciasPendientesCount();
+      const [count, status] = await Promise.all([
+        getAsistenciasPendientesCount(),
+        getAsistenciasPendientesStatus()
+      ]);
       setPendingSyncCount(Number(count) || 0);
+      setPendingSyncStatus({
+        lastError: status?.lastError || '',
+        nextRetryAt: status?.nextRetryAt || null
+      });
     } catch {}
   };
 
@@ -482,7 +495,14 @@ export default function QRScreen({ navigation }) {
           <View style={styles.offlineQueueBanner}>
             <View style={styles.offlineQueueInfo}>
               <Ionicons name="cloud-offline-outline" size={14} color="#fde68a" />
-              <Text style={styles.offlineQueueText}>{pendingSyncCount} pendiente(s) por sincronizar</Text>
+              <View style={styles.offlineQueueTextBlock}>
+                <Text style={styles.offlineQueueText}>{pendingSyncCount} pendiente(s) por sincronizar</Text>
+                {pendingSyncStatus.lastError ? (
+                  <Text style={styles.offlineQueueSubText} numberOfLines={2}>{pendingSyncStatus.lastError}</Text>
+                ) : pendingSyncStatus.nextRetryAt ? (
+                  <Text style={styles.offlineQueueSubText}>Proximo reintento: {formatTimeLabel(pendingSyncStatus.nextRetryAt)}</Text>
+                ) : null}
+              </View>
             </View>
             <Pressable
               style={[styles.offlineSyncBtn, syncingPending && { opacity: 0.6 }]}
@@ -723,7 +743,9 @@ const styles = StyleSheet.create({
     gap: 10
   },
   offlineQueueInfo: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  offlineQueueTextBlock: { flex: 1, minWidth: 0 },
   offlineQueueText: { color: '#fef3c7', fontSize: 12, fontWeight: '700' },
+  offlineQueueSubText: { color: '#fde68a', fontSize: 10.5, fontWeight: '700', marginTop: 2 },
   offlineSyncBtn: {
     paddingHorizontal: 10,
     paddingVertical: 6,
