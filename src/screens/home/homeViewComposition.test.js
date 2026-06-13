@@ -655,6 +655,7 @@ describe('home view composition', () => {
 
     expect(result.rolePanelProps.styles).toBe(app.styles);
     expect(result.rolePanelProps.teacherInitial).toBe('A');
+    expect(result.rolePanelProps.logout).toBe(app.logout);
     expect(result.modalProps.periodosProps.isRectorCoordinador).toBe(true);
     expect(result.modalProps.globalModalsProps.logout).toBe(app.logout);
     expect(result.modalProps.colegiosProps.modal).toBe('colegios');

@@ -21,6 +21,7 @@ export default function useHomeScreenViewProps({
     canManageCourses: app.canManageCourses,
     canManagePeriods: app.canManagePeriods,
     isMobileApp: app.isMobileApp,
+    logout: app.logout,
     ...rolePanel
   };
 

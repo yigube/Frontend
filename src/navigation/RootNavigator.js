@@ -73,17 +73,18 @@ function AppTabs() {
 
 export default function RootNavigator() {
   const user = useAuth(s => s.user);
+  const sessionKey = user ? 'authenticated' : 'guest';
 
   if (Platform.OS === 'web') {
-    return user ? <AppTabs /> : <LoginScreen />;
+    return user ? <AppTabs key={sessionKey} /> : <LoginScreen key={sessionKey} />;
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator key={sessionKey} screenOptions={{ headerShown: false }}>
       {user ? (
-        <Stack.Screen name="App" component={AppTabs} />
+        <Stack.Screen name="App" component={AppTabs} navigationKey={sessionKey} />
       ) : (
-        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Login" component={LoginScreen} navigationKey={sessionKey} />
       )}
     </Stack.Navigator>
   );
