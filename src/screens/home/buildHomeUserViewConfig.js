@@ -17,6 +17,7 @@ export default function buildHomeUserViewConfig({
       mobileColegioControlTextStyle: derived.mobileColegioControlTextStyle,
       rectoresRegistrados: derived.rectoresRegistrados,
       rectoresFiltrados: derived.rectoresFiltrados,
+      normalizeColegioItem: derived.normalizeColegioItem,
       handleSaveColegio: handlers.colegios.handleSaveColegio,
       cancelColegioEdit: handlers.colegios.cancelColegioEdit,
       openRectorEditModal: handlers.colegios.openRectorEditModal,

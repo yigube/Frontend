@@ -264,6 +264,7 @@ describe('home view composition', () => {
       mobileColegioControlTextStyle: { fontSize: 12 },
       rectoresRegistrados: [{ id: 1 }],
       rectoresFiltrados: [{ id: 2 }],
+      normalizeColegioItem: jest.fn((colegio) => colegio),
       NIVEL_OPTIONS: [{ label: 'Primaria', value: 'primaria' }],
       resolveSedeNombreForView: () => 'Simon Bolivar',
       getNivelLabel: () => 'Primaria',
@@ -360,6 +361,7 @@ describe('home view composition', () => {
     });
 
     expect(userView.colegios.handleSaveColegio).toBe(handleSaveColegio);
+    expect(userView.colegios.normalizeColegioItem).toBe(derived.normalizeColegioItem);
     expect(userView.docentes.openAdminDocenteEditModal).toBe(openAdminDocenteEditModal);
     expect(userView.docentes.getNivelShortLabel()).toBe('Pri.');
     expect(reportView.reportes.handleGenerateInasistenciaReport).toBe(handleGenerateInasistenciaReport);
