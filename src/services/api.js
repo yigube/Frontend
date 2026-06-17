@@ -26,7 +26,7 @@ const parseHostFromValue = (value) => {
 
 const normalizeApiUrl = (url) => {
   if (!url || typeof url !== 'string') return null;
-  return url.trim().replace(/\/+$/, '');
+  return url.trim().replace(/\s+/g, '').replace(/\/+$/, '');
 };
 
 const getEnvApiUrl = () => {
