@@ -1,10 +1,17 @@
 {
+  "name": "Edusac",
+  "slug": "edusac",
+  "icon": "./assets/icon.png",
   "plugins": [
     "expo-secure-store",
     "expo-asset"
   ],
   "android": {
-    "package": "com.yigube.asistenciafrontendexpo54"
+    "package": "com.yigube.asistenciafrontendexpo54",
+    "adaptiveIcon": {
+      "foregroundImage": "./assets/adaptive-icon.png",
+      "backgroundColor": "#06283A"
+    }
   },
   "extra": {
     "apiUrl": "http://192.168.100.19:4000"
