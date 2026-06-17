@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import { getToken } from './tokenStorage';
 
 const API_PORT = '4000';
+const LOCAL_NETWORK_API_URL = 'http://192.168.100.19:4000';
 const HEALTHCHECK_PATH = '/';
 const HEALTHCHECK_TIMEOUT_MS = 1500;
 const API_URL_CACHE_MS = 15000;
@@ -34,6 +35,8 @@ const getEnvApiUrl = () => {
   return envUrl ? normalizeApiUrl(envUrl) : null;
 };
 
+const getExpoConfigApiUrl = () => normalizeApiUrl(Constants?.expoConfig?.extra?.apiUrl);
+
 const collectRuntimeHosts = () => {
   const hosts = [];
 
@@ -55,10 +58,12 @@ const collectRuntimeHosts = () => {
 
 const buildCandidateApiUrls = () => {
   const envUrl = getEnvApiUrl();
+  const configUrl = getExpoConfigApiUrl();
   const runtimeUrls = collectRuntimeHosts().map((host) =>
     normalizeApiUrl(`http://${host}:${API_PORT}`),
   );
-  const values = [envUrl, ...runtimeUrls, ...LOOPBACK_FALLBACK_URLS.map(normalizeApiUrl)];
+  const localNetworkUrl = normalizeApiUrl(LOCAL_NETWORK_API_URL);
+  const values = [envUrl, configUrl, localNetworkUrl, ...runtimeUrls, ...LOOPBACK_FALLBACK_URLS.map(normalizeApiUrl)];
   return [...new Set(values.filter(Boolean))];
 };
 
