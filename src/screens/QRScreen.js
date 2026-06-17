@@ -11,6 +11,7 @@ import {
 import { api } from '../services/api';
 import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
+import { getQROfflineContext, saveQROfflineContext } from '../services/qrOfflineCache';
 import { useAuth } from '../store/useAuth';
 import { Ionicons } from '@expo/vector-icons';
 import { buildEstadoFlags, formatTimeLabel, getLocalDateISO, normalizeMateriaOption } from './qr/qrUtils';
@@ -84,7 +85,15 @@ export default function QRScreen({ navigation }) {
   useEffect(() => {
     (async () => {
       setLoadingCursos(true);
+      let cachedContext = null;
       try {
+        cachedContext = await getQROfflineContext(user);
+        if (cachedContext?.cursos?.length) {
+          setCursos(cachedContext.cursos);
+          setDocentePerfilCursos(cachedContext.docentePerfilCursos || []);
+          setCursoId((prev) => prev || cachedContext.cursos[0]?.id || null);
+        }
+
         const [cursosData, docentesData] = await Promise.all([
           getCursos(),
           user?.schoolId ? getDocentes({ schoolId: user.schoolId }) : Promise.resolve([])
@@ -99,12 +108,24 @@ export default function QRScreen({ navigation }) {
         setDocentePerfilCursos(Array.isArray(currentDocente?.cursos) ? currentDocente.cursos : []);
 
         if (safeCursos.length > 0) setCursoId(safeCursos[0].id);
-      } catch (e) {
-        setErrorModal({
-          visible: true,
-          title: 'Error',
-          message: e?.response?.data?.error || 'No se pudieron cargar los cursos'
+        await saveQROfflineContext(user, {
+          cursos: safeCursos,
+          docentePerfilCursos: Array.isArray(currentDocente?.cursos) ? currentDocente.cursos : []
         });
+      } catch (e) {
+        if (cachedContext?.cursos?.length) {
+          setInfoModal({
+            visible: true,
+            title: 'Modo offline',
+            message: 'Se usaran los cursos guardados en este dispositivo. Las asistencias quedaran pendientes hasta recuperar conexion.'
+          });
+        } else {
+          setErrorModal({
+            visible: true,
+            title: 'Sin datos offline',
+            message: e?.response?.data?.error || 'Conectate una vez a internet para cargar y guardar tus cursos antes de usar el modo offline.'
+          });
+        }
       } finally {
         setLoadingCursos(false);
       }
