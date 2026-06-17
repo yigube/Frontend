@@ -53,10 +53,23 @@ describe('asistenciaOfflineQueue', () => {
     expect(result.failed).toBe(1);
     expect(result.pending).toBe(1);
     expect(queue[0].attempts).toBe(1);
-    expect(queue[0].lastError).toBe('Sin conexion');
+    expect(queue[0].lastError).toBe('Sin conexion. Pendiente por sincronizar.');
     expect(queue[0].nextRetryAt).toBeTruthy();
-    expect(status.lastError).toBe('Sin conexion');
+    expect(status.lastError).toBe('Sin conexion. Pendiente por sincronizar.');
     expect(status.nextRetryAt).toBe(queue[0].nextRetryAt);
+  });
+
+  test('normaliza Network Error a mensaje entendible para modo offline', async () => {
+    await enqueueAsistencia({ qr: 'QR-2B', cursoId: 1, clientRequestId: 'req-2b' });
+
+    await flushAsistenciaQueue(async () => {
+      const error = new Error('Network Error');
+      error.code = 'ERR_NETWORK';
+      throw error;
+    });
+    const status = await getAsistenciaQueueStatus();
+
+    expect(status.lastError).toBe('Sin conexion. Pendiente por sincronizar.');
   });
 
   test('descarta errores irrecuperables para no bloquear la cola', async () => {

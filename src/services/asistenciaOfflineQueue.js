@@ -60,12 +60,32 @@ const normalizeQueueItem = (item = {}) => {
   };
 };
 
-const getErrorMessage = (error) => String(
-  error?.response?.data?.error
-  || error?.response?.data?.message
-  || error?.message
-  || 'No se pudo sincronizar'
-).trim();
+const isConnectivityError = (error) => {
+  if (!error || error?.response) return false;
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    !code
+    || code === 'ERR_NETWORK'
+    || code === 'ECONNABORTED'
+    || code === 'ENOTFOUND'
+    || code === 'EAI_AGAIN'
+    || message.includes('network')
+  );
+};
+
+const getErrorMessage = (error) => {
+  if (isConnectivityError(error)) {
+    return 'Sin conexion. Pendiente por sincronizar.';
+  }
+
+  return String(
+    error?.response?.data?.error
+    || error?.response?.data?.message
+    || error?.message
+    || 'No se pudo sincronizar'
+  ).trim();
+};
 
 const isReadyForRetry = (item, now = Date.now()) => {
   if (!item?.nextRetryAt) return true;

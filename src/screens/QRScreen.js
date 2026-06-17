@@ -49,6 +49,7 @@ export default function QRScreen({ navigation }) {
   const [isOnline, setIsOnline] = useState(true);
   const scanLockRef = useRef(false);
   const savingLockRef = useRef(false);
+  const lastAutoSyncAttemptRef = useRef(0);
   const cameraActive = isFocused
     && !estadoModalVisible
     && !successModal.visible
@@ -123,7 +124,7 @@ export default function QRScreen({ navigation }) {
           setErrorModal({
             visible: true,
             title: 'Sin datos offline',
-            message: e?.response?.data?.error || 'Conectate una vez a internet para cargar y guardar tus cursos antes de usar el modo offline.'
+            message: 'Conectate una vez a internet y entra a Escanear QR para guardar tus cursos en este dispositivo antes de usar el modo offline.'
           });
         }
       } finally {
@@ -218,6 +219,19 @@ export default function QRScreen({ navigation }) {
       if (intervalId) clearInterval(intervalId);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isOnline || pendingSyncCount <= 0 || syncingPending) return;
+    const now = Date.now();
+    if (now - lastAutoSyncAttemptRef.current < 15000) return;
+    lastAutoSyncAttemptRef.current = now;
+    (async () => {
+      const result = await syncPendingIfAny();
+      if (Number(result?.sent || 0) > 0 || Number(result?.pending || 0) !== pendingSyncCount) {
+        await refreshPendingCount();
+      }
+    })();
+  }, [isOnline, pendingSyncCount, syncingPending]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -348,10 +362,6 @@ export default function QRScreen({ navigation }) {
           title: 'Sin internet estable',
           message: 'Asistencia guardada localmente. Se sincronizara automaticamente cuando vuelva la conexion.'
         });
-        const retrySync = await syncPendingIfAny();
-        if (Number(retrySync?.sent || 0) > 0) {
-          await refreshPendingCount();
-        }
       } else {
         const syncResult = await syncPendingIfAny();
         if (Number(syncResult?.sent || 0) > 0) {
