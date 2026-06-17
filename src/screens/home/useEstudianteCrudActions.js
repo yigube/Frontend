@@ -4,6 +4,20 @@ import JSZip from 'jszip';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import QRCodeGenerator from 'qrcode-generator';
 import jpeg from 'jpeg-js';
+import { EMPTY_ACUDIENTE_FORM } from './useEstudianteCrudState';
+
+const emptyAcudienteForm = () => ({ ...EMPTY_ACUDIENTE_FORM });
+const emptyEstudianteEditForm = () => ({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [], acudiente: emptyAcudienteForm() });
+const emptyEstudianteCreateForm = () => ({ nombres: '', apellidos: '', codigoEstudiante: '', acudiente: emptyAcudienteForm() });
+
+const normalizeAcudientePayload = (acudiente = {}) => {
+  const nombre = String(acudiente?.nombre || '').trim();
+  const telefonoE164 = String(acudiente?.telefonoE164 || '').trim().replace(/\s+/g, '');
+  const parentesco = String(acudiente?.parentesco || '').trim();
+  const whatsappOptIn = Boolean(acudiente?.whatsappOptIn);
+  if (!nombre && !telefonoE164 && !parentesco && !whatsappOptIn) return null;
+  return { nombre, telefonoE164, parentesco, whatsappOptIn, activo: true };
+};
 
 export default function useEstudianteCrudActions({
   user,
@@ -104,7 +118,7 @@ export default function useEstudianteCrudActions({
     setEstudianteMateriaPickerOpen(false);
     setEstudiantesColegioPickerOpen(false);
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+    setEstudianteEditForm(emptyEstudianteEditForm());
     await loadEstudiantesPorCurso(cursoId);
   };
 
@@ -150,7 +164,7 @@ export default function useEstudianteCrudActions({
     setEstudiantes([]);
     setEstudiantesError('');
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+    setEstudianteEditForm(emptyEstudianteEditForm());
   };
 
   const changeEstudiantesColegio = async (newSchoolId) => {
@@ -162,7 +176,7 @@ export default function useEstudianteCrudActions({
     setEstudianteMateriaFiltro(ALL_MATERIAS_OPTION);
     setEstudianteMateriaPickerOpen(false);
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+    setEstudianteEditForm(emptyEstudianteEditForm());
     setLoadingCursos(true);
     try {
       const cursos = await loadCursosAsignados(parsedSchoolId);
@@ -186,13 +200,19 @@ export default function useEstudianteCrudActions({
       apellidos: estudiante?.apellidos || '',
       qr: estudiante?.qr || '',
       codigoEstudiante: estudiante?.codigoEstudiante || '',
-      materias: Array.isArray(estudiante?.materias) ? estudiante.materias : []
+      materias: Array.isArray(estudiante?.materias) ? estudiante.materias : [],
+      acudiente: {
+        nombre: estudiante?.acudiente?.nombre || '',
+        telefonoE164: estudiante?.acudiente?.telefonoE164 || '',
+        parentesco: estudiante?.acudiente?.parentesco || '',
+        whatsappOptIn: Boolean(estudiante?.acudiente?.whatsappOptIn)
+      }
     });
   };
 
   const cancelEditEstudiante = () => {
     setEstudianteEditing(null);
-    setEstudianteEditForm({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+    setEstudianteEditForm(emptyEstudianteEditForm());
   };
 
   const toggleEstudianteEditMateria = (materiaNombre) => {
@@ -222,9 +242,14 @@ export default function useEstudianteCrudActions({
       showAppAlert('Campos requeridos', 'Completa nombres, apellidos y QR', 'warning');
       return;
     }
+    const acudiente = normalizeAcudientePayload(estudianteEditForm.acudiente);
+    if (acudiente && (!acudiente.nombre || !acudiente.telefonoE164)) {
+      showAppAlert('Acudiente incompleto', 'Completa nombre y telefono WhatsApp del acudiente', 'warning');
+      return;
+    }
     setSavingEstudianteEdit(true);
     try {
-      await updateEstudiante(id, { nombres, apellidos, qr, codigoEstudiante, materias });
+      await updateEstudiante(id, { nombres, apellidos, qr, codigoEstudiante, materias, ...(acudiente ? { acudiente } : {}) });
       await loadEstudiantesPorCurso(cursoSeleccionado);
       cancelEditEstudiante();
       showAppAlert('Listo', 'Estudiante actualizado', 'success');
@@ -601,7 +626,7 @@ export default function useEstudianteCrudActions({
     setEstudianteCreateModalVisible(true);
     setEstudianteCreateCursoPickerOpen(false);
     setEstudianteCreateError('');
-    setEstudianteCreateForm({ nombres: '', apellidos: '', codigoEstudiante: '' });
+    setEstudianteCreateForm(emptyEstudianteCreateForm());
     setEstudianteCreateMaterias([]);
     setSelectedCsvFile(null);
     setUploadedStudents([]);
@@ -644,7 +669,7 @@ export default function useEstudianteCrudActions({
     setEstudianteCreateError('');
     setEstudianteCreateCursoId(null);
     setEstudianteCreateMaterias([]);
-    setEstudianteCreateForm({ nombres: '', apellidos: '', codigoEstudiante: '' });
+    setEstudianteCreateForm(emptyEstudianteCreateForm());
     setSelectedCsvFile(null);
     setUploadedStudents([]);
     setUploadTemplateSuccessModal({ visible: false, message: '' });
@@ -835,10 +860,15 @@ export default function useEstudianteCrudActions({
       setEstudianteCreateError('Selecciona al menos una materia del curso');
       return;
     }
+    const acudiente = normalizeAcudientePayload(estudianteCreateForm.acudiente);
+    if (acudiente && (!acudiente.nombre || !acudiente.telefonoE164)) {
+      setEstudianteCreateError('Completa nombre y telefono WhatsApp del acudiente');
+      return;
+    }
     setSavingEstudiante(true);
     setEstudianteCreateError('');
     try {
-      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId, materias: materiasSeleccionadas });
+      await createEstudiante({ nombres, apellidos, qr, codigoEstudiante, cursoId, materias: materiasSeleccionadas, ...(acudiente ? { acudiente } : {}) });
       showAppAlert('Listo', 'Estudiante agregado correctamente', 'success');
       closeCreateEstudianteModal();
     } catch (e) {

@@ -127,6 +127,53 @@ export default function EstudiantesCreateModal({
               editable={!savingEstudiante}
               onChangeText={(v) => setEstudianteCreateForm((prev) => ({ ...prev, codigoEstudiante: v }))}
             />
+            <Text style={[styles.dataBullet, { marginTop: 4, fontWeight: '800' }]}>Acudiente para WhatsApp</Text>
+            <TextInput
+              style={styles.courseInput}
+              placeholder="Nombre del acudiente"
+              placeholderTextColor="#9ca3af"
+              value={estudianteCreateForm.acudiente?.nombre || ''}
+              editable={!savingEstudiante}
+              onChangeText={(v) => setEstudianteCreateForm((prev) => ({
+                ...prev,
+                acudiente: { ...(prev.acudiente || {}), nombre: v }
+              }))}
+            />
+            <TextInput
+              style={styles.courseInput}
+              placeholder="WhatsApp en formato +573001112233"
+              placeholderTextColor="#9ca3af"
+              value={estudianteCreateForm.acudiente?.telefonoE164 || ''}
+              editable={!savingEstudiante}
+              keyboardType="phone-pad"
+              onChangeText={(v) => setEstudianteCreateForm((prev) => ({
+                ...prev,
+                acudiente: { ...(prev.acudiente || {}), telefonoE164: v }
+              }))}
+            />
+            <TextInput
+              style={styles.courseInput}
+              placeholder="Parentesco"
+              placeholderTextColor="#9ca3af"
+              value={estudianteCreateForm.acudiente?.parentesco || ''}
+              editable={!savingEstudiante}
+              onChangeText={(v) => setEstudianteCreateForm((prev) => ({
+                ...prev,
+                acudiente: { ...(prev.acudiente || {}), parentesco: v }
+              }))}
+            />
+            <TouchableOpacity
+              style={[styles.estudianteMateriaChip, estudianteCreateForm.acudiente?.whatsappOptIn && styles.estudianteMateriaChipActive]}
+              onPress={() => setEstudianteCreateForm((prev) => ({
+                ...prev,
+                acudiente: { ...(prev.acudiente || {}), whatsappOptIn: !prev.acudiente?.whatsappOptIn }
+              }))}
+              disabled={savingEstudiante}
+            >
+              <Text style={[styles.estudianteMateriaChipText, estudianteCreateForm.acudiente?.whatsappOptIn && styles.estudianteMateriaChipTextActive]}>
+                Autoriza notificaciones WhatsApp
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.dataBullet}>El codigo QR se genera automaticamente al guardar.</Text>
             <TouchableOpacity
               style={[styles.smallBtn, styles.outlineBtn, savingEstudiante && { opacity: 0.6 }]}

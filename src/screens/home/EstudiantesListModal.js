@@ -260,6 +260,53 @@ export default function EstudiantesListModal({
                             placeholderTextColor="#94a3b8"
                             editable={!savingEstudianteEdit}
                           />
+                          <Text style={[styles.dataBullet, { marginTop: 4, marginBottom: 8, fontWeight: '700' }]}>Acudiente WhatsApp</Text>
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.acudiente?.nombre || ''}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({
+                              ...prev,
+                              acudiente: { ...(prev.acudiente || {}), nombre: value }
+                            }))}
+                            placeholder="Nombre del acudiente"
+                            placeholderTextColor="#94a3b8"
+                            editable={!savingEstudianteEdit}
+                          />
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.acudiente?.telefonoE164 || ''}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({
+                              ...prev,
+                              acudiente: { ...(prev.acudiente || {}), telefonoE164: value }
+                            }))}
+                            placeholder="WhatsApp +573001112233"
+                            placeholderTextColor="#94a3b8"
+                            keyboardType="phone-pad"
+                            editable={!savingEstudianteEdit}
+                          />
+                          <TextInput
+                            style={styles.courseInput}
+                            value={estudianteEditForm.acudiente?.parentesco || ''}
+                            onChangeText={(value) => setEstudianteEditForm((prev) => ({
+                              ...prev,
+                              acudiente: { ...(prev.acudiente || {}), parentesco: value }
+                            }))}
+                            placeholder="Parentesco"
+                            placeholderTextColor="#94a3b8"
+                            editable={!savingEstudianteEdit}
+                          />
+                          <Pressable
+                            style={[styles.estudianteMateriaChip, estudianteEditForm.acudiente?.whatsappOptIn && styles.estudianteMateriaChipActive]}
+                            onPress={() => setEstudianteEditForm((prev) => ({
+                              ...prev,
+                              acudiente: { ...(prev.acudiente || {}), whatsappOptIn: !prev.acudiente?.whatsappOptIn }
+                            }))}
+                            disabled={savingEstudianteEdit}
+                          >
+                            <Text style={[styles.estudianteMateriaChipText, estudianteEditForm.acudiente?.whatsappOptIn && styles.estudianteMateriaChipTextActive]}>
+                              Autoriza notificaciones WhatsApp
+                            </Text>
+                          </Pressable>
                           <Text style={[styles.dataBullet, { marginTop: 4, marginBottom: 8, fontWeight: '700' }]}>Materias del estudiante</Text>
                           <View style={styles.estudianteMateriaSelectorBox}>
                             {estudiantesMateriasDisponibles.length > 0 ? (
@@ -298,6 +345,11 @@ export default function EstudiantesListModal({
                           <Text style={styles.estudianteRowMeta}>
                             Materias: {Array.isArray(e.materias) && e.materias.length ? e.materias.join(', ') : 'Sin materias asignadas'}
                           </Text>
+                          {e.acudiente ? (
+                            <Text style={styles.estudianteRowMeta}>
+                              Acudiente: {e.acudiente.nombre || 'Sin nombre'} - {e.acudiente.telefonoE164 || 'Sin WhatsApp'}{e.acudiente.whatsappOptIn ? ' - autorizado' : ' - sin autorizacion'}
+                            </Text>
+                          ) : null}
                         </>
                       )}
                     </View>

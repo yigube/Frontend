@@ -1,5 +1,12 @@
 import { useState } from 'react';
 
+export const EMPTY_ACUDIENTE_FORM = {
+  nombre: '',
+  telefonoE164: '',
+  parentesco: '',
+  whatsappOptIn: false
+};
+
 export default function useEstudianteCrudState(allMateriasOption) {
   const [estudiantesModalVisible, setEstudiantesModalVisible] = useState(false);
   const [estudiantes, setEstudiantes] = useState([]);
@@ -19,14 +26,14 @@ export default function useEstudianteCrudState(allMateriasOption) {
   const [estudianteCreateModalVisible, setEstudianteCreateModalVisible] = useState(false);
   const [estudianteCreateCursoId, setEstudianteCreateCursoId] = useState(null);
   const [estudianteCreateCursoPickerOpen, setEstudianteCreateCursoPickerOpen] = useState(false);
-  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', codigoEstudiante: '' });
+  const [estudianteCreateForm, setEstudianteCreateForm] = useState({ nombres: '', apellidos: '', codigoEstudiante: '', acudiente: EMPTY_ACUDIENTE_FORM });
   const [estudianteCreateMaterias, setEstudianteCreateMaterias] = useState([]);
   const [selectedCsvFile, setSelectedCsvFile] = useState(null);
   const [uploadedStudents, setUploadedStudents] = useState([]);
   const [estudianteCreateError, setEstudianteCreateError] = useState('');
   const [savingEstudiante, setSavingEstudiante] = useState(false);
   const [estudianteEditing, setEstudianteEditing] = useState(null);
-  const [estudianteEditForm, setEstudianteEditForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [] });
+  const [estudianteEditForm, setEstudianteEditForm] = useState({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [], acudiente: EMPTY_ACUDIENTE_FORM });
   const [savingEstudianteEdit, setSavingEstudianteEdit] = useState(false);
 
   return {
