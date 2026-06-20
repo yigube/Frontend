@@ -7,7 +7,9 @@ export default function CursosModals({
   styles,
   adminCursosModalVisible,
   rectorCursosModalVisible,
+  rectorSedesModalVisible,
   closeCursosModal,
+  closeRectorSedesModal,
   loadingCursos,
   openAdminCursoForm,
   cursoCrudColegioId,
@@ -175,6 +177,87 @@ export default function CursosModals({
                           </View>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.smallBtn, styles.adminCourseActionBtn, styles.deleteBtn]} onPress={() => askDeleteCurso(c)}>
+                          <View style={styles.btnRow}>
+                            <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Eliminar</Text>
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="slide"
+        visible={rectorSedesModalVisible}
+        onRequestClose={closeRectorSedesModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, styles.rectorSedesModalCard]}>
+            <ScrollView
+              contentContainerStyle={[styles.modalContent, styles.cursoModalContent]}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalHeader}>
+                <Text style={[styles.periodTitle, styles.modalHeaderTitle]}>Sedes</Text>
+                <Pressable onPress={closeRectorSedesModal} style={styles.closeBtn}>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="close-outline" size={16} color="#fecaca" />
+                    <Text style={styles.closeBtnText}>Cerrar</Text>
+                  </View>
+                </Pressable>
+              </View>
+
+              <View style={styles.dataBox}>
+                <View style={styles.rectorSedesHeaderRow}>
+                  <Text style={styles.dataTitle}>Lista de sedes</Text>
+                  <TouchableOpacity
+                    style={[styles.smallBtn, styles.createBtn, savingSede && { opacity: 0.6 }]}
+                    onPress={() => openSedeForm()}
+                    disabled={savingSede}
+                  >
+                    <View style={styles.btnRow}>
+                      <Ionicons name="add-outline" size={14} color="#e5e7eb" />
+                      <Text style={styles.smallBtnText}>Nueva sede</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+
+                {sedeFormVisible ? <SedeForm {...sedeFormProps} /> : null}
+
+                {sedesLoading ? (
+                  <Text style={styles.dataBullet}>Cargando sedes...</Text>
+                ) : sedesDisponibles.length === 0 ? (
+                  <Text style={styles.dataBullet}>Sin sedes registradas.</Text>
+                ) : (
+                  sedesDisponibles.map((sede) => (
+                    <View key={`rector-sede-${sede.id}`} style={[styles.rectorCourseRow, styles.rectorCourseCardRow]}>
+                      <View style={styles.rectorCourseRowContent}>
+                        <Text style={styles.rectorCourseRowTitle}>{sede.nombre}</Text>
+                      </View>
+                      <View style={styles.rectorCourseRowActions}>
+                        <TouchableOpacity
+                          style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.updateBtn]}
+                          onPress={() => openSedeForm(sede)}
+                          disabled={savingSede}
+                        >
+                          <View style={styles.btnRow}>
+                            <Ionicons name="create-outline" size={14} color="#e5e7eb" />
+                            <Text style={styles.smallBtnText}>Editar</Text>
+                          </View>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.smallBtn, styles.rectorCourseActionBtn, styles.deleteBtn]}
+                          onPress={() => askDeleteSede(sede)}
+                          disabled={savingSede}
+                        >
                           <View style={styles.btnRow}>
                             <Ionicons name="trash-outline" size={14} color="#e5e7eb" />
                             <Text style={styles.smallBtnText}>Eliminar</Text>

@@ -122,7 +122,9 @@ export default function buildHomeAcademicViewConfig({
     cursos: {
       adminCursosModalVisible: courseState.adminCursosModalVisible,
       rectorCursosModalVisible: courseState.rectorCursosModalVisible,
+      rectorSedesModalVisible: courseState.rectorSedesModalVisible,
       closeCursosModal: handlers.cursos.closeCursosModal,
+      closeRectorSedesModal: handlers.cursos.closeRectorSedesModal,
       loadingCursos: courseState.loadingCursos,
       openAdminCursoForm: handlers.cursos.openAdminCursoForm,
       cursoCrudColegioId: courseState.cursoCrudColegioId,

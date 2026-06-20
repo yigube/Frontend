@@ -150,7 +150,9 @@ export default function HomeScreenModals({
         styles={styles}
         adminCursosModalVisible={cursosProps.adminCursosModalVisible}
         rectorCursosModalVisible={cursosProps.rectorCursosModalVisible}
+        rectorSedesModalVisible={cursosProps.rectorSedesModalVisible}
         closeCursosModal={cursosProps.closeCursosModal}
+        closeRectorSedesModal={cursosProps.closeRectorSedesModal}
         loadingCursos={cursosProps.loadingCursos}
         openAdminCursoForm={cursosProps.openAdminCursoForm}
         cursoCrudColegioId={cursosProps.cursoCrudColegioId}

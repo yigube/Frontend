@@ -141,9 +141,6 @@ export default function useCourseCrudActions({
     }
     setSedeError('');
     setReturnToRectorSedesAfterForm(shouldReturnToSedes);
-    if (shouldReturnToSedes) {
-      setRectorSedesModalVisible(false);
-    }
     setSedeFormVisible(true);
   };
 

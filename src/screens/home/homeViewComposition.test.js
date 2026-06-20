@@ -20,6 +20,7 @@ describe('home view composition', () => {
       loadingCursos: false,
       adminCursosModalVisible: true,
       rectorCursosModalVisible: false,
+      rectorSedesModalVisible: true,
       cursoCrudColegioId: 5,
       cursoCrudPickerOpen: true,
       setCursoCrudPickerOpen: jest.fn(),
@@ -170,6 +171,7 @@ describe('home view composition', () => {
       },
       cursos: {
         closeCursosModal: jest.fn(),
+        closeRectorSedesModal: jest.fn(),
         openAdminCursoForm: jest.fn(),
         changeCursoCrudColegio: jest.fn(),
         openSedeForm: jest.fn(),
@@ -202,6 +204,8 @@ describe('home view composition', () => {
     expect(view.cursos.adminCursoFormProps.styles).toBe(app.styles);
     expect(view.cursos.adminCursoFormProps.handleSaveAdminCurso).toBe(handleSaveAdminCurso);
     expect(view.cursos.sedeFormProps.handleSaveSede).toBe(handlers.cursos.handleSaveSede);
+    expect(view.cursos.rectorSedesModalVisible).toBe(true);
+    expect(view.cursos.closeRectorSedesModal).toBe(handlers.cursos.closeRectorSedesModal);
   });
 
   test('buildHomeUserViewConfig y buildHomeReportViewConfig conservan wiring de handlers y derivados', () => {
