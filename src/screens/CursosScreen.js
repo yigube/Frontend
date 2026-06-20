@@ -124,8 +124,8 @@ export default function CursosScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={[styles.iconBtn, styles.danger]} onPress={() => handleDelete(item)}>
             <View style={styles.btnRow}>
-              <Ionicons name="trash-outline" size={16} color="#991b1b" />
-              <Text style={styles.iconText}>Eliminar</Text>
+              <Ionicons name="trash-outline" size={16} color="#fff" />
+              <Text style={[styles.iconText, styles.dangerText]}>Eliminar</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -253,7 +253,8 @@ const styles = StyleSheet.create({
   cardActions: { flexDirection: 'row', gap: 8 },
   iconBtn: { paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#e5e7eb', borderRadius: 10 },
   iconText: { color: '#111', fontWeight: '600' },
-  danger: { backgroundColor: '#fee2e2' },
+  danger: { backgroundColor: '#ff1f1f' },
+  dangerText: { color: '#fff' },
   error: { color: 'salmon', padding: 16, textAlign: 'center' },
   empty: { color: '#ccc', paddingVertical: 16, textAlign: 'center' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },

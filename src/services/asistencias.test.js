@@ -14,7 +14,15 @@ import { registrarAsistencia } from './asistencias';
 describe('asistencias service', () => {
   test('registrarAsistencia registra QR y retorna queued=false', async () => {
     api.post.mockResolvedValue({
-      data: { message: 'Asistencia registrada', registro: { id: 33 } }
+      data: {
+        message: 'Asistencia registrada',
+        registro: { id: 33 },
+        whatsappNotification: {
+          showUserMessage: true,
+          sent: true,
+          message: 'Notificacion enviada al WhatsApp registrado'
+        }
+      }
     });
 
     const result = await registrarAsistencia({
@@ -35,5 +43,10 @@ describe('asistencias service', () => {
     );
     expect(result.queued).toBe(false);
     expect(result.registro.id).toBe(33);
+    expect(result.whatsappNotification).toEqual(expect.objectContaining({
+      showUserMessage: true,
+      sent: true,
+      message: 'Notificacion enviada al WhatsApp registrado'
+    }));
   });
 });

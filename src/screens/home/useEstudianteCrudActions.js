@@ -10,6 +10,40 @@ const emptyAcudienteForm = () => ({ ...EMPTY_ACUDIENTE_FORM });
 const emptyEstudianteEditForm = () => ({ nombres: '', apellidos: '', qr: '', codigoEstudiante: '', materias: [], acudiente: emptyAcudienteForm() });
 const emptyEstudianteCreateForm = () => ({ nombres: '', apellidos: '', codigoEstudiante: '', acudiente: emptyAcudienteForm() });
 
+const ensureCryptoRandomValues = () => {
+  const root = typeof globalThis !== 'undefined' ? globalThis : null;
+  if (!root) return;
+  if (typeof root.crypto?.getRandomValues === 'function') return;
+
+  const getRandomValues = (typedArray) => {
+    if (!typedArray || typeof typedArray.length !== 'number') {
+      throw new TypeError('Expected typed array');
+    }
+    for (let index = 0; index < typedArray.length; index += 1) {
+      typedArray[index] = Math.floor(Math.random() * 256);
+    }
+    return typedArray;
+  };
+
+  try {
+    if (!root.crypto) {
+      Object.defineProperty(root, 'crypto', {
+        value: {},
+        configurable: true,
+        writable: true
+      });
+    }
+    Object.defineProperty(root.crypto, 'getRandomValues', {
+      value: getRandomValues,
+      configurable: true,
+      writable: true
+    });
+  } catch {
+    root.crypto = root.crypto || {};
+    root.crypto.getRandomValues = getRandomValues;
+  }
+};
+
 const normalizeAcudientePayload = (acudiente = {}) => {
   const nombre = String(acudiente?.nombre || '').trim();
   const telefonoE164 = String(acudiente?.telefonoE164 || '').trim().replace(/\s+/g, '');
@@ -424,6 +458,7 @@ export default function useEstudianteCrudActions({
     if (downloadingTemplate) return;
     setDownloadingTemplate(true);
     try {
+      ensureCryptoRandomValues();
       const ExcelJSModule = await import('exceljs');
       const ExcelJS = ExcelJSModule?.default || ExcelJSModule;
       const workbook = new ExcelJS.Workbook();
@@ -431,15 +466,19 @@ export default function useEstudianteCrudActions({
       worksheet.columns = [
         { header: 'codigo', key: 'codigo', width: 20 },
         { header: 'nombre', key: 'nombre', width: 28 },
-        { header: 'apellidos', key: 'apellidos', width: 28 }
+        { header: 'apellidos', key: 'apellidos', width: 28 },
+        { header: 'acudiente_nombre', key: 'acudienteNombre', width: 30 },
+        { header: 'acudiente_whatsapp', key: 'acudienteWhatsapp', width: 24 },
+        { header: 'acudiente_parentesco', key: 'acudienteParentesco', width: 22 },
+        { header: 'autoriza_whatsapp', key: 'autorizaWhatsapp', width: 20 }
       ];
       worksheet.getRow(1).font = { bold: true };
-      worksheet.getCell('A1').protection = { locked: true };
-      worksheet.getCell('B1').protection = { locked: true };
-      worksheet.getCell('C1').protection = { locked: true };
-      worksheet.getColumn(1).style = { protection: { locked: false } };
-      worksheet.getColumn(2).style = { protection: { locked: false } };
-      worksheet.getColumn(3).style = { protection: { locked: false } };
+      for (let colNumber = 1; colNumber <= 7; colNumber += 1) {
+        worksheet.getCell(1, colNumber).protection = { locked: true };
+        worksheet.getColumn(colNumber).style = { protection: { locked: false } };
+      }
+      worksheet.getCell('E1').note = 'Usa formato E.164, por ejemplo +573001112233.';
+      worksheet.getCell('G1').note = 'Escribe SI para autorizar notificaciones WhatsApp, o NO si no autoriza.';
       await worksheet.protect('plantilla_edusac', {
         selectLockedCells: false,
         selectUnlockedCells: true,
@@ -505,7 +544,7 @@ export default function useEstudianteCrudActions({
             });
           }
         } catch {}
-        showAppAlert('Listo', 'Plantilla Excel generada.', 'success');
+        showAppAlert('Listo', `Plantilla Excel generada.\nRuta: ${fileUri}`, 'success');
       }
     } catch (e) {
       showAppAlert('Error', getApiErrorMessage(e, `No se pudo descargar la plantilla${e?.message ? `: ${e.message}` : ''}`), 'error');
@@ -533,6 +572,7 @@ export default function useEstudianteCrudActions({
 
   const parseSpreadsheetRows = async (fileData) => {
     if (!fileData) return { students: [], invalidRows: [] };
+    ensureCryptoRandomValues();
     const ExcelJSModule = await import('exceljs');
     const ExcelJS = ExcelJSModule?.default || ExcelJSModule;
     const workbook = new ExcelJS.Workbook();
@@ -560,7 +600,7 @@ export default function useEstudianteCrudActions({
     for (let rowNumber = 1; rowNumber <= firstSheet.rowCount; rowNumber += 1) {
       const row = firstSheet.getRow(rowNumber);
       const values = [];
-      for (let colNumber = 1; colNumber <= Math.max(firstSheet.columnCount, 3); colNumber += 1) {
+      for (let colNumber = 1; colNumber <= Math.max(firstSheet.columnCount, 7); colNumber += 1) {
         values.push(getCellText(row.getCell(colNumber)));
       }
       matrix.push(values);
@@ -583,41 +623,86 @@ export default function useEstudianteCrudActions({
       'codigo estudiante',
       'codigoestudiante',
       'codigo_de_estudiante',
-      'codigo de estudiante'
+      'codigo de estudiante',
+      'acudiente_nombre',
+      'acudiente nombre',
+      'nombre acudiente',
+      'nombre del acudiente',
+      'acudiente_whatsapp',
+      'acudiente whatsapp',
+      'whatsapp acudiente',
+      'telefono acudiente',
+      'telefono whatsapp',
+      'telefono whatsapp acudiente',
+      'acudiente_parentesco',
+      'acudiente parentesco',
+      'parentesco acudiente',
+      'autoriza_whatsapp',
+      'autoriza whatsapp',
+      'autorizacion whatsapp',
+      'whatsapp opt in',
+      'whatsappoptin'
     ]);
     const hasInvalidHeader = nonEmptyHeaders.some((header) => !allowedHeaders.has(header));
     const nameHeadersCount = nonEmptyHeaders.filter((header) => header === 'nombre' || header === 'nombres').length;
     const lastNameHeadersCount = nonEmptyHeaders.filter((header) => header === 'apellidos').length;
     const studentCodeHeaders = new Set(['codigo', 'codigo estudiante', 'codigoestudiante', 'codigo_de_estudiante', 'codigo de estudiante']);
     const studentCodeHeadersCount = nonEmptyHeaders.filter((header) => studentCodeHeaders.has(header)).length;
-    if (hasInvalidHeader || nonEmptyHeaders.length !== 3 || nameHeadersCount !== 1 || lastNameHeadersCount !== 1 || studentCodeHeadersCount !== 1) {
+    if (hasInvalidHeader || nameHeadersCount !== 1 || lastNameHeadersCount !== 1 || studentCodeHeadersCount !== 1) {
       return { students: [], invalidRows: [] };
     }
     const idxNombres = headers.indexOf('nombres') >= 0 ? headers.indexOf('nombres') : headers.indexOf('nombre');
     const idxApellidos = headers.indexOf('apellidos');
     const idxCodigo = headers.findIndex((header) => studentCodeHeaders.has(header));
+    const findHeaderIndex = (candidates = []) => headers.findIndex((header) => candidates.includes(header));
+    const idxAcudienteNombre = findHeaderIndex(['acudiente_nombre', 'acudiente nombre', 'nombre acudiente', 'nombre del acudiente']);
+    const idxAcudienteWhatsapp = findHeaderIndex(['acudiente_whatsapp', 'acudiente whatsapp', 'whatsapp acudiente', 'telefono acudiente', 'telefono whatsapp', 'telefono whatsapp acudiente']);
+    const idxAcudienteParentesco = findHeaderIndex(['acudiente_parentesco', 'acudiente parentesco', 'parentesco acudiente']);
+    const idxAutorizaWhatsapp = findHeaderIndex(['autoriza_whatsapp', 'autoriza whatsapp', 'autorizacion whatsapp', 'whatsapp opt in', 'whatsappoptin']);
     if (idxNombres < 0 || idxApellidos < 0 || idxCodigo < 0) return { students: [], invalidRows: [] };
+    const normalizeExcelBoolean = (value = '') => {
+      const normalized = String(value || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      return ['si', 's', 'true', '1', 'x', 'autorizado', 'autoriza'].includes(normalized);
+    };
 
     const parsedRows = matrix.slice(1).map((row = [], index) => {
       const cols = Array.isArray(row) ? row : [];
       const nombres = String(cols[idxNombres] || '').trim();
       const apellidos = String(cols[idxApellidos] || '').trim();
       const codigoEstudiante = String(cols[idxCodigo] || '').trim();
+      const acudienteNombre = idxAcudienteNombre >= 0 ? String(cols[idxAcudienteNombre] || '').trim() : '';
+      const acudienteWhatsapp = idxAcudienteWhatsapp >= 0 ? String(cols[idxAcudienteWhatsapp] || '').trim().replace(/\s+/g, '') : '';
+      const acudienteParentesco = idxAcudienteParentesco >= 0 ? String(cols[idxAcudienteParentesco] || '').trim() : '';
+      const autorizaWhatsapp = idxAutorizaWhatsapp >= 0 ? normalizeExcelBoolean(cols[idxAutorizaWhatsapp]) : false;
+      const hasAcudienteData = Boolean(acudienteNombre || acudienteWhatsapp || acudienteParentesco || autorizaWhatsapp);
       return {
         excelRow: index + 2,
         nombres,
         apellidos,
         qr: buildAutoQrCode(nombres, apellidos, `xls-${index + 1}`),
-        codigoEstudiante
+        codigoEstudiante,
+        acudiente: hasAcudienteData
+          ? {
+              nombre: acudienteNombre,
+              telefonoE164: acudienteWhatsapp,
+              parentesco: acudienteParentesco,
+              whatsappOptIn: autorizaWhatsapp,
+              activo: true
+            }
+          : null
       };
     });
 
     const invalidRows = parsedRows
-      .filter((row) => !row.nombres || !row.apellidos || !row.codigoEstudiante)
+      .filter((row) => !row.nombres || !row.apellidos || !row.codigoEstudiante || (row.acudiente && (!row.acudiente.nombre || !row.acudiente.telefonoE164)))
       .map((row) => row.excelRow);
     const students = parsedRows
-      .filter((row) => row.nombres && row.apellidos && row.codigoEstudiante)
-      .map(({ excelRow, ...rest }) => rest);
+      .filter((row) => row.nombres && row.apellidos && row.codigoEstudiante && (!row.acudiente || (row.acudiente.nombre && row.acudiente.telefonoE164)))
+      .map(({ excelRow, acudiente, ...rest }) => (acudiente ? { ...rest, acudiente } : rest));
 
     return { students, invalidRows };
   };
@@ -698,11 +783,11 @@ export default function useEstudianteCrudActions({
     const estudiantesLote = Array.isArray(parsed?.students) ? parsed.students : [];
     const invalidRows = Array.isArray(parsed?.invalidRows) ? parsed.invalidRows : [];
     if (invalidRows.length > 0) {
-      setEstudianteCreateError(`Hay filas incompletas en el Excel (${invalidRows.join(', ')}). Debes completar codigo, nombre(s) y apellidos.`);
+      setEstudianteCreateError(`Hay filas incompletas en el Excel (${invalidRows.join(', ')}). Debes completar codigo, nombre(s), apellidos y, si agregas acudiente, nombre y WhatsApp.`);
       return;
     }
     if (!estudiantesLote.length) {
-      setEstudianteCreateError('Archivo Excel invalido. Las columnas obligatorias son: codigo, nombre(s) y apellidos');
+      setEstudianteCreateError('Archivo Excel invalido. Las columnas obligatorias son: codigo, nombre(s) y apellidos. La nueva plantilla tambien permite acudiente_nombre, acudiente_whatsapp, acudiente_parentesco y autoriza_whatsapp.');
       return;
     }
     setSavingEstudiante(true);

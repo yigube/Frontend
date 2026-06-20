@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import { getToken } from './tokenStorage';
 
 const API_PORT = '4000';
-const LOCAL_NETWORK_API_URL = 'http://192.168.100.19:4000';
+const LOCAL_NETWORK_API_URL = 'http://192.168.1.245:4000';
 const HEALTHCHECK_PATH = '/';
 const HEALTHCHECK_TIMEOUT_MS = 1500;
 const API_URL_CACHE_MS = 15000;

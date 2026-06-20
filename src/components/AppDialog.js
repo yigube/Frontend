@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10
   },
-  dangerBtn: { backgroundColor: '#b91c1c', borderColor: '#ef4444' },
+  dangerBtn: { backgroundColor: '#ff1f1f', borderColor: '#ff6b6b' },
   primaryBtnText: { color: '#eff6ff', fontWeight: '800' },
   secondaryBtn: {
     borderWidth: 1,

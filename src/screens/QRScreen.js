@@ -11,6 +11,7 @@ import {
 import { api } from '../services/api';
 import { getCursos } from '../services/cursos';
 import { getDocentes } from '../services/docentes';
+import { getEstudiantes } from '../services/estudiantes';
 import { getQROfflineContext, saveQROfflineContext } from '../services/qrOfflineCache';
 import { useAuth } from '../store/useAuth';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,6 +24,7 @@ export default function QRScreen({ navigation }) {
   const [scanned, setScanned] = useState(false);
   const [cursoId, setCursoId] = useState(null);
   const [cursos, setCursos] = useState([]);
+  const [estudiantesCurso, setEstudiantesCurso] = useState([]);
   const [docentePerfilCursos, setDocentePerfilCursos] = useState([]);
   const [loadingCursos, setLoadingCursos] = useState(false);
   const [cursoPickerOpen, setCursoPickerOpen] = useState(false);
@@ -38,10 +40,11 @@ export default function QRScreen({ navigation }) {
     estado: '',
     qr: '',
     hora: '',
-    queued: false
+    queued: false,
+    notificationMessage: ''
   });
   const [errorModal, setErrorModal] = useState({ visible: false, title: '', message: '' });
-  const [duplicateModal, setDuplicateModal] = useState({ visible: false, title: '', message: '' });
+  const [duplicateModal, setDuplicateModal] = useState({ visible: false, title: '', message: '', qr: '' });
   const [infoModal, setInfoModal] = useState({ visible: false, title: '', message: '' });
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [pendingSyncStatus, setPendingSyncStatus] = useState({ lastError: '', nextRetryAt: null });
@@ -74,6 +77,33 @@ export default function QRScreen({ navigation }) {
   };
 
   const materiasDisponibles = getMateriasDisponiblesByCurso(cursoId);
+
+  const normalizeQrValue = (value = '') => String(value || '').trim();
+  const getStudentQr = (student = {}) => normalizeQrValue(student?.qr || student?.codigoQr || student?.codigoQR);
+  const sortStudentsForScan = (items = []) => [...(Array.isArray(items) ? items : [])]
+    .filter((item) => getStudentQr(item))
+    .sort((left, right) => {
+      const leftName = `${left?.apellidos || ''} ${left?.nombres || ''}`.trim();
+      const rightName = `${right?.apellidos || ''} ${right?.nombres || ''}`.trim();
+      return leftName.localeCompare(rightName, undefined, { sensitivity: 'base', numeric: true });
+    });
+
+  const loadEstudiantesCurso = async (cursoValue = cursoId) => {
+    const numericCursoId = Number(cursoValue);
+    if (!Number.isFinite(numericCursoId) || numericCursoId <= 0) {
+      setEstudiantesCurso([]);
+      return [];
+    }
+    try {
+      const data = await getEstudiantes({ cursoId: numericCursoId });
+      const safeStudents = sortStudentsForScan(data);
+      setEstudiantesCurso(safeStudents);
+      return safeStudents;
+    } catch {
+      setEstudiantesCurso([]);
+      return [];
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -143,6 +173,10 @@ export default function QRScreen({ navigation }) {
     });
     setMateriaPickerOpen(false);
   }, [cursoId, docentePerfilCursos]);
+
+  useEffect(() => {
+    loadEstudiantesCurso(cursoId);
+  }, [cursoId]);
 
   const refreshPendingCount = async () => {
     try {
@@ -270,7 +304,8 @@ export default function QRScreen({ navigation }) {
       estado: '',
       qr: '',
       hora: '',
-      queued: false
+      queued: false,
+      notificationMessage: ''
     });
     resetScanState();
   };
@@ -288,8 +323,36 @@ export default function QRScreen({ navigation }) {
   };
 
   const closeDuplicateModal = () => {
-    setDuplicateModal({ visible: false, title: '', message: '' });
+    setDuplicateModal({ visible: false, title: '', message: '', qr: '' });
     resetScanState();
+  };
+
+  const continueAfterDuplicateModal = async () => {
+    const duplicatedQr = normalizeQrValue(duplicateModal.qr || pendingQr);
+    setDuplicateModal({ visible: false, title: '', message: '', qr: '' });
+    setCursoPickerOpen(false);
+    setMateriaPickerOpen(false);
+
+    const currentList = estudiantesCurso.length ? estudiantesCurso : await loadEstudiantesCurso(cursoId);
+    const orderedStudents = sortStudentsForScan(currentList);
+    const currentIndex = orderedStudents.findIndex((student) => getStudentQr(student) === duplicatedQr);
+    const nextStudent = currentIndex >= 0 ? orderedStudents[currentIndex + 1] : null;
+    const nextQr = getStudentQr(nextStudent);
+
+    if (!nextQr) {
+      resetScanState();
+      setInfoModal({
+        visible: true,
+        title: 'Ya no hay mas alumnos',
+        message: 'Ya no hay mas alumnos registrados en la lista para este curso.'
+      });
+      return;
+    }
+
+    setPendingQr(nextQr);
+    scanLockRef.current = true;
+    setScanned(true);
+    setEstadoModalVisible(true);
   };
 
   const closeInfoModal = () => {
@@ -306,10 +369,11 @@ export default function QRScreen({ navigation }) {
       cursoNombre: '',
       materiaNombre: '',
       estado: '',
-      qr: '',
-      hora: '',
-      queued: false
-    });
+        qr: '',
+        hora: '',
+        queued: false,
+        notificationMessage: ''
+      });
     resetScanState();
     navigation.navigate('Inicio');
   };
@@ -353,7 +417,10 @@ export default function QRScreen({ navigation }) {
           || response?.registro?.updated_at
           || response?.registro?.created_at
         ),
-        queued: Boolean(response?.queued)
+        queued: Boolean(response?.queued),
+        notificationMessage: (response?.whatsappNotification?.showUserMessage || response?.whatsappNotification?.sent)
+          ? (response?.whatsappNotification?.message || 'Notificacion enviada al WhatsApp registrado')
+          : ''
       });
       if (response?.queued) {
         await refreshPendingCount();
@@ -374,7 +441,8 @@ export default function QRScreen({ navigation }) {
         setDuplicateModal({
           visible: true,
           title: 'Asistencia ya registrada',
-          message: 'Este estudiante ya fue escaneado para esta clase. Puedes continuar con el siguiente QR.'
+          message: 'Este estudiante ya fue escaneado para esta clase. Puedes continuar con el siguiente alumno de la lista.',
+          qr: qrValueOverride
         });
       } else if (backendError.toLowerCase().includes('no existe periodo activo')) {
         setErrorModal({
@@ -601,6 +669,12 @@ export default function QRScreen({ navigation }) {
                 ? 'Se guardo localmente por conectividad limitada. Se enviara al servidor cuando vuelva la senal.'
                 : 'El registro se guardo correctamente y puedes continuar escaneando.'}
             </Text>
+            {successModal.notificationMessage ? (
+              <View style={styles.whatsappNoticeCard}>
+                <Ionicons name="logo-whatsapp" size={18} color="#86efac" />
+                <Text style={styles.whatsappNoticeText}>{successModal.notificationMessage}</Text>
+              </View>
+            ) : null}
             <Text style={styles.successQuestion}>Deseas seguir escaneando?</Text>
 
             <View style={styles.successMetaCard}>
@@ -665,7 +739,7 @@ export default function QRScreen({ navigation }) {
             </View>
             <Text style={styles.duplicateTitle}>{duplicateModal.title || 'Asistencia ya registrada'}</Text>
             <Text style={styles.duplicateTextModal}>{duplicateModal.message || 'Este estudiante ya fue escaneado para esta clase.'}</Text>
-            <TouchableOpacity style={styles.duplicateBtn} onPress={closeDuplicateModal}>
+            <TouchableOpacity style={styles.duplicateBtn} onPress={continueAfterDuplicateModal}>
               <View style={styles.btnRow}>
                 <Ionicons name="scan-outline" size={15} color="#fff" />
                 <Text style={styles.duplicateBtnText}>Seguir escaneando</Text>
@@ -828,6 +902,20 @@ const styles = StyleSheet.create({
   },
   successTitle: { color: '#f0fdf4', fontWeight: '900', fontSize: 20, textAlign: 'center' },
   successText: { color: '#d1fae5', fontSize: 13.5, lineHeight: 20, textAlign: 'center' },
+  whatsappNoticeCard: {
+    width: '100%',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.45)',
+    backgroundColor: 'rgba(22,163,74,0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8
+  },
+  whatsappNoticeText: { color: '#dcfce7', fontSize: 13, lineHeight: 18, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
   successQuestion: { color: '#bbf7d0', fontSize: 14, fontWeight: '800', textAlign: 'center' },
   successMetaCard: {
     width: '100%',
@@ -862,11 +950,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
-    backgroundColor: 'rgba(51,65,85,0.9)',
+    backgroundColor: '#ff1f1f',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.45)'
+    borderColor: '#ff6b6b'
   },
-  successBtnSecondaryText: { color: '#e2e8f0', fontWeight: '800', fontSize: 14 },
+  successBtnSecondaryText: { color: '#fff', fontWeight: '900', fontSize: 14 },
   errorModalCard: {
     width: '100%',
     maxWidth: 380,

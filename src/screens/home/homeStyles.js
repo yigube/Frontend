@@ -379,7 +379,7 @@ export const styles = StyleSheet.create({
   deleteModalText: { color: '#fecaca', textAlign: 'center', fontSize: 13, lineHeight: 18 },
   deleteModalActions: { flexDirection: 'row', gap: 10, marginTop: 16, width: '100%' },
   deleteModalCancelBtn: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', backgroundColor: 'rgba(148,163,184,0.15)', borderWidth: 1, borderColor: 'rgba(148,163,184,0.35)' },
-  deleteModalConfirmBtn: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', backgroundColor: '#dc2626', borderWidth: 1, borderColor: '#ef4444' },
+  deleteModalConfirmBtn: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center', backgroundColor: '#ff1f1f', borderWidth: 1, borderColor: '#ff6b6b' },
   deleteModalCancelText: { color: '#e2e8f0', fontWeight: '800' },
   deleteModalConfirmText: { color: '#fff', fontWeight: '900' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: 20 },
@@ -694,9 +694,9 @@ export const styles = StyleSheet.create({
     alignSelf: 'center'
   },
   adminPeriodEditCancelBtn: {
-    backgroundColor: '#dc2626',
+    backgroundColor: '#ff1f1f',
     borderWidth: 1,
-    borderColor: '#fb7185',
+    borderColor: '#ff6b6b',
     shadowColor: '#ef4444',
     shadowOpacity: 0.24,
     shadowOffset: { width: 0, height: 5 },
@@ -777,7 +777,7 @@ export const styles = StyleSheet.create({
   periodActions: { flexDirection: 'row', gap: 8, alignSelf: 'stretch', flexWrap: 'nowrap', justifyContent: 'center' },
   smallBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
   updateBtn: { backgroundColor: 'rgba(56,189,248,0.2)', borderWidth: 1, borderColor: 'rgba(56,189,248,0.5)' },
-  deleteBtn: { backgroundColor: 'rgba(239,68,68,0.18)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.5)' },
+  deleteBtn: { backgroundColor: '#ff1f1f', borderWidth: 1, borderColor: '#ff6b6b' },
   smallBtnText: { color: '#e5e7eb', fontWeight: '700', fontSize: 12 },
   emptyText: { color: '#cbd5e1', textAlign: 'center', marginTop: 8 },
   dataBox: { width: '100%', alignSelf: 'stretch', marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', gap: 4 },
@@ -1227,8 +1227,8 @@ export const styles = StyleSheet.create({
     borderColor: '#60a5fa'
   },
   adminColegioDeleteBtn: {
-    backgroundColor: '#dc2626',
-    borderColor: '#fb7185'
+    backgroundColor: '#ff1f1f',
+    borderColor: '#ff6b6b'
   },
   colegioRegisteredActionBtnRow: {
     width: '100%',
@@ -1425,8 +1425,8 @@ export const styles = StyleSheet.create({
     borderColor: '#60a5fa'
   },
   rectorDeleteBtn: {
-    backgroundColor: '#dc2626',
-    borderColor: '#fb7185'
+    backgroundColor: '#ff1f1f',
+    borderColor: '#ff6b6b'
   },
   rectorEditModalCard: {
     ...SHARED_ACTION_MODAL,
@@ -1542,9 +1542,9 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#dc2626',
+    backgroundColor: '#ff1f1f',
     borderWidth: 1,
-    borderColor: '#fb7185',
+    borderColor: '#ff6b6b',
     shadowColor: '#ef4444',
     shadowOpacity: 0.24,
     shadowOffset: { width: 0, height: 5 },
@@ -1746,9 +1746,9 @@ export const styles = StyleSheet.create({
     alignItems: 'center'
   },
   docenteEditCancelBtnMobile: {
-    backgroundColor: '#dc2626',
+    backgroundColor: '#ff1f1f',
     borderWidth: 1,
-    borderColor: '#fb7185',
+    borderColor: '#ff6b6b',
     borderRadius: 999,
     paddingHorizontal: 14,
     shadowColor: '#ef4444',
@@ -1811,8 +1811,8 @@ export const styles = StyleSheet.create({
     borderColor: '#60a5fa'
   },
   adminDocenteDeleteBtn: {
-    backgroundColor: '#dc2626',
-    borderColor: '#fb7185'
+    backgroundColor: '#ff1f1f',
+    borderColor: '#ff6b6b'
   },
   adminDocenteActionText: { color: '#f8fafc', fontWeight: '900', fontSize: 12 },
   adminDocenteActionTextMobile: { flexShrink: 1, textAlign: 'center', fontSize: 9.8 },
@@ -1848,9 +1848,9 @@ export const styles = StyleSheet.create({
   rectorCourseFormActions: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'nowrap', alignSelf: 'stretch' },
   rectorCancelBtn: {
     borderRadius: 999,
-    backgroundColor: '#dc2626',
+    backgroundColor: '#ff1f1f',
     borderWidth: 1,
-    borderColor: '#fb7185',
+    borderColor: '#ff6b6b',
     shadowColor: '#ef4444',
     shadowOpacity: 0.24,
     shadowOffset: { width: 0, height: 5 },
@@ -2038,8 +2038,8 @@ export const styles = StyleSheet.create({
   },
   adminColegioCancelBtn: {
     borderRadius: 999,
-    backgroundColor: '#dc2626',
-    borderColor: '#fb7185'
+    backgroundColor: '#ff1f1f',
+    borderColor: '#ff6b6b'
   },
   colegioCancelActions: {
     justifyContent: 'center'
